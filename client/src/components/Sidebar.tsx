@@ -32,15 +32,24 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ArrowLeftRight,
-  Landmark,
   CreditCard,
-  Coins,
   FileText,
   Wrench,
+  Image,
+  Megaphone,
+  Gauge,
+  Building2,
+  TrendingUp,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { getCurrentUserRoles, hasAdminPermission, isAdminSide } from '../utils/auth';
+import {
+  getCurrentUser,
+  getCurrentUserRoles,
+  hasAdminPermission,
+  isAccountantUser,
+  isAdminSide,
+  isBranchWorkspaceUser,
+} from '../utils/auth';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
 import { useMobileNav } from '../context/MobileNavContext';
 import { logout } from '../services/auth.service';
@@ -59,13 +68,14 @@ const asideClassName = (collapsed: boolean, mobileOpen: boolean) =>
   `sidebar${collapsed ? ' sidebar--collapsed' : ''}${mobileOpen ? ' sidebar--mobile-open' : ''}`;
 
 // ── Shared atoms ───────────────────────────────────────────────────────────────
-interface SidebarItemProps { to: string; icon: LucideIcon; label: string; badge?: number }
+interface SidebarItemProps { to: string; icon: LucideIcon; label: string; badge?: number; end?: boolean }
 
-const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label, badge }) => {
+const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label, badge, end }) => {
   const { collapsed } = useSidebarCollapse();
   return (
     <NavLink
       to={to}
+      end={end}
       className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
       title={collapsed ? label : undefined}
     >
@@ -82,15 +92,20 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label, badge 
 
 /** `end` matches the path exactly. A parent path like /accounting needs it, or
  *  it stays active on every child route and lights up alongside them. */
-interface SubItemProps { to: string; icon: LucideIcon; label: string; badge?: number; end?: boolean }
+interface SubItemProps { to: string; icon: LucideIcon; label: string; badge?: number; end?: boolean; voucherType?: 'receipt' | 'payment'; voucherSource?: 'cash' | 'bank' }
 
-const SubItem: React.FC<SubItemProps> = ({ to, icon: Icon, label, badge, end }) => {
+const SubItem: React.FC<SubItemProps> = ({ to, icon: Icon, label, badge, end, voucherType, voucherSource }) => {
   const { collapsed } = useSidebarCollapse();
+  const { pathname, search } = useLocation();
+  const voucherParams = new URLSearchParams(search);
+  const voucherActive = voucherType != null && pathname === '/finance/voucher/new'
+    && voucherParams.get('type') === voucherType
+    && voucherParams.get('source') === voucherSource;
   return (
     <NavLink
       to={to}
       end={end}
-      className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+      className={({ isActive }) => `sidebar-subitem ${isActive || voucherActive ? 'active' : ''}`}
       title={collapsed ? label : undefined}
     >
       <Icon size={15} style={{ flexShrink: 0 }} />
@@ -111,11 +126,11 @@ const SidebarSection: React.FC<{ label: string }> = ({ label }) => (
 /**
  * A section that folds away.
  *
- * Finance has eleven leaves across three levels, which is too many to leave
- * permanently open beside every other section. `match` is the path prefix the
- * group owns: the group holding the current route starts open, so arriving by
- * URL or by refresh shows you where you are rather than making you hunt for it.
- * Toggling afterwards is the user's business.
+ * Finance has more than a dozen leaves across three levels, which is too many
+ * to leave permanently open beside every other section. `match` is the path
+ * prefix the group owns: the group holding the current route starts open, so
+ * arriving by URL or by refresh shows you where you are rather than making you
+ * hunt for it. Toggling afterwards is the user's business.
  *
  * Collapsed to icons, the children render unconditionally — labels are hidden at
  * that width anyway, so a closed group would just be a row of missing icons.
@@ -337,6 +352,7 @@ const SalesSidebar: React.FC = () => {
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
+        <SidebarItem to="/cod-settlement-requests" icon={Banknote} label="Settlement Requests" />
 
         <SidebarSection label="Customer Experience" />
         <div className="sidebar-subnav">
@@ -352,17 +368,216 @@ const SalesSidebar: React.FC = () => {
   );
 };
 
+// ── Assigned branch sidebar ──────────────────────────────────────────────────
+// Branch-scoped admins get a purpose-built workspace instead of the head-office
+// information architecture. Their assigned branch stays visible so there is no
+// ambiguity about which cash and orders they are handling.
+const BranchSidebar: React.FC = () => {
+  const { collapsed, mobileOpen } = useSidebarCollapse();
+  const branchName = getCurrentUser()?.locationName?.trim() || 'Assigned branch';
+
+  return (
+    <aside className={asideClassName(collapsed, mobileOpen)}>
+      <SidebarToggleBtn />
+      <div className="sidebar-nav">
+        <div
+          className="branch-workspace-identity"
+          title={collapsed ? branchName : undefined}
+          aria-label={`Branch workspace: ${branchName}`}
+        >
+          <span className="branch-workspace-icon" aria-hidden="true">
+            <Building2 size={18} />
+          </span>
+          <span className="branch-workspace-copy">
+            <strong>{branchName}</strong>
+            <small>Branch workspace</small>
+          </span>
+        </div>
+
+        <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
+        <SidebarItem to="/orders" icon={Package} label="Orders" />
+        <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
+
+        <SidebarSection label="Operations" />
+        <SidebarItem to="/pickup" icon={Archive} label="Pickup" />
+        <SidebarItem to="/dispatch" icon={Send} label="Local Dispatch" />
+        <SidebarItem to="/oov" icon={Route} label="Transit" />
+        <SidebarItem to="/return" icon={RotateCcw} label="Return" />
+        <SidebarItem to="/hold" icon={OctagonMinus} label="Hold" />
+
+        <SidebarSection label="Management" />
+        <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
+        <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
+        <SidebarItem to="/branches/destinations" icon={MapPin} label="Destinations & Rates" />
+
+        <SidebarSection label="Finance" />
+        <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch COD" />
+        <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
+        <SidebarItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
+        {/* No 3PL COD here: carrier statements are settled centrally from
+            Imadol, so the API refuses a branch and the route is outside the
+            branch workspace. */}
+
+        <SidebarSection label="Customer Experience" />
+        <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
+        <SidebarItem to="/remarks" icon={MessageSquare} label="Remarks" />
+      </div>
+
+      <div className="sidebar-footer">
+        <SidebarLogout />
+      </div>
+    </aside>
+  );
+};
+
 // ── Admin / super-admin sidebar ────────────────────────────────────────────────
+// ── Finance menu ────────────────────────────────────────────────────────────
+// Shared by the head-office admin sidebar and the finance-only accountant
+// sidebar, so both always offer the same Finance screens.
+const FinanceNav: React.FC<{ canReadBooks: boolean; showOverview?: boolean }> = ({ canReadBooks, showOverview }) => (
+  <>
+    {/* Accounting. Gated on the same permission the routes and the API
+        check, so the section simply isn't there for staff who weren't
+        granted it — rather than being visible and then refusing. */}
+    {/* The books, named the way a Tally user already expects: the two COD
+        registers, the day book, the ledger, and the cash and bank sides of
+        the cash book.
+
+        One level shallower than it was. Rider COD and Vendor COD used to
+        sit inside a "Transactions" group, which put a daily screen behind
+        two disclosures; they are top-level here, with Vendor COD keeping
+        its own three screens beneath it.
+
+        Rider COD and Vendor COD are also the exception to the
+        ACCOUNTING_ACCESS gate: they are the settlement lists that used to
+        be COD Management, which every admin could reach. Hiding them behind
+        a grant would take a daily screen away from the people who use it,
+        so an admin without the grant sees those and nothing else here. */}
+    <SidebarSection label="Finance" />
+    <div className="sidebar-subnav">
+      {/* The accountant has this as their home item above the section. */}
+      {showOverview && canReadBooks && (
+        <SubItem to="/accounting" icon={LayoutDashboard} label="Overview" end />
+      )}
+
+      {/* Branch COD mirrors Vendor COD below: the statements and the
+          deposits that clear them are one conversation, so they sit in one
+          disclosure rather than as two siblings. */}
+      <SidebarGroup
+        label="Branch COD"
+        icon={Building2}
+        match={['/branches/settlement', '/branches/billing']}
+      >
+        <SubItem to="/branches/settlement" icon={Building2} label="COD & Settlements" />
+        <SubItem to="/branches/billing" icon={Receipt} label="Billing & Credit" />
+      </SidebarGroup>
+
+      <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
+      {/* Unlike Rider and Vendor COD, carrier statements sit behind the books
+          grant, matching the route and the API. */}
+      {canReadBooks && <SubItem to="/finance/carrier-cod" icon={Truck} label="3PL COD" />}
+
+      {/* Vendor COD keeps its three screens together: the settlements
+          themselves, what the vendor has asked to be paid before any of it
+          becomes a settlement, and the invoice side of the same
+          relationship. One vendor conversation, three views of it. */}
+      <SidebarGroup
+        label="Vendor COD"
+        icon={Store}
+        match={['/accounting/transactions/vendor-cod', '/cod-settlement-requests', '/billing']}
+      >
+        <SubItem to="/accounting/transactions/vendor-cod" icon={Store} label="COD & Settlements" />
+        <SubItem to="/cod-settlement-requests" icon={Banknote} label="Settlement Requests" />
+        <SubItem to="/billing" icon={Receipt} label="Billing & Credit" />
+      </SidebarGroup>
+
+      {canReadBooks && (
+        <>
+          <SubItem to="/accounting/transactions/journal" icon={NotebookPen} label="Journal" />
+          {/* Every cash and bank concern in one disclosure instead of
+              three: the group summary (opening/movement/closing per
+              ledger, with Payment/Receipt one key away) and the four
+              scope registers that used to sit in their own separate
+              Cash and Bank groups beside it. */}
+          <SidebarGroup
+            label="Cash & Bank"
+            icon={Wallet}
+            match={['/finance/cash-bank', '/finance/voucher/new', '/accounting/transactions/cash', '/accounting/transactions/bank']}
+          >
+            <SubItem to="/finance/cash-bank" icon={Wallet} label="Overview" end />
+            <SubItem to="/accounting/transactions/cash/receipts" icon={Receipt} label="Cash Receipts" voucherType="receipt" voucherSource="cash" />
+            <SubItem to="/accounting/transactions/cash/payments" icon={Banknote} label="Cash Payments" voucherType="payment" voucherSource="cash" />
+            <SubItem to="/accounting/transactions/bank/receipts" icon={Receipt} label="Bank Receipts" voucherType="receipt" voucherSource="bank" />
+            <SubItem to="/accounting/transactions/bank/payments" icon={CreditCard} label="Bank Payments" voucherType="payment" voucherSource="bank" />
+          </SidebarGroup>
+
+          {/* One ledger, three groupings of it: any account from the
+              chart, and the two control accounts broken down per party.
+              The children are unqualified because the group already says
+              Ledger - "Ledger > Vendor Ledger" reads as two of them.
+              /finance/ledger is in the match so the printable sheets these
+              drill into keep the group open. */}
+          <SidebarGroup
+            label="Ledger"
+            icon={BookOpen}
+            match={['/accounting/ledgers', '/finance/ledger']}
+          >
+            <SubItem to="/accounting/ledgers/account" icon={BookOpen} label="Account" />
+            <SubItem to="/accounting/ledgers/vendor" icon={Store} label="Vendor" />
+            <SubItem to="/accounting/ledgers/rider" icon={Bike} label="Rider" />
+          </SidebarGroup>
+        </>
+      )}
+
+      {canReadBooks && <SubItem to="/finance/masters" icon={FileText} label="Masters" />}
+    </div>
+  </>
+);
+
+// ── Accountant sidebar ──────────────────────────────────────────────────────
+// Finance-only account: the whole Finance menu (books included) plus read-only
+// orders and overviews. ProtectedRoute sends any other URL back to the finance
+// overview.
+const AccountantSidebar: React.FC = () => {
+  const { collapsed, mobileOpen } = useSidebarCollapse();
+  return (
+    <aside className={asideClassName(collapsed, mobileOpen)}>
+      <SidebarToggleBtn />
+      <div className="sidebar-nav">
+        <SidebarItem to="/accounting" icon={LayoutDashboard} label="Finance Overview" end />
+        {/* Read-only: where to check a figure against the orders behind it. */}
+        <SidebarItem to="/orders" icon={Package} label="Orders" />
+        <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
+        <SidebarItem to="/rider-overview" icon={Bike} label="Rider Overview" />
+        <SidebarItem to="/branches" icon={Building2} label="Branch Overview" end />
+        <FinanceNav canReadBooks />
+      </div>
+
+      <div className="sidebar-footer">
+        <SidebarLogout />
+      </div>
+    </aside>
+  );
+};
+
 const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => {
   const { collapsed, mobileOpen } = useSidebarCollapse();
   const canReadBooks = isSuperAdmin || hasAdminPermission('ACCOUNTING_ACCESS');
-  const canOpenSystem = isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS');
+  const canOpenSystem =
+    isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS') || hasAdminPermission('SETTINGS_ACCESS');
+  const canViewBranchTracking = isSuperAdmin || hasAdminPermission('BRANCH_TRACKING_READ') || hasAdminPermission('BRANCH_TRACKING_WRITE');
   return (
     <aside className={asideClassName(collapsed, mobileOpen)}>
       <SidebarToggleBtn />
       <div className="sidebar-nav">
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
+        <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
+        {canViewBranchTracking && (
+          <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
+        )}
+        <SidebarItem to="/rider-overview" icon={Bike} label="Rider Overview" />
+        <SidebarItem to="/sales-overview" icon={TrendingUp} label="Sales Overview" />
 
         <SidebarSection label="Management" />
         {/* Three peers in one column. KYC used to be a fourth entry here; it is
@@ -371,6 +586,9 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
         <SidebarItem to="/admin" icon={UserCheck} label="Admin Management" />
         <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
+        {/* Rates are a tab of Destination Management. The standalone Rates
+            entry survives only in the branch workspace menu above, since
+            branch admins can't open /settings. */}
         {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
           <SidebarItem to="/settings" icon={MapPin} label="Destination Management" />
         )}
@@ -385,78 +603,27 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           <SidebarGroup
             label="System Management"
             icon={Wrench}
-            match={['/pickup-time-slots', '/system-logs', '/sla']}
+            match={['/pickup-time-slots', '/system-logs', '/sla', '/banners', '/announcements', '/vouchers']}
           >
             {isSuperAdmin && <SubItem to="/pickup-time-slots" icon={Clock} label="Pickup Time Slots" />}
             {(isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS')) && (
               <SubItem to="/system-logs" icon={ScrollText} label="System Logs" />
             )}
             {isSuperAdmin && <SubItem to="/sla" icon={Timer} label="SLA" />}
+            {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
+              <SubItem to="/banners" icon={Image} label="Banner" />
+            )}
+            {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
+              <SubItem to="/announcements" icon={Megaphone} label="Announcements" />
+            )}
+            {/* Vouchers live here, not under Vendor COD: publishing a shipping
+                offer is occasional configuration, like a banner or a time
+                slot — not a daily settlement screen. */}
+            <SubItem to="/vouchers" icon={Ticket} label="Vouchers" />
           </SidebarGroup>
         )}
 
-        {/* Accounting. Gated on the same permission the routes and the API
-            check, so the section simply isn't there for staff who weren't
-            granted it — rather than being visible and then refusing. */}
-        {/* Organised by what kind of record you are looking at, not by which
-            screen holds it. Overview needs `end` because it is the parent path
-            of everything below it.
-
-            Rider COD and Vendor COD are the exception to the ACCOUNTING_ACCESS
-            gate: they are the settlement lists that used to be COD Management,
-            which every admin could reach. Hiding them behind a grant would take
-            a daily screen away from the people who use it, so an admin without
-            the grant sees those two and nothing else here. */}
-        <SidebarSection label="Finance" />
-        <div className="sidebar-subnav">
-          {canReadBooks && <SubItem to="/accounting" icon={BookOpen} label="Overview" end />}
-
-          <SidebarGroup
-            label="Transactions"
-            icon={ArrowLeftRight}
-            match={['/accounting/transactions', '/billing']}
-          >
-            <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
-
-            {/* Billing & Credit is the invoice side of the same vendor
-                relationship the COD screen settles, so the two sit together. */}
-            <SidebarGroup
-              label="Vendor COD"
-              icon={Store}
-              match={['/accounting/transactions/vendor-cod', '/billing']}
-            >
-              <SubItem to="/accounting/transactions/vendor-cod" icon={Store} label="COD & Settlements" />
-              {/* The vendor's side of the same relationship: what they have
-                  asked to be paid, before any of it becomes a settlement. */}
-              <SubItem to="/cod-settlement-requests" icon={Banknote} label="Settlement Requests" />
-              <SubItem to="/billing" icon={Receipt} label="Billing & Credit" />
-            </SidebarGroup>
-
-            {canReadBooks && (
-              <>
-                <SubItem to="/accounting/transactions/journal" icon={NotebookPen} label="Journal Entries" />
-
-                <SidebarGroup label="Cash" icon={Coins} match="/accounting/transactions/cash">
-                  <SubItem to="/accounting/transactions/cash/payments" icon={Banknote} label="Payment" />
-                  <SubItem to="/accounting/transactions/cash/receipts" icon={Receipt} label="Receipt" />
-                </SidebarGroup>
-
-                <SidebarGroup label="Bank" icon={Landmark} match="/accounting/transactions/bank">
-                  <SubItem to="/accounting/transactions/bank/payments" icon={CreditCard} label="Payment" />
-                  <SubItem to="/accounting/transactions/bank/receipts" icon={Receipt} label="Receipt" />
-                </SidebarGroup>
-              </>
-            )}
-          </SidebarGroup>
-
-          {canReadBooks && (
-            <SidebarGroup label="Ledger Report" icon={FileText} match="/accounting/ledgers">
-              <SubItem to="/accounting/ledgers/vendor" icon={Store} label="Vendor ledger" />
-              <SubItem to="/accounting/ledgers/rider" icon={Bike} label="Rider ledger" />
-              <SubItem to="/accounting/ledgers/account" icon={BookOpen} label="Account ledger" />
-            </SidebarGroup>
-          )}
-        </div>
+        <FinanceNav canReadBooks={canReadBooks} showOverview />
 
         <SidebarSection label="Operations" />
         <div className="sidebar-subnav">
@@ -485,6 +652,9 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
 
 // ── Root — owns collapse state, provides context ───────────────────────────────
 const Sidebar: React.FC = () => {
+  // Subscribe to the permissions refresh so an existing admin session swaps
+  // to the branch shell as soon as /me supplies its branchScoped flag.
+  useStaffPermissions();
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('sidebar-collapsed') === 'true',
   );
@@ -512,6 +682,10 @@ const Sidebar: React.FC = () => {
         <VendorSidebar />
       ) : roles.includes('sales') && !isAdminSide() ? (
         <SalesSidebar />
+      ) : isAccountantUser() ? (
+        <AccountantSidebar />
+      ) : isBranchWorkspaceUser() ? (
+        <BranchSidebar />
       ) : (
         <AdminSidebar isSuperAdmin={roles.includes('super_admin')} />
       )}

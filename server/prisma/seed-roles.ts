@@ -14,6 +14,7 @@ const rolesData = [
   { code: "vendor", name: "Vendor", description: "Merchant access" },
   { code: "sales", name: "Sales", description: "Vendor onboarding" },
   { code: "vendor_staff", name: "Vendor Staff", description: "Vendor sub-account" },
+  { code: "accountant", name: "Accountant", description: "Finance and branch COD settlement" },
 ];
 
 async function main() {

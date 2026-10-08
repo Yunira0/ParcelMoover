@@ -79,6 +79,8 @@ export interface LedgerRow {
   entryDate: string;
   bsDate: string;
   memo: string | null;
+  /** What raised the entry (settlement, manual, ...), shown as the voucher type. */
+  sourceType: string;
   /** The other side(s) of the entry, so a ledger row reads as a sentence. */
   contraAccounts: string;
   debit: number;
@@ -90,10 +92,68 @@ export interface AccountLedger {
   account: AccountSummary;
   range: { from: string; to: string; label: string };
   openingBalance: number;
+  /** Closing balance as of the end of the whole range, not just the returned page. */
   closingBalance: number;
+  /** Debit/credit totals across the whole range, not just the returned page. */
   totalDebit: number;
   totalCredit: number;
   rows: LedgerRow[];
+  /** How many movements the range holds in total, across every page. */
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/** One movement on a party ledger: a delivery run, a statement, or the opening figure. */
+export interface PartyLedgerEntry {
+  id: string;
+  kind: "statement" | "instalment";
+  /** The document this row is evidenced by - a run sheet no, a statement id. */
+  reference: string;
+  /** The journal entry to drill into, when the row has one. */
+  entryId: string | null;
+  date: string;
+  bsDate: string;
+  description: string;
+  debit: number;
+  credit: number;
+  runningBalance: number;
+}
+
+export interface PartyLedgerSummaryLine {
+  label: string;
+  amount: number;
+}
+
+/**
+ * A rider's or vendor's ledger.
+ *
+ * A rider's runs on both sides: the COD they took in on a delivery run is the
+ * debit, the cash they hand over on a statement is the credit, and the balance
+ * is what is still in their pocket. A vendor's has statements only, because
+ * nothing accrues to a vendor until one is raised.
+ */
+export interface PartySettlementLedger {
+  partyType: "rider" | "vendor";
+  partyId: string;
+  partyName: string;
+  /** Phone or business name, as the header line under the party. */
+  partySubtitle: string | null;
+  range: { from: string; to: string; label: string };
+  openingBalance: number;
+  /** Across the whole range, not just the returned page. */
+  closingBalance: number;
+  totalDebit: number;
+  totalCredit: number;
+  summary: PartyLedgerSummaryLine[];
+  /** One page of movements. Running balances are correct from the very first
+   *  movement in the range - they don't reset at the page boundary. */
+  rows: PartyLedgerEntry[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 /**
@@ -116,6 +176,8 @@ export interface TransactionRow {
   entryDate: string;
   bsDate: string;
   memo: string | null;
+  /** What raised the entry (settlement, manual, ...), shown as the voucher type. */
+  sourceType: string;
   accountCode: string;
   accountName: string;
   /** The other side(s) of the entry, so a row reads as a sentence. */
@@ -142,6 +204,11 @@ export interface TransactionList {
   pageSize: number;
 }
 
+export interface PartyMethodTotal {
+  method: string;
+  amount: number;
+}
+
 export interface PartyBalance {
   partyId: string;
   name: string;
@@ -149,6 +216,8 @@ export interface PartyBalance {
   debit: number;
   credit: number;
   balance: number;
+  /** What has actually been paid, split by method, across this party's statements. */
+  methods: PartyMethodTotal[];
 }
 
 export interface PartySearchResult {

@@ -1,264 +1,213 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, Upload } from 'lucide-react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Navigate, useSearchParams } from 'react-router-dom';
+import { Upload, X } from 'lucide-react';
 import DeliveryRatesImport from './DeliveryRatesImport';
-import Table from '../components/Table';
+import RateCard from './rates/RateCard';
+import WeightRules from './rates/WeightRules';
 import FormField from '../components/FormField';
 import PageHeader from '../components/PageHeader';
+import Banner from '../components/Banner';
 import Button from '../components/Button';
-import { getLocations } from '../services/users.service';
-import {
-  listDeliveryRates,
-  setDeliveryRateActive,
-  upsertDeliveryRate,
-  type DeliveryRate,
-} from '../services/deliveryRates.service';
-import { hasAdminPermission } from '../utils/auth';
+import { listManagedLocations, type Destination } from '../services/locations.service';
+import { listDeliveryRates, type DeliveryRate } from '../services/deliveryRates.service';
+import { getCurrentUserLocationId, getCurrentUserRoles, hasAdminPermission, isBranchWorkspaceUser } from '../utils/auth';
+import { apiErrorMessage } from '../utils/serverValidation';
 import './DeliveryRateSettings.css';
 
-const defaultFormState = {
-  originLocationId: '',
-  destinationLocationId: '',
-  baseCharge: '',
-  branchBaseCharge: '',
-  extraWeightPercent: '',
-  freeWeightKg: '2',
-};
+const DestinationsImport = lazy(() => import('./settings/DestinationsImport'));
 
-const RATE_FIELD_MAP: Record<string, string> = {
-  originLocationId: 'originLocationId',
-  destinationLocationId: 'destinationLocationId',
-  baseCharge: 'baseCharge',
-  extraWeightPercent: 'extraWeightPercent',
-  freeWeightKg: 'freeWeightKg',
-};
+// The central hub. Its rates are the head-office card on `locations`
+// (per_destination_rate), which vendors' own rate cards override - every other
+// origin prices off the delivery_rates route table instead. Matched on a
+// top-level location only: a covered area can share the name "Imadol" under a
+// different destination, and mistaking it for the hub misprices every order
+// (see order.service.ts's own parent_id: null check).
+const isHeadOffice = (d: Destination) =>
+  !d.parentId && ((d.code || '').trim().toUpperCase() === 'IMADOL' || d.name.trim().toLowerCase() === 'imadol');
 
-const DeliveryRateSettings: React.FC = () => {
-  // super_admin, or an admin the super_admin granted SETTINGS_ACCESS to.
-  const canConfigure = hasAdminPermission('SETTINGS_ACCESS');
+interface Props {
+  /** Rendered as a tab inside Destination Management, which supplies the page header. */
+  embedded?: boolean;
+}
 
+const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
+  // The server scopes a branch-scoped admin to routes originating from their
+  // own hub; lock the Origin field to match instead of letting them pick one
+  // that would just get rejected on load.
+  const isBranchWorkspace = isBranchWorkspaceUser();
+  const ownLocationId = getCurrentUserLocationId();
+  // super_admin, an admin the super_admin granted SETTINGS_ACCESS to, or any
+  // branch workspace admin - their access is already scoped to their own hub
+  // server-side, so no separate delegation is needed on top of that.
+  const canConfigure = hasAdminPermission('SETTINGS_ACCESS') || isBranchWorkspace;
+  // The head-office card writes through PATCH /locations, which has no branch
+  // carve-out - so a branch admin could never save there even if they saw it.
+  const canEditHeadOffice = hasAdminPermission('SETTINGS_ACCESS');
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [destinations, setDestinations] = useState<Destination[]>([]);
   const [rates, setRates] = useState<DeliveryRate[]>([]);
-  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [loadingDestinations, setLoadingDestinations] = useState(true);
+  const [loadingRates, setLoadingRates] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [showImport, setShowImport] = useState(false);
-  const [form, setForm] = useState(defaultFormState);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [generalError, setGeneralError] = useState('');
-  const [saving, setSaving] = useState(false);
 
-  const loadRates = async () => {
-    setLoading(true);
+  const headOffice = useMemo(() => destinations.find(isHeadOffice) ?? null, [destinations]);
+
+  // Origins are branches only - head office and the locations set up through
+  // Add Branch - never plain destinations, which don't ship parcels. A branch
+  // admin is pinned to their own hub whatever the URL says - the server 403s the
+  // rest, this just keeps the page from showing an error instead of their own rates.
+  const originOptions = useMemo(() => {
+    const tops = destinations.filter((d) => !d.parentId && d.isActive && (d.isHub || isHeadOffice(d)));
+    const pool = isBranchWorkspace && ownLocationId ? tops.filter((d) => d.id === ownLocationId) : tops;
+    return [...pool]
+      .sort((a, b) => {
+        if (isHeadOffice(a)) return -1;
+        if (isHeadOffice(b)) return 1;
+        return a.name.localeCompare(b.name);
+      })
+      .map((d) => ({
+        id: d.id,
+        label: d.name,
+        description: isHeadOffice(d) ? 'Head office rate card' : 'Branch route rates',
+      }));
+  }, [destinations, isBranchWorkspace, ownLocationId]);
+
+  const requestedOrigin = searchParams.get('origin') ?? '';
+  const selectedOrigin = useMemo(() => {
+    if (isBranchWorkspace && ownLocationId) return ownLocationId;
+    if (requestedOrigin && originOptions.some((o) => o.id === requestedOrigin)) return requestedOrigin;
+    return headOffice?.id ?? originOptions[0]?.id ?? '';
+  }, [isBranchWorkspace, ownLocationId, requestedOrigin, originOptions, headOffice]);
+
+  const isHeadOfficeView = Boolean(headOffice && selectedOrigin === headOffice.id);
+
+  const loadDestinations = useCallback(async () => {
     try {
-      const res = await listDeliveryRates();
-      if (res?.success) setRates(res.data);
+      const res = await listManagedLocations();
+      if (res?.success && Array.isArray(res.data)) {
+        setDestinations([...res.data].sort((a, b) => a.name.localeCompare(b.name)));
+      }
+    } catch {
+      setLoadError('Failed to load destinations.');
     } finally {
-      setLoading(false);
+      setLoadingDestinations(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (!canConfigure) return;
-    loadRates();
-    (async () => {
-      try {
-        const res = await getLocations();
-        if (res?.success && Array.isArray(res.data)) {
-          setLocations(res.data.map((l: any) => ({ id: l.id, name: l.name })));
-        }
-      } catch (err) {
-        console.error('Failed to load locations:', err);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canConfigure]);
+    if (canConfigure) void loadDestinations();
+  }, [canConfigure, loadDestinations]);
+
+  const loadRates = useCallback(async () => {
+    // The head-office view reads its rates off the destinations themselves.
+    if (!selectedOrigin || isHeadOfficeView) { setRates([]); return; }
+    setLoadingRates(true);
+    setLoadError('');
+    try {
+      const res = await listDeliveryRates(selectedOrigin);
+      if (res?.success) setRates(res.data);
+    } catch (err) {
+      setRates([]);
+      setLoadError(apiErrorMessage(err, 'Failed to load rates for this origin.'));
+    } finally {
+      setLoadingRates(false);
+    }
+  }, [selectedOrigin, isHeadOfficeView]);
+
+  useEffect(() => { void loadRates(); }, [loadRates]);
+
+  // Head office's rates live on the destinations themselves, so a write there
+  // needs the destinations refetched, not just this origin's routes.
+  const reloadAll = useCallback(async () => {
+    await Promise.all([loadDestinations(), loadRates()]);
+  }, [loadDestinations, loadRates]);
 
   if (!canConfigure) {
     return (
-      <div className="delivery-rate-settings-page">
-        <h1>Access restricted</h1>
-        <p>Delivery rate settings are only available to super admins or admins granted settings access.</p>
+      <div className="rates-page">
+        <PageHeader title="Rates" />
       </div>
     );
   }
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFieldErrors({});
-    setGeneralError('');
+  // Rates live as a tab: head office's Destination Management, or the branch
+  // workspace's Destinations & Rates page. This old standalone route only
+  // forwards bookmarks to whichever one the viewer can open.
+  if (!embedded) {
+    const origin = searchParams.get('origin');
+    const base = isBranchWorkspace ? '/branches/destinations' : '/settings';
+    return <Navigate to={`${base}?tab=rates${origin && !isBranchWorkspace ? `&origin=${encodeURIComponent(origin)}` : ''}`} replace />;
+  }
 
-    const errors: Record<string, string> = {};
-    if (!form.originLocationId) errors.originLocationId = 'Please select an origin location.';
-    if (!form.destinationLocationId) errors.destinationLocationId = 'Please select a destination location.';
-    const baseCharge = Number(form.baseCharge);
-    if (!(baseCharge >= 0) || form.baseCharge === '') errors.baseCharge = 'Base charge must be a non-negative number.';
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
-      return;
-    }
+  const showImportButton = !isHeadOfficeView || canEditHeadOffice;
 
-    setSaving(true);
-    try {
-      await upsertDeliveryRate({
-        originLocationId: form.originLocationId,
-        destinationLocationId: form.destinationLocationId,
-        baseCharge,
-        branchBaseCharge: form.branchBaseCharge ? Number(form.branchBaseCharge) : null,
-        extraWeightPercent: form.extraWeightPercent ? Number(form.extraWeightPercent) : 0,
-        freeWeightKg: form.freeWeightKg ? Number(form.freeWeightKg) : 2,
-      });
-      setForm(defaultFormState);
-      setShowForm(false);
-      await loadRates();
-    } catch (err: any) {
-      const data = err.response?.data;
-      if (data?.errors?.length) {
-        const mapped: Record<string, string> = {};
-        const unmapped: string[] = [];
-        for (const e of data.errors as { field: string; message: string }[]) {
-          const key = RATE_FIELD_MAP[e.field];
-          if (key) mapped[key] = e.message;
-          else unmapped.push(e.message);
-        }
-        setFieldErrors(mapped);
-        if (unmapped.length > 0) setGeneralError(unmapped[0]);
-      } else {
-        setGeneralError(data?.message || 'Failed to save delivery rate.');
-      }
-    } finally {
-      setSaving(false);
-    }
+  const toggleImport = () => {
+    // DestinationsImport has no completion callback, so pick up whatever it
+    // wrote when the panel closes.
+    if (showImport && isHeadOfficeView) void loadDestinations();
+    setShowImport((v) => !v);
   };
 
-  const toggleActive = async (rate: DeliveryRate) => {
-    await setDeliveryRateActive(rate.id, !rate.isActive);
-    loadRates();
-  };
+  const controls = (
+    <>
+      <FormField
+        label="Origin"
+        type="searchable-select"
+        searchableOptions={originOptions}
+        value={selectedOrigin}
+        onChange={(id) => {
+          setShowImport(false);
+          // Functional update so the tab param Destination Management keeps in
+          // the same URL survives an origin change.
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            if (id) next.set('origin', id); else next.delete('origin');
+            return next;
+          }, { replace: true });
+        }}
+        placeholder="Select origin"
+        disabled={isBranchWorkspace || loadingDestinations}
+      />
+      {showImportButton && (
+        <Button variant={showImport ? 'primary' : 'secondary'} onClick={toggleImport}>
+          {showImport ? <><X size={16} /> Close import</> : <><Upload size={16} /> Import</>}
+        </Button>
+      )}
+    </>
+  );
 
-  const columns = [
-    { header: 'ORIGIN', accessor: (r: DeliveryRate) => r.originLocationName },
-    { header: 'DESTINATION', accessor: (r: DeliveryRate) => r.destinationLocationName },
-    { header: 'BASE CHARGE', accessor: (r: DeliveryRate) => r.baseCharge.toLocaleString() },
-    { header: 'BRANCH CHARGE', accessor: (r: DeliveryRate) => (r.branchBaseCharge != null ? r.branchBaseCharge.toLocaleString() : '—') },
-    { header: 'EXTRA % / KG', accessor: (r: DeliveryRate) => `${r.extraWeightPercent}%` },
-    { header: 'FREE WEIGHT', accessor: (r: DeliveryRate) => `${r.freeWeightKg} kg` },
-    {
-      header: 'STATUS',
-      accessor: (r: DeliveryRate) => (
-        <button
-          type="button"
-          className={`rate-status-toggle ${r.isActive ? 'active' : 'inactive'}`}
-          onClick={() => toggleActive(r)}
-        >
-          {r.isActive ? 'Active' : 'Inactive'}
-        </button>
-      ),
-    },
-  ];
-
-  const locationSelectOptions = locations.map(l => ({ id: l.id, label: l.name }));
+  // Each origin imports its own shape: head office's per-destination rates, or
+  // this branch's origin → destination route rows.
+  const importPanel = !showImport ? undefined : isHeadOfficeView ? (
+    <Suspense fallback={<p className="rates-page-muted">Loading import…</p>}>
+      <DestinationsImport />
+    </Suspense>
+  ) : (
+    <DeliveryRatesImport onImported={loadRates} />
+  );
 
   return (
-    <div className="delivery-rate-settings-page">
-      <PageHeader
-        title="Delivery Rates"
-        subtitle="Configure the base delivery charge and extra-weight surcharge per route."
-        actionLabel="Add Rate"
-        actionIcon={<Plus size={16} />}
-        onAction={() => { setShowForm(v => !v); setShowImport(false); }}
+    <div className="rates-page">
+      {loadError && <Banner tone="danger">{loadError}</Banner>}
+
+      <RateCard
+        // Remounting on an origin change drops any half-typed edits, so one
+        // origin's numbers can never be saved onto another origin's rates.
+        key={selectedOrigin}
+        destinations={destinations}
+        isHeadOffice={isHeadOfficeView}
+        originLocationId={selectedOrigin}
+        rates={rates}
+        loading={loadingDestinations || loadingRates}
+        canEditRates={isHeadOfficeView ? canEditHeadOffice : canConfigure}
+        onChanged={reloadAll}
+        controls={controls}
+        // Network-wide, so branch admins don't see them; only a super admin can save.
+        leading={isBranchWorkspace ? undefined : <WeightRules canEdit={getCurrentUserRoles().includes('super_admin')} />}
+        importPanel={importPanel}
       />
-
-      <div className="delivery-rate-toolbar">
-        <Button
-          variant={showImport ? 'primary' : 'secondary'}
-          onClick={() => { setShowImport(v => !v); setShowForm(false); }}
-        >
-          <Upload size={15} /> {showImport ? 'Close Import' : 'Import from Excel'}
-        </Button>
-      </div>
-
-      {showImport && <DeliveryRatesImport onImported={loadRates} />}
-
-      {!showImport && showForm && (
-        <form className="delivery-rate-form" onSubmit={handleSave}>
-          <div className="delivery-rate-form-row">
-            <FormField
-              label="Origin"
-              required
-              type="searchable-select"
-              searchableOptions={locationSelectOptions}
-              value={form.originLocationId}
-              onChange={id => setForm(prev => ({ ...prev, originLocationId: id }))}
-              placeholder="Select origin"
-              error={fieldErrors.originLocationId}
-            />
-            <FormField
-              label="Destination"
-              required
-              type="searchable-select"
-              searchableOptions={locationSelectOptions}
-              value={form.destinationLocationId}
-              onChange={id => setForm(prev => ({ ...prev, destinationLocationId: id }))}
-              placeholder="Select destination"
-              error={fieldErrors.destinationLocationId}
-            />
-          </div>
-          <div className="delivery-rate-form-row">
-            <FormField
-              label="Base Charge (covers free weight)"
-              required
-              type="number"
-              min={0}
-              value={form.baseCharge}
-              onChange={value => setForm(prev => ({ ...prev, baseCharge: value }))}
-              placeholder="e.g. 100"
-              error={fieldErrors.baseCharge}
-            />
-            <FormField
-              label="Branch Delivery Charge (optional)"
-              type="number"
-              min={0}
-              value={form.branchBaseCharge}
-              onChange={value => setForm(prev => ({ ...prev, branchBaseCharge: value }))}
-              placeholder="e.g. 80"
-            />
-            <FormField
-              label="Free Weight (kg)"
-              type="number"
-              min={0}
-              step="0.1"
-              value={form.freeWeightKg}
-              onChange={value => setForm(prev => ({ ...prev, freeWeightKg: value }))}
-              error={fieldErrors.freeWeightKg}
-            />
-            <FormField
-              label="Extra Weight Surcharge (% of base, per kg)"
-              type="number"
-              min={0}
-              value={form.extraWeightPercent}
-              onChange={value => setForm(prev => ({ ...prev, extraWeightPercent: value }))}
-              placeholder="e.g. 10"
-              error={fieldErrors.extraWeightPercent}
-            />
-          </div>
-          {generalError && <p className="delivery-rate-error">{generalError}</p>}
-          <div className="delivery-rate-form-actions">
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? 'Saving...' : 'Save Rate'}
-            </Button>
-          </div>
-        </form>
-      )}
-
-      {!showImport && (
-        <Table
-          columns={columns}
-          data={rates}
-          selectable={false}
-          loading={loading}
-          loadingMessage="Loading delivery rates..."
-          emptyMessage="No delivery rates configured yet."
-        />
-      )}
     </div>
   );
 };

@@ -12,27 +12,41 @@ import {
   bulkUpdateOrderStatusSchema,
   listOrdersQuerySchema,
   orderFilterOptionsQuerySchema,
+  orderCountByStatusQuerySchema,
+  trashedOrdersQuerySchema,
+  restoreOrderSchema,
   addOrderRemarkSchema,
   runSheetQuerySchema,
   redirectOrderSchema,
+  forwardOrderSchema,
 } from "../validators/order.schema";
 import {
   addOrderRemarkController,
   bulkCreateOrdersController,
   bulkUpdateOrderStatusController,
   codSettlementDetailController,
+  codSettlementSummaryController,
   createOrderController,
   dashboardSummaryController,
   getOrderByTrackingIdController,
   getOrderFilterOptionsController,
+  getOrderCountsByStatusController,
+  listTrashedOrdersController,
+  trashOrderController,
+  restoreOrderController,
+  deleteOrderPermanentlyController,
   getPublicOrderTrackingController,
   getSenderProfileController,
   getStatusCountsController,
   listOrdersController,
   redirectOrderController,
+  forwardOrderController,
   riderRunSheetController,
   updateOrderDetailsController,
   updateOrderStatusController,
+  merchantOverviewController,
+  salesOverviewController,
+  riderOverviewController,
 } from "../controllers/order.controller";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
@@ -61,6 +75,7 @@ const createOrderLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("create-order"),
   keyGenerator: actorOrIpKey,
 });
@@ -72,6 +87,7 @@ const statusUpdateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("order-status"),
   keyGenerator: actorOrIpKey,
 });
@@ -83,6 +99,7 @@ const remarkLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("order-remark"),
   keyGenerator: actorOrIpKey,
 });
@@ -95,6 +112,7 @@ const bulkCreateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("bulk-create-order"),
   keyGenerator: actorOrIpKey,
 });
@@ -110,6 +128,7 @@ const orderReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("order-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -145,13 +164,24 @@ orderRouter.get(
   dashboardSummaryController,
 );
 
+// GET /orders/cod-settlement-summary — just the COD Settlement card, for the
+// accountant's finance overview.
+orderRouter.get(
+  "/cod-settlement-summary",
+  authMiddleware,
+  authorizeRoles("super_admin", "accountant"),
+  orderReadLimiter,
+  codSettlementSummaryController,
+);
+
 // GET /orders/cod-settlement-detail — drill-down rows behind one line of the
 // COD Settlement card. Same audience/scope as dashboard-summary.
 orderRouter.get(
   "/cod-settlement-detail",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
+  requireStaffPermission("FINANCE_ACCESS"),
   orderReadLimiter,
   codSettlementDetailController,
 );
@@ -161,7 +191,20 @@ orderRouter.get(
 orderRouter.get(
   "/status-counts",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  getStatusCountsController,
+);
+
+// POST /orders/status-counts — same read, same controller, body instead of
+// query string. Used once a scan batch's `search` term list is too long to
+// fit safely in a URL (see MAX_SCANNED_TERMS in the client). Read-only, so
+// no csrfProtection - matches the GET route's exemption.
+orderRouter.post(
+  "/status-counts",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getStatusCountsController,
@@ -193,20 +236,96 @@ orderRouter.get(
 orderRouter.get(
   "/filter-options",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(orderFilterOptionsQuerySchema, "query"),
   getOrderFilterOptionsController,
 );
 
+// GET /orders/count-by-status — per-status totals for the list page's tab badges
+// (must come before "/" for the same reason as /filter-options above).
+orderRouter.get(
+  "/count-by-status",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  validate(orderCountByStatusQuerySchema, "query"),
+  getOrderCountsByStatusController,
+);
+
+// ── Trash ────────────────────────────────────────────────────────────────────
+// Admin-only: a vendor/sales/rider actor can't reach the trash at all, so the
+// soft-deleted rows they'd otherwise never see stay invisible to them.
+// "/trash" must be registered before "/" and before "/:id" so neither swallows it.
+orderRouter.get(
+  "/trash",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  validate(trashedOrdersQuerySchema, "query"),
+  listTrashedOrdersController,
+);
+
+// GET /orders/merchant-overview — server-side aggregated stats for the Merchant
+// Overview page. Scoped the same way as dashboard-summary.
+orderRouter.get(
+  "/merchant-overview",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("DASHBOARD_ACCESS"),
+  orderReadLimiter,
+  merchantOverviewController,
+);
+
+// GET /orders/sales-overview — server-side aggregated stats for the Sales
+// Overview page. Admin-side only: a sales actor uses their own SalesDashboard,
+// so they're left off the role list entirely rather than trusted to send a
+// legitimate salesUserId.
+orderRouter.get(
+  "/sales-overview",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("DASHBOARD_ACCESS"),
+  orderReadLimiter,
+  salesOverviewController,
+);
+
+// GET /orders/rider-overview — server-side aggregated stats for the Rider
+// Overview page. A rider actor sees only their own parcels (getRiderOverview
+// forces riderId to their own rider profile, ignoring the query param).
+orderRouter.get(
+  "/rider-overview",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "accountant", "rider"),
+  requireStaffPermission("DASHBOARD_ACCESS"),
+  orderReadLimiter,
+  riderOverviewController,
+);
+
 orderRouter.get(
   "/",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
+  requireStaffPermission("ORDER_ACCESS"),
+  orderReadLimiter,
+  validate(listOrdersQuerySchema, "query"),
+  listOrdersController,
+);
+
+// POST /orders/search — identical filters, same controller, body instead of
+// query string. Used once a scan batch's `search` term list is too long to
+// fit safely in a URL (see MAX_SCANNED_TERMS in the client). Read-only, so
+// no csrfProtection - matches GET /orders' exemption.
+orderRouter.post(
+  "/search",
   authMiddleware,
   authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
-  validate(listOrdersQuerySchema, "query"),
+  validate(listOrdersQuerySchema, "body"),
   listOrdersController,
 );
 
@@ -221,6 +340,7 @@ const publicTrackLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("public-track"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? ""),
 });
@@ -235,7 +355,7 @@ orderRouter.get(
 orderRouter.get(
   "/track/:trackingId",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getOrderByTrackingIdController,
@@ -295,6 +415,21 @@ orderRouter.post(
   redirectOrderController,
 );
 
+// POST /orders/:id/forward — a delivered parcel was forwarded on to another
+// destination: change the destination and add a manual forwarding charge.
+// Status stays delivered. Admin-only, like redirect.
+orderRouter.post(
+  "/:id/forward",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(forwardOrderSchema),
+  forwardOrderController,
+);
+
 // POST /orders/:id/remarks - leave a remark on a parcel (visible to anyone with access to it)
 orderRouter.post(
   "/:id/remarks",
@@ -306,6 +441,45 @@ orderRouter.post(
   validate(uuidParamSchema, "params"),
   validate(addOrderRemarkSchema),
   addOrderRemarkController,
+);
+
+// POST /orders/:id/trash — soft-delete: drops the order out of every list and
+// into the trash. Admin-only, like the rest of the trash surface.
+orderRouter.post(
+  "/:id/trash",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  trashOrderController,
+);
+
+// POST /orders/:id/restore — undo a trashing, manual or automatic.
+orderRouter.post(
+  "/:id/restore",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  validate(restoreOrderSchema),
+  restoreOrderController,
+);
+
+// DELETE /orders/:id/permanent — unrecoverable, and refused outright for any
+// order carrying accounting or COD records. The client confirms before calling.
+orderRouter.delete(
+  "/:id/permanent",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "admin"),
+  requireStaffPermission("ORDER_ACCESS"),
+  statusUpdateLimiter,
+  validate(uuidParamSchema, "params"),
+  deleteOrderPermanentlyController,
 );
 
 export default orderRouter;

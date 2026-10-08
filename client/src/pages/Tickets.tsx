@@ -90,9 +90,12 @@ const Tickets: React.FC = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | ''>('');
   // Deep-linked from a module's "Ticket" button, e.g. /tickets?category=pickup
+  // COD settlement moved out of tickets into its own request queue, so it is
+  // no longer a category anyone can pick or filter by; older tickets that
+  // carry it still show their label in the table and detail view.
   const [categoryFilter, setCategoryFilter] = useState<TicketCategory | ''>(() => {
     const fromUrl = searchParams.get('category');
-    return fromUrl && fromUrl in TICKET_CATEGORY_LABELS ? (fromUrl as TicketCategory) : '';
+    return fromUrl && fromUrl !== 'cod_settlement' && fromUrl in TICKET_CATEGORY_LABELS ? (fromUrl as TicketCategory) : '';
   });
   const [dateRange, setDateRange] = useState<DateRange>('');
   const [page, setPage] = useState(1);
@@ -109,7 +112,9 @@ const Tickets: React.FC = () => {
   // create modal straight away with that category pre-selected.
   const newTicketParam = searchParams.get('new');
   const initialCreateCategory =
-    newTicketParam && newTicketParam in TICKET_CATEGORY_LABELS ? (newTicketParam as TicketCategory) : undefined;
+    newTicketParam && newTicketParam !== 'cod_settlement' && newTicketParam in TICKET_CATEGORY_LABELS
+      ? (newTicketParam as TicketCategory)
+      : undefined;
   const [isCreateOpen, setIsCreateOpen] = useState(newTicketParam !== null);
 
   const closeCreateModal = () => {
@@ -288,7 +293,6 @@ const Tickets: React.FC = () => {
     <div className="tickets-container">
       <PageHeader
         title="CX / Tickets"
-        subtitle="Manage customer tickets, track status and resolve issues."
         actionLabel={vendorSide ? 'Create ticket' : undefined}
         actionIcon={vendorSide ? <Plus size={16} /> : undefined}
         onAction={vendorSide ? () => setIsCreateOpen(true) : undefined}
@@ -318,7 +322,7 @@ const Tickets: React.FC = () => {
           value={categoryFilter}
           onChange={(value) => setCategoryFilter(value as TicketCategory | '')}
           placeholder="Select category"
-          options={(Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[]).map((category) => ({
+          options={(Object.keys(TICKET_CATEGORY_LABELS) as TicketCategory[]).filter((category) => category !== 'cod_settlement').map((category) => ({
             value: category,
             label: TICKET_CATEGORY_LABELS[category],
           }))}

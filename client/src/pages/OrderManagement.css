@@ -5,6 +5,20 @@
   width: 100%;
 }
 
+/* Tighter rows than the shared .custom-table default — this list is read a
+   row at a time across many orders, so the 68px min-height and 12px cell
+   padding elsewhere in the app read as wasted space here. Scoped to this
+   table only; other tables keep the shared spacing. */
+.orders-table th {
+  height: 40px;
+  padding: 0 var(--space-1);
+}
+
+.orders-table td {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-1);
+}
+
 .order-load-error {
   color: var(--color-danger-text);
   font-size: var(--font-size-sm);
@@ -272,6 +286,13 @@
   white-space: nowrap;
 }
 
+.destination-cell {
+  padding-right: var(--space-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .party-cell,
 .finance-cell,
 .updated-cell {
@@ -296,6 +317,23 @@
 
 .remarks-cell {
   max-width: 160px;
+}
+
+.om-status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+/* Same look as the order timeline's .od-timeline-carrier-badge. */
+.om-carrier-chip {
+  display: inline-flex; align-items: center;
+  padding: 1px var(--space-1-5);
+  background: var(--color-background-canvas); border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-full);
+  font-size: 10px; font-weight: var(--font-weight-semibold); line-height: 1.4;
+  color: var(--color-text-caption); letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .remarks-cell-btn {
@@ -325,32 +363,18 @@
   text-align: center;
 }
 
-.actions-cell {
-  overflow: visible;
-  position: relative;
-  text-align: center;
-}
-
-.row-action-btn {
-  color: var(--color-text-default);
-}
-
-.row-action-menu {
-  background: var(--color-background-surface);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-default);
-  box-shadow: var(--app-shadow);
+/* Every action sits directly in the cell now, always visible — no more ⋮
+   trigger and dropdown. Icon-only, name on hover/touch via the native title
+   tooltip, laid out as a compact horizontal row instead of a stacked menu. */
+.actions-cell.row-action-menu-icons {
   display: flex;
-  flex-direction: column;
-  min-width: 132px;
-  padding: var(--space-1);
-  position: absolute;
-  right: var(--space-2);
-  top: 42px;
-  z-index: 20;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
 }
 
-.row-action-menu button {
+.actions-cell button {
   align-items: center;
   background: transparent;
   border: 0;
@@ -358,19 +382,50 @@
   color: var(--color-text-default);
   cursor: pointer;
   display: flex;
-  font-family: var(--typography-font-family-default);
-  font-size: var(--font-size-sm);
-  gap: var(--space-2);
-  justify-content: flex-start;
-  min-height: 36px;
-  padding: var(--space-2);
-  text-align: left;
-  white-space: nowrap;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  padding: var(--space-1);
 }
 
-.row-action-menu button:hover {
+.actions-cell button:hover {
   background: var(--color-background-primary-invert-default);
   color: var(--color-text-primary);
+}
+
+/* Move to trash is the only destructive entry, so it reads apart from the
+   others rather than looking like another edit. */
+.actions-cell button.row-action-danger {
+  border-left: 1px solid var(--color-border-default);
+  border-radius: 0 var(--border-radius-default) var(--border-radius-default) 0;
+  color: var(--color-danger-text);
+  margin-left: var(--space-1);
+  padding-left: var(--space-2);
+}
+
+.actions-cell button.row-action-danger:hover {
+  background: var(--color-danger-surface);
+  color: var(--color-danger-text);
+}
+
+/* Status Edit — a two-field form, so the shared .modal-content's 500px /
+   space-6 padding reads as oversized empty space around it. */
+.status-edit-modal {
+  width: 360px;
+  padding: var(--space-4);
+}
+
+.status-edit-modal .modal-header {
+  margin-bottom: var(--space-3);
+}
+
+.status-edit-modal .modal-header h2 {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.status-edit-modal .modal-footer {
+  margin-top: var(--space-4);
 }
 
 

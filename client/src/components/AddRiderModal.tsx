@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import './Modal.css';
 import FormField from './FormField';
 import Button from './Button';
-import { registerUser, getLocations, type RegisterUserInput } from '../services/users.service';
+import { registerUser, type RegisterUserInput } from '../services/users.service';
+import { getLocations } from '../queries/lookups';
+import { findMasterHub } from '../utils/locations';
 
 interface AddRiderModalProps {
   isOpen: boolean;
@@ -40,16 +42,17 @@ const AddRiderModal: React.FC<AddRiderModalProps> = ({ isOpen, onClose, onSucces
           const res = await getLocations();
           if (res.success && Array.isArray(res.data)) {
             setLocations(res.data);
-            // Location (hub) is fixed to the Imadol admin hub.
-            const imadol = res.data.find(
-              (loc: any) => (loc.code || '').toUpperCase() === 'IMADOL' || (loc.name || '').trim().toLowerCase() === 'imadol',
-            );
+            // Location (hub) is fixed to the Imadol master hub (top-level
+            // row — see findMasterHub, a name-only match can hit a dead
+            // covered-area row sharing the name).
+            const imadol = findMasterHub(res.data);
             if (imadol?.id) {
               setFormData((prev) => (prev.locationId ? prev : { ...prev, locationId: imadol.id }));
             }
           }
         } catch (err) {
           console.error('Failed to fetch locations:', err);
+          setFieldErrors((prev) => ({ ...prev, locationId: "Couldn't load locations - close and reopen to try again." }));
         }
       };
       fetchLocations();

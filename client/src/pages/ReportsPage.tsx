@@ -7,8 +7,8 @@ import Table from '../components/Table';
 import StatusChip from '../components/StatusChip';
 import Button from '../components/Button';
 import { getOrders, getAllOrders, type Order, type ParcelStatus } from '../services/orders.service';
-import { ORDER_STATUS_LABELS, getOrderStatusTone } from '../utils/orderStatus';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { ORDER_STATUS_LABELS, getOrderStatusTone, STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
+import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
 import './ReportsPage.css';
 
@@ -19,7 +19,12 @@ type Bucket = 'pending' | 'completed';
 // so the operational grouping is explicit and easy to adjust.
 //   pending   = orders still being worked in that stage
 //   completed = orders that have cleared the stage
-const REPORTS: Record<ReportKey, { label: string; pending: ParcelStatus[]; completed: ParcelStatus[] }> = {
+// viaTransit scopes a report to parcels that went through transit, so its
+// sent-for-delivery / delivered rows aren't a copy of the Dispatch report's.
+const REPORTS: Record<
+  ReportKey,
+  { label: string; pending: ParcelStatus[]; completed: ParcelStatus[]; viaTransit?: boolean }
+> = {
   pickup: {
     label: 'Pickup',
     // up to and including picked up
@@ -38,10 +43,12 @@ const REPORTS: Record<ReportKey, { label: string; pending: ParcelStatus[]; compl
     // in-transit order sent out for delivery
     pending: ['oov', 'dispatched', 'arrived_at_branch', 'sent_for_delivery'],
     completed: ['delivered', 'partially_delivered'],
+    viaTransit: true,
   },
   return: {
     label: 'Return',
-    pending: ['follow_up', 'ready_to_return', 'sent_to_vendor', 'failed_delivery'],
+    // failed_delivery stays with Dispatch until it is moved to follow_up.
+    pending: ['follow_up', 'ready_to_return', 'sent_to_vendor'],
     completed: ['returned_to_vendor'],
   },
 };
@@ -69,24 +76,30 @@ const ReportsPage: React.FC = () => {
   const [downloading, setDownloading] = useState(false);
 
   const statuses = REPORTS[report][bucket];
+  const viaTransit = REPORTS[report].viaTransit;
+  // The table shows a capped first page; the count is the server's full total.
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError('');
-    getOrders({ status: statuses }, controller.signal)
+    getOrders({ status: statuses, viaTransit }, controller.signal)
       .then((res) => {
         if (res?.success && Array.isArray(res.data)) {
           setOrders(res.data);
+          setTotal(res.meta?.total ?? res.data.length);
         } else {
           setError('This report is unavailable right now.');
           setOrders([]);
+          setTotal(0);
         }
       })
       .catch((err) => {
         if (err?.name !== 'CanceledError' && err?.name !== 'AbortError') {
           setError('This report is unavailable right now.');
           setOrders([]);
+          setTotal(0);
         }
       })
       .finally(() => setLoading(false));
@@ -122,8 +135,9 @@ const ReportsPage: React.FC = () => {
     setError('');
     try {
       // Export the full result set, not just the capped page shown in the table.
-      // withArrival populates arrivedAtOrigin. Columns mirror the order table.
-      const allOrders = await getAllOrders({ status: statuses, withArrival: true });
+      // withArrival populates statusTimestamps, which backs the per-stage
+      // columns. Columns mirror the order table.
+      const allOrders = await getAllOrders({ status: statuses, viaTransit, withArrival: true });
       const headers = [
         '#',
         'Tracking ID',
@@ -131,7 +145,7 @@ const ReportsPage: React.FC = () => {
         'Sender',
         'Sender Phone',
         'Receiver',
-        'Receiver Phone',
+        'Receiver Phone', 'Alternate Number',
         'Destination',
         'COD',
         'Delivery Charge',
@@ -141,9 +155,8 @@ const ReportsPage: React.FC = () => {
         'Remarks',
         'Last Updated By',
         'Last Updated At',
-        'Arrived At Origin',
-        'Delivered At',
         'Created',
+        ...STATUS_TIMELINE_HEADERS,
       ];
       const rows = allOrders.map((o) => [
         `#${o.orderNumber}`,
@@ -153,6 +166,7 @@ const ReportsPage: React.FC = () => {
         o.senderPhone || '',
         o.receiverName,
         o.receiverPhone || '',
+        o.receiverAlternatePhone || '',
         o.destination || '',
         o.codAmount,
         o.deliveryCharge,
@@ -161,12 +175,11 @@ const ReportsPage: React.FC = () => {
         o.riderName || '',
         o.remarks || '',
         o.lastUpdatedBy || '',
-        toBsDateTime(o.lastUpdatedAt) || '',
-        o.arrivedAtOrigin ? toBsDate(o.arrivedAtOrigin) : '',
-        o.deliveredAt ? toBsDate(o.deliveredAt) : '',
-        toBsDate(o.createdAt) || '',
+        toBsDateTimeCell(o.lastUpdatedAt) || '',
+        toBsDateTimeCell(o.createdAtRaw || o.createdAt) || '',
+        ...statusTimelineCells(o.statusTimestamps),
       ]);
-      downloadExcel(
+      await downloadExcel(
         `${report}-${bucket}-report.xlsx`,
         `${REPORTS[report].label} ${bucket}`,
         headers,
@@ -183,7 +196,6 @@ const ReportsPage: React.FC = () => {
     <div className="reports-page">
       <PageHeader
         title="Reports"
-        subtitle="Pickup, dispatch, transit, and return orders — pending and delivered."
         onBack={() => navigate('/dashboard')}
       />
 
@@ -210,7 +222,11 @@ const ReportsPage: React.FC = () => {
       {error && <p className="reports-error">{error}</p>}
 
       <p className="reports-count">
-        {loading ? 'Loading…' : `${orders.length.toLocaleString()} ${bucket} ${REPORTS[report].label.toLowerCase()} order${orders.length === 1 ? '' : 's'}`}
+        {loading
+          ? 'Loading…'
+          : `${total.toLocaleString()} ${bucket} ${REPORTS[report].label.toLowerCase()} order${total === 1 ? '' : 's'}${
+              total > orders.length ? ` (showing first ${orders.length.toLocaleString()} — download for all)` : ''
+            }`}
       </p>
 
       <Table

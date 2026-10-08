@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FileImage, FileText, Upload, X } from 'lucide-react';
+import { convertHeicFileIfNeeded, isHeicFile } from '../utils/heicConvert';
 import './FileField.css';
 
 type FileFieldProps = {
   label: string;
   hint: string;
+  /** File-picker filter; defaults to images and PDF. */
+  accept?: string;
 } & (
   | {
       multiple?: false;
@@ -19,7 +22,7 @@ type FileFieldProps = {
     }
 );
 
-const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
+const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf';
 
 const isImageFile = (file: File) => file.type.startsWith('image/');
 
@@ -27,9 +30,10 @@ const isImageFile = (file: File) => file.type.startsWith('image/');
 // Payment flow's proof step, the statement detail page's after-the-fact
 // "attach proof" affordance, and the billing screens.
 const FileField: React.FC<FileFieldProps> = (props) => {
-  const { label, hint } = props;
+  const { label, hint, accept = ACCEPT } = props;
   const ref = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   const picked: File[] = props.multiple ? props.files : props.file ? [props.file] : [];
 
@@ -54,10 +58,23 @@ const FileField: React.FC<FileFieldProps> = (props) => {
     }
   };
 
-  const handleFiles = (fileList: FileList | null) => {
+  const handleFiles = async (fileList: FileList | null) => {
     const incoming = Array.from(fileList ?? []);
     if (incoming.length === 0) return;
-    emit(props.multiple ? [...picked, ...incoming] : [incoming[0]!]);
+    const selected = props.multiple ? incoming : [incoming[0]!];
+
+    if (selected.some(isHeicFile)) {
+      setConverting(true);
+      try {
+        const converted = await Promise.all(selected.map(convertHeicFileIfNeeded));
+        emit(props.multiple ? [...picked, ...converted] : converted);
+      } finally {
+        setConverting(false);
+      }
+      return;
+    }
+
+    emit(props.multiple ? [...picked, ...selected] : selected);
   };
 
   const removeAt = (index: number) => emit(picked.filter((_, i) => i !== index));
@@ -98,6 +115,7 @@ const FileField: React.FC<FileFieldProps> = (props) => {
         <button
           type="button"
           className={`file-field-drop${dragOver ? ' file-field-drop-active' : ''}`}
+          disabled={converting}
           onClick={() => ref.current?.click()}
           onDragOver={(e) => {
             e.preventDefault();
@@ -107,14 +125,16 @@ const FileField: React.FC<FileFieldProps> = (props) => {
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            handleFiles(e.dataTransfer.files);
+            void handleFiles(e.dataTransfer.files);
           }}
         >
           <FileImage size={18} className="file-field-drop-icon" />
           <span className="file-field-drop-text">
             <Upload size={13} />{' '}
-            {props.multiple && picked.length > 0 ? 'Add another file' : 'Choose file'}{' '}
-            <span className="file-field-drop-or">or drag it here</span>
+            {converting
+              ? 'Converting HEIC photo…'
+              : props.multiple && picked.length > 0 ? 'Add another file' : 'Choose file'}{' '}
+            {!converting && <span className="file-field-drop-or">or drag it here</span>}
           </span>
         </button>
       )}
@@ -122,11 +142,11 @@ const FileField: React.FC<FileFieldProps> = (props) => {
       <input
         ref={ref}
         type="file"
-        accept={ACCEPT}
+        accept={accept}
         multiple={props.multiple}
         style={{ display: 'none' }}
         onChange={(event) => {
-          handleFiles(event.target.files);
+          void handleFiles(event.target.files);
           // Reset so re-picking the same file still fires a change event.
           event.target.value = '';
         }}

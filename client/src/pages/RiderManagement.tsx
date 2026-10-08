@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Banner from '../components/Banner';
+import { apiErrorMessage } from '../utils/serverValidation';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, FolderOpen } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
@@ -17,6 +19,7 @@ import './RiderManagement.css';
 interface RiderUser {
   id: string;
   sn: number;
+  employeeId: string;
   name: string;
   email: string;
   phone: string;
@@ -49,6 +52,8 @@ const RiderManagement: React.FC = () => {
   const [documentsRider, setDocumentsRider] = useState<RiderUser | null>(null);
   const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
   const [statusError, setStatusError] = useState('');
+  // A failed load must not look like an empty list.
+  const [loadError, setLoadError] = useState('');
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
@@ -57,6 +62,7 @@ const RiderManagement: React.FC = () => {
   const loadRiders = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const params: Record<string, string | number> = { page, pageSize: pageSizeChoice };
       if (searchQuery) params.search = searchQuery;
       if (filter !== 'all') params.status = filter;
@@ -73,6 +79,7 @@ const RiderManagement: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to load riders:', err);
+      setLoadError(apiErrorMessage(err, 'Could not load riders'));
     } finally {
       setLoading(false);
     }
@@ -108,6 +115,9 @@ const RiderManagement: React.FC = () => {
 
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof RiderUser, width: '34px' },
+    // A carrier placeholder (NCM/Upaya) isn't a real employee, so it never
+    // shows one even though the row itself still gets a DB-assigned number.
+    { header: 'EMPLOYEE ID', accessor: (r: RiderUser) => (r.carrierCode ? '—' : r.employeeId || '—'), width: '110px' },
     {
       header: 'NAME',
       accessor: (item: RiderUser) => (
@@ -186,7 +196,6 @@ const RiderManagement: React.FC = () => {
     <div className="rider-management-container">
       <PageHeader
         title="RIDER MANAGEMENT"
-        subtitle="Manage rider accounts, monitor delivery metrics"
         actionLabel="Add new"
         actionIcon={<Plus size={16} />}
         onAction={() => navigate('/riders/new')}
@@ -216,6 +225,12 @@ const RiderManagement: React.FC = () => {
       </div>
 
       {statusError && <p className="rider-status-error">{statusError}</p>}
+      {loadError && (
+        <Banner tone="danger">
+          {loadError}{' '}
+          <Button variant="outline" size="sm" onClick={() => void loadRiders()}>Retry</Button>
+        </Banner>
+      )}
 
       {loading ? (
         <div className="loading-state">Loading riders...</div>

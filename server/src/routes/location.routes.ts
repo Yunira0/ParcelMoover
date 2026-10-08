@@ -23,6 +23,7 @@ const locationsReadLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("locations-read"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -34,6 +35,7 @@ const locationsWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("locations-write"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -47,6 +49,7 @@ const locationsBulkImportLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("locations-bulk-import"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });

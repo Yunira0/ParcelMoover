@@ -24,6 +24,7 @@ const readLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("payment-method-read"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -35,6 +36,7 @@ const writeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("payment-method-write"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -44,7 +46,7 @@ const writeLimiter = rateLimit({
 paymentMethodRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   readLimiter,
   listPaymentMethodsController,
 );
@@ -54,7 +56,7 @@ paymentMethodRouter.post(
   "/",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   writeLimiter,
   validate(createPaymentMethodSchema),
   createPaymentMethodController,
@@ -65,7 +67,7 @@ paymentMethodRouter.patch(
   "/:id",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   writeLimiter,
   validate(updatePaymentMethodSchema),
   updatePaymentMethodController,

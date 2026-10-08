@@ -14,10 +14,12 @@
 // existing settlement flow; a settled request just points at it.
 import prisma from "../lib/prisma";
 import { AppError } from "../utils/AppError";
+import { isFinanceStaff } from "../utils/financeRoles";
+import { assertHeadOfficeOnly } from "../lib/branchScope";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { getVendorAccountBalance } from "./billing.service";
 import { createNotification } from "./notification.service";
-import { notifyAdmins } from "./order.service";
+import { notifyFinanceStaff } from "./order.service";
 import {
   CreateCodSettlementRequestInput,
   ListCodSettlementRequestsParams,
@@ -30,7 +32,15 @@ type Actor = { id: string; roles: string[] };
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 500;
 
-const isStaff = (actor: Actor) => actor.roles.includes("admin") || actor.roles.includes("super_admin");
+const isStaff = (actor: Actor) => isFinanceStaff(actor);
+// Sales can read the requests of the vendors they own (vendors.sales_user_id),
+// never action them.
+const isPureSales = (actor: Actor) => !isStaff(actor) && actor.roles.includes("sales");
+
+// Vendor COD settlement is handled centrally from Imadol elsewhere in the app
+// (see assertHeadOfficeForVendorSettlement in finance.service.ts) - a request
+// is the ask that precedes one, so it follows the same rule.
+const HEAD_OFFICE_ONLY_MESSAGE = "COD settlement requests are handled centrally from Imadol, not from a branch";
 
 function generateRequestNo(date = new Date()) {
   return `CSR-${getDatePart(date)}-${randomBase32(6)}`;
@@ -163,6 +173,27 @@ export async function createCodSettlementRequest(actor: Actor, input: CreateCodS
     );
   }
 
+  // Where the money goes is read off the vendor record, never taken from the
+  // request body.
+  //
+  // It used to be per-request, so a vendor could name any account they liked.
+  // That is the exact shape of a payment-redirection fraud: anyone who gets
+  // into a vendor's account raises a request pointing at their own bank, and
+  // there is nothing on the vendor record to compare it against. The form is
+  // read-only now, but a form is a suggestion - this is what makes it true.
+  // Changing a payout destination is a profile change, which is reviewed.
+  const bank = await prisma.vendors.findUnique({
+    where: { id: vendorId },
+    select: { bank_name: true, bank_account_no: true, bank_account_holder: true },
+  });
+
+  if (!bank?.bank_name?.trim() || !bank.bank_account_no?.trim() || !bank.bank_account_holder?.trim()) {
+    throw new AppError(
+      400,
+      "There are no bank details on your profile to send a payout to. Contact us to have them added, then raise your request.",
+    );
+  }
+
   // Context for whoever reviews it. Best-effort: a request is still worth
   // raising if the balance service is briefly unavailable, so a failure here
   // must not cost the vendor their request.
@@ -179,9 +210,9 @@ export async function createCodSettlementRequest(actor: Actor, input: CreateCodS
       data: {
         request_no: generateRequestNo(),
         vendor_id: vendorId,
-        bank_name: input.bankName.trim(),
-        account_number: input.accountNumber.trim(),
-        account_name: input.accountName.trim(),
+        bank_name: bank.bank_name.trim(),
+        account_number: bank.bank_account_no.trim(),
+        account_name: bank.bank_account_holder.trim(),
         note: input.note?.trim() || null,
         ...(amountSnapshot !== null ? { amount_snapshot: amountSnapshot } : {}),
         status: "open",
@@ -200,13 +231,19 @@ export async function createCodSettlementRequest(actor: Actor, input: CreateCodS
     throw error;
   }
 
-  await notifyAdmins(
-    `New COD Settlement Request: ${created.request_no}`,
-    `${mapRequest(created).vendorName} has requested a COD settlement`,
-    created.id,
-    "cod_settlement",
-    `/cod-settlement-requests/${created.id}`,
-  );
+  try {
+    await notifyFinanceStaff(
+      `New COD Settlement Request: ${created.request_no}`,
+      `${mapRequest(created).vendorName} has requested a COD settlement`,
+      created.id,
+      "cod_settlement",
+      `/cod-settlement-requests/${created.id}`,
+    );
+  } catch (error) {
+    // The request is already committed. Returning an error here would make a
+    // retry look like a duplicate even though the vendor never saw success.
+    console.error("[CodSettlementRequest] Could not notify staff:", error);
+  }
 
   return mapRequest(created);
 }
@@ -218,11 +255,15 @@ export async function listCodSettlementRequests(actor: Actor, params: ListCodSet
   const where: Record<string, unknown> = {};
   if (params.status) where.status = params.status;
 
-  if (!isStaff(actor)) {
+  if (isPureSales(actor)) {
+    where.vendors = { sales_user_id: actor.id };
+  } else if (!isStaff(actor)) {
     const vendorId = await resolveActorVendorId(actor);
     // Not linked to a vendor - show nothing rather than everything.
     if (!vendorId) return { data: [], meta: { page, pageSize, total: 0, totalPages: 0 } };
     where.vendor_id = vendorId;
+  } else {
+    await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY_MESSAGE);
   }
 
   if (params.search?.trim()) {
@@ -256,14 +297,56 @@ export async function getCodSettlementRequestById(actor: Actor, id: string) {
   const row = await prisma.cod_settlement_requests.findUnique({ where: { id }, include: REQUEST_INCLUDE });
   if (!row) throw new AppError(404, "COD settlement request not found");
 
-  if (!isStaff(actor)) {
+  if (isPureSales(actor)) {
+    const owned = await prisma.vendors.findFirst({
+      where: { id: row.vendor_id, sales_user_id: actor.id },
+      select: { id: true },
+    });
+    if (!owned) throw new AppError(404, "COD settlement request not found");
+  } else if (!isStaff(actor)) {
     const vendorId = await resolveActorVendorId(actor);
     if (!vendorId || row.vendor_id !== vendorId) {
       throw new AppError(404, "COD settlement request not found");
     }
+  } else {
+    await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY_MESSAGE);
   }
 
   return mapRequest(row);
+}
+
+/**
+ * The vendor's statements that can settle this request: not cancelled and not
+ * already linked to another request. Staff only, newest first.
+ */
+export async function listSettleableStatements(actor: Actor, id: string) {
+  if (!isStaff(actor)) throw new AppError(403, "Only staff can action a COD settlement request");
+  await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY_MESSAGE);
+
+  const request = await prisma.cod_settlement_requests.findUnique({ where: { id }, select: { vendor_id: true } });
+  if (!request) throw new AppError(404, "COD settlement request not found");
+
+  const used = await prisma.cod_settlement_requests.findMany({
+    where: { settlement_id: { not: null }, id: { not: id } },
+    select: { settlement_id: true },
+  });
+  const rows = await prisma.settlements.findMany({
+    where: {
+      payee_type: "vendor",
+      vendor_id: request.vendor_id,
+      status: { not: "cancelled" },
+      id: { notIn: used.map((row) => row.settlement_id!) },
+    },
+    select: { id: true, statement_id: true, amount: true, payable_amount: true, status: true },
+    orderBy: { created_at: "desc" },
+    take: 100,
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    statementId: row.statement_id,
+    amount: Number(row.payable_amount ?? row.amount),
+    status: row.status,
+  }));
 }
 
 /**
@@ -280,6 +363,7 @@ export async function updateCodSettlementRequestStatus(
   input: UpdateCodSettlementRequestStatusInput,
 ) {
   if (!isStaff(actor)) throw new AppError(403, "Only staff can action a COD settlement request");
+  await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY_MESSAGE);
 
   const existing = await prisma.cod_settlement_requests.findUnique({ where: { id } });
   if (!existing) throw new AppError(404, "COD settlement request not found");
@@ -296,8 +380,31 @@ export async function updateCodSettlementRequestStatus(
 
   const isTerminal = input.status === "settled" || input.status === "rejected";
 
-  const updated = await prisma.cod_settlement_requests.update({
-    where: { id },
+  // "Settled" must point at the statement that answers it. Without one the
+  // vendor was told their COD had been processed when no money had moved.
+  let statement: { statement_id: string; status: string; payable_amount: unknown; amount: unknown } | null = null;
+  if (input.status === "settled") {
+    if (!input.settlementId) {
+      throw new AppError(400, "Choose the COD statement that settles this request");
+    }
+    statement = await prisma.settlements.findFirst({
+      where: { id: input.settlementId, payee_type: "vendor", vendor_id: existing.vendor_id },
+      select: { statement_id: true, status: true, payable_amount: true, amount: true },
+    });
+    if (!statement) throw new AppError(400, "That statement does not belong to this vendor");
+    if (statement.status === "cancelled") throw new AppError(400, "That statement has been cancelled");
+    // One statement answers one request; reusing it would tell a second
+    // request it was paid by money that already paid the first.
+    const taken = await prisma.cod_settlement_requests.findFirst({
+      where: { settlement_id: input.settlementId, id: { not: id } },
+      select: { request_no: true },
+    });
+    if (taken) throw new AppError(409, `Statement ${statement.statement_id} already settles ${taken.request_no}`);
+  }
+
+  // Compare-and-swap on the live status, so two reviewers can't both close it.
+  const claimed = await prisma.cod_settlement_requests.updateMany({
+    where: { id, status: { in: LIVE_REQUEST_STATUSES } },
     data: {
       status: input.status,
       decision_note: input.decisionNote?.trim() || null,
@@ -306,20 +413,30 @@ export async function updateCodSettlementRequestStatus(
       reviewed_at: new Date(),
       ...(isTerminal ? { closed_at: new Date() } : {}),
     },
-    include: REQUEST_INCLUDE,
   });
+  if (claimed.count === 0) {
+    throw new AppError(409, "This request was already actioned by someone else");
+  }
+  const updated = await prisma.cod_settlement_requests.findUniqueOrThrow({ where: { id }, include: REQUEST_INCLUDE });
 
   // Tell the vendor who raised it. Only on a terminal move: "an admin opened
   // your request" is not news, but "you have been paid" and "we said no,
   // here is why" both are - and the second is what tells them they may re-raise.
   if (isTerminal && existing.created_by) {
     const settled = input.status === "settled";
+    // Only say "paid" when the statement actually is; otherwise say it was raised.
+    const paidInFull = statement?.status === "settled";
+    const statementAmount = statement ? Math.abs(Number(statement.payable_amount ?? statement.amount)) : 0;
     await createNotification(
       existing.created_by,
       settled
         ? `COD settlement request ${updated.request_no} settled`
         : `COD settlement request ${updated.request_no} rejected`,
-      settled ? "Your COD settlement has been processed." : updated.decision_note || "No reason given.",
+      settled
+        ? paidInFull
+          ? `Statement ${statement!.statement_id} has been paid.`
+          : `Statement ${statement!.statement_id} (Rs. ${statementAmount.toFixed(2)}) has been raised for your request. It shows as paid in Settlements once the transfer is complete.`
+        : updated.decision_note || "No reason given.",
       updated.id,
       "cod_settlement",
       `/vendor/cod-settlement-requests`,

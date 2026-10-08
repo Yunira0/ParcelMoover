@@ -2,13 +2,14 @@ import express, {Express} from 'express';
 import path from 'path';
 import helmet from 'helmet';
 import {config} from 'dotenv';
-import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import rateLimit from "express-rate-limit";
 import routes from "./routes/auth.routes";
 import OrderRoutes from "./routes/order.routes"
 import DeliveryRateRoutes from "./routes/delivery-rate.routes"
 import TicketRoutes from "./routes/ticket.routes"
 import CodSettlementRequestRoutes from "./routes/codSettlementRequest.routes"
 import ReturnManifestRoutes from "./routes/returnManifest.routes"
+import TransitManifestRoutes from "./routes/transitManifest.routes"
 import RemarkRoutes from "./routes/remark.routes"
 import NotificationRoutes from "./routes/notification.routes"
 import FinanceRoutes from "./routes/finance.routes"
@@ -17,6 +18,7 @@ import KycRoutes from "./routes/kyc.routes"
 import LocationRoutes from "./routes/location.routes"
 import PricingRoutes from "./routes/pricing.routes"
 import SlaRoutes from "./routes/sla.routes"
+import VendorVolumeRoutes from "./routes/vendorVolume.routes"
 import PickupTimeSlotsRoutes from "./routes/pickupTimeSlots.routes"
 import PaymentMethodRoutes from "./routes/payment-method.routes"
 import NcmRoutes from "./routes/ncm.routes"
@@ -27,15 +29,22 @@ import PublicApiRoutes from "./routes/publicApi.routes"
 import MeRoutes from "./routes/me.routes"
 import AuditLogRoutes from "./routes/auditLog.routes"
 import BillingRoutes from "./routes/billing.routes"
+import VoucherRoutes from "./routes/voucher.routes"
+import VoucherCampaignRoutes from "./routes/voucher-campaign.routes"
 import AccountingRoutes from "./routes/accounting.routes"
 import VendorPrintSettingsRoutes from "./routes/vendorPrintSettings.routes"
+import BannerRoutes from "./routes/banner.routes"
+import AnnouncementRoutes from "./routes/announcement.routes"
+import BranchRoutes from "./routes/branch.routes"
 import prisma, { pool } from "./lib/prisma";
 import cookiesParser from "cookie-parser";
 import {authMiddleware} from "./middlewares/auth.middleware";
 import { errorHandler } from "./middlewares/errorHandler.middleware";
 import { requestId } from "./middlewares/requestId.middleware";
+import { requestPerformance } from "./lib/requestPerformance";
 import {authorizeRoles} from "./middlewares/authorizeRoles.middleware";
 import { createRedisRateLimitStore } from "./lib/rateLimitStore";
+import { createGlobalRateLimitKeyGenerator } from "./lib/rateLimitKey";
 import { serveEncryptedDocument } from "./lib/serveEncryptedDocument";
 
 
@@ -65,9 +74,9 @@ if (!process.env.DOCUMENT_ENCRYPTION_KEY) {
 }
 
 const app: Express = express();
-const port = process.env.PORT || 3000;
 
 app.use(requestId);
+app.use("/api", requestPerformance);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -102,6 +111,20 @@ app.get("/health", async (_req, res) => {
   }
 });
 
+// Trust proxy configuration: only enable in production with a known trusted proxy.
+// In development, proxy trust is disabled to prevent IP spoofing.
+// Must be set before rate limiters so ipKeyGenerator reads the correct req.ip.
+const trustProxy = process.env.TRUST_PROXY === "true" ? true : false;
+app.set("trust proxy", trustProxy);
+
+const trustedProxiesEnv = process.env.TRUSTED_PROXIES;
+if (trustProxy && trustedProxiesEnv) {
+    const trustedProxies = trustedProxiesEnv.split(",").map(ip => ip.trim()).filter(Boolean);
+    if (trustedProxies.length > 0) {
+        app.set("trust proxy", trustedProxies);
+    }
+}
+
 // Baseline defense-in-depth cap applied to every route. Sensitive/write
 // routes layer their own stricter, actor-aware limiter on top of this one -
 // this just ensures no route is ever left with zero rate limiting at all.
@@ -115,22 +138,13 @@ const globalLimiter = rateLimit({
   // whole API down. Route-specific limiters already use the same fail-open mode.
   passOnStoreError: true,
   store: createRedisRateLimitStore("global"),
-  keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
+  // Prefer a verified actor identity so users behind the same Cloudflare edge,
+  // office network, or carrier NAT do not exhaust one shared IP bucket.
+  // Anonymous/invalid-token requests remain keyed by their client IP.
+  keyGenerator: createGlobalRateLimitKeyGenerator(process.env.JWT_SECRET),
+  validate: false,
 });
 app.use(globalLimiter);
-
-// Trust proxy configuration: only enable in production with a known trusted proxy.
-// In development, proxy trust is disabled to prevent IP spoofing.
-const trustProxy = process.env.TRUST_PROXY === "true" ? true : false;
-app.set("trust proxy", trustProxy);
-
-const trustedProxiesEnv = process.env.TRUSTED_PROXIES;
-if (trustedProxiesEnv) {
-    const trustedProxies = trustedProxiesEnv.split(",").map(ip => ip.trim()).filter(Boolean);
-    if (trustedProxies.length > 0) {
-        app.set("trust proxy", trustedProxies);
-    }
-}
 
 
 app.use("/api/auth", routes);
@@ -142,6 +156,7 @@ app.use("/api/delivery-rates", DeliveryRateRoutes)
 app.use("/api/tickets", TicketRoutes)
 app.use("/api/cod-settlement-requests", CodSettlementRequestRoutes)
 app.use("/api/return-manifests", ReturnManifestRoutes)
+app.use("/api/transit-manifests", TransitManifestRoutes)
 
 app.use("/api/remarks", RemarkRoutes)
 
@@ -150,6 +165,10 @@ app.use("/api/notifications", NotificationRoutes)
 app.use("/api/finance", FinanceRoutes)
 
 app.use("/api/billing", BillingRoutes)
+app.use("/api/vouchers", VoucherRoutes)
+app.use("/api/voucher-campaigns", VoucherCampaignRoutes)
+app.use("/api/banners", BannerRoutes)
+app.use("/api/announcements", AnnouncementRoutes)
 
 app.use("/api/accounting", AccountingRoutes)
 app.use("/api/vendor-settings", VendorPrintSettingsRoutes)
@@ -159,10 +178,13 @@ app.use("/api/staff", StaffRoutes)
 app.use("/api/kyc", KycRoutes)
 
 app.use("/api/locations", LocationRoutes)
+app.use("/api/branches", BranchRoutes)
 
 app.use("/api/pricing", PricingRoutes)
 
 app.use("/api/sla", SlaRoutes)
+
+app.use("/api/vendor-volume", VendorVolumeRoutes)
 
 app.use("/api/pickup-time-slots", PickupTimeSlotsRoutes)
 app.use("/api/payment-methods", PaymentMethodRoutes)
@@ -188,7 +210,17 @@ app.use("/api/v1", PublicApiRoutes)
 app.use(
     "/uploads",
     authMiddleware,
-    authorizeRoles("super_admin", "admin"),
+    authorizeRoles("super_admin", "admin", "accountant"),
+    // The accountant reaches payment proofs only (settlement receipts and
+    // billing payment proofs) - never KYC/registration documents.
+    (req, res, next) => {
+        const roles = req.user!.roles;
+        if (roles.includes("super_admin") || roles.includes("admin")) return next();
+        let path = "";
+        try { path = decodeURIComponent(req.path); } catch { /* malformed: refused below */ }
+        if (!path.includes("..") && (path.startsWith("/settlements/") || path.startsWith("/billing/"))) return next();
+        return res.status(403).json({ success: false, message: "Forbidden: Insufficient Privilege" });
+    },
     // Fire-and-forget: who opened which document is worth recording, but a
     // logging failure must never block staff from viewing a file they're entitled to.
     (req, _res, next) => {

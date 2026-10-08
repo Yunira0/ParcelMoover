@@ -15,7 +15,7 @@ const RATE_TYPE_LABELS: Record<VendorSelfRates['rateType'], string> = {
 };
 
 const RATE_TYPE_HINTS: Record<VendorSelfRates['rateType'], string> = {
-  flat: 'A single rate per valley band — every destination inside the valley shares one rate, and every destination outside shares another.',
+  flat: 'Rates depend on whether the destination is inside the valley, outside the ring road, or outside the valley.',
   zone: 'Rate is set per delivery zone, so destinations in the same zone share the same charge.',
   per_destination: 'Each destination carries its own individually-set rate.',
 };
@@ -26,6 +26,12 @@ const ZONE_LABELS: Record<string, string> = {
   remote_areas: 'Remote areas',
   inside_valley: 'Inside valley',
 };
+
+const FLAT_BANDS = [
+  { key: 'insideValley', label: 'Inside valley' },
+  { key: 'outsideRingRoad', label: 'Outside ring road' },
+  { key: 'outsideValley', label: 'Outside valley' },
+] as const;
 
 // The full rate card arrives in one response, so rows are paged client-side.
 const PAGE_SIZE = 20;
@@ -40,8 +46,6 @@ const VendorDeliveryCharges: React.FC = () => {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setError('');
 
     getMyDeliveryRates()
       .then((res) => {
@@ -60,7 +64,7 @@ const VendorDeliveryCharges: React.FC = () => {
     };
   }, []);
 
-  const rates = data?.rates ?? [];
+  const rates = useMemo(() => data?.rates ?? [], [data]);
 
   const visibleRates = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -92,7 +96,16 @@ const VendorDeliveryCharges: React.FC = () => {
       },
       {
         header: 'DESTINATION',
-        accessor: (rate: Row) => <span className="vendor-delivery-route">{rate.destinationName}</span>,
+        accessor: (rate: Row) => (
+          <span className="vendor-delivery-route-cell">
+            <span className="vendor-delivery-route">{rate.destinationName}</span>
+            {data?.rateType === 'flat' && rate.valley && (
+              <span className="vendor-delivery-band">
+                {rate.valley === 'outside' ? 'Outside valley' : rate.ringRoad === 'outside' ? 'Outside ring road' : 'Inside valley'}
+              </span>
+            )}
+          </span>
+        ),
       },
       {
         header: 'COVERED AREA',
@@ -140,7 +153,6 @@ const VendorDeliveryCharges: React.FC = () => {
     <div className="vendor-delivery-page">
       <PageHeader
         title="Delivery Charges"
-        subtitle="The delivery rates that apply to your shipments, based on your assigned pricing plan."
       />
 
       {data && (
@@ -148,6 +160,26 @@ const VendorDeliveryCharges: React.FC = () => {
           <StatusChip tone="info" variant="solid">{RATE_TYPE_LABELS[data.rateType]}</StatusChip>
           <span className="vendor-delivery-plan-hint">{RATE_TYPE_HINTS[data.rateType]}</span>
         </div>
+      )}
+
+      {data?.flatRates && (
+        <section className="vendor-delivery-flat-rates" aria-label="Your flat rates">
+          <div className="vendor-delivery-flat-heading">
+            <h2>Your flat rates</h2>
+            <span>Base charge per parcel, within the free weight allowance</span>
+          </div>
+          <div className="vendor-delivery-flat-grid">
+            {FLAT_BANDS.map(({ key, label }) => (
+              <div className="vendor-delivery-flat-band" key={key}>
+                <h3>{label}</h3>
+                <dl>
+                  <div><dt>Delivery</dt><dd>{data.flatRates![key].homeRate !== null ? formatMoney(data.flatRates![key].homeRate) : 'Not set'}</dd></div>
+                  <div><dt>Branch</dt><dd>{data.flatRates![key].branchRate !== null ? formatMoney(data.flatRates![key].branchRate) : 'Not set'}</dd></div>
+                </dl>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       <label className="vendor-delivery-search">

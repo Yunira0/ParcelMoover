@@ -473,3 +473,8 @@
     background: var(--color-background-elevated);
   }
 }
+
+/* Money and weight columns line up on the right. */
+.sdp-table .sdp-num {
+  text-align: right;
+}

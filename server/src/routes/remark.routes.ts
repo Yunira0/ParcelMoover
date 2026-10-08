@@ -26,6 +26,7 @@ const remarksReadLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("remarks-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -37,6 +38,7 @@ const remarksWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("remarks-write"),
   keyGenerator: actorOrIpKey,
 });

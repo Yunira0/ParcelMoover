@@ -4,12 +4,15 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
 import { AppError } from "../utils/AppError";
+import { ACCOUNTANT_ROLE } from "../utils/financeRoles";
 import { sendWelcomeEmail } from "../lib/mailer";
 import { revokeAllUserTokens } from "../lib/tokenRevocation";
+import { adminBranchScopeIds, deriveBranchScoped } from "../lib/branchScope";
 import { ACCESS_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER } from "../utils/jwtConfig";
 
 import { RegisterUserInput } from "../types/user-registration";
 import { ADMIN_PERMISSIONS, AdminPermission } from "../types/adminPermission.type";
+import { getDefaultCreditLimit } from "./billing.service";
 
 interface IuserLoginData {
   email: string;
@@ -60,6 +63,8 @@ interface UpdateManagedUserInput {
   extraWeightPercent?: string | number;
   returnInsideValleyPercent?: string | number;
   returnOutsideValleyPercent?: string | number;
+  branchReturnInsideValleyPercent?: string | number;
+  branchReturnOutsideValleyPercent?: string | number;
   branchFlatInsideValley?: string | number;
   branchFlatOutsideValley?: string | number;
   branchFlatOutsideRingRoad?: string | number;
@@ -82,12 +87,14 @@ interface UpdateManagedUserInput {
   // slot" - never "clear the stored one".
   idDocumentPath?: string;
   citizenshipDocPath?: string;
+  citizenshipDocBackPath?: string;
   panDocPath?: string;
   panVatDocPath?: string;
   experienceLetterDocPath?: string;
   licenceDocPath?: string;
   bluebookDocPath?: string;
   businessCertDocPath?: string;
+  agreementDocPath?: string;
 }
 
 // The document columns each account type carries, keyed by the upload field
@@ -97,19 +104,25 @@ const DOCUMENT_COLUMNS: Record<ManagedUserType, Record<string, keyof UpdateManag
   admin: {
     id_document: "idDocumentPath",
     citizenship_doc: "citizenshipDocPath",
+    citizenship_doc_back: "citizenshipDocBackPath",
     pan_doc: "panDocPath",
     experience_letter_doc: "experienceLetterDocPath",
+    agreement_doc: "agreementDocPath",
   },
   vendor: {
     citizenship_doc: "citizenshipDocPath",
+    citizenship_doc_back: "citizenshipDocBackPath",
     pan_vat_doc: "panVatDocPath",
     business_cert_doc: "businessCertDocPath",
+    agreement_doc: "agreementDocPath",
   },
   rider: {
     citizenship_doc: "citizenshipDocPath",
+    citizenship_doc_back: "citizenshipDocBackPath",
     pan_vat_doc: "panVatDocPath",
     licence_doc: "licenceDocPath",
     bluebook_doc: "bluebookDocPath",
+    agreement_doc: "agreementDocPath",
   },
 };
 
@@ -153,41 +166,42 @@ function putRate(obj: Record<string, unknown>, key: string, val: string | number
 // creation, and editing it must not silently re-derive RBAC role membership.
 // Role changes for an existing account go through the dedicated role and
 // permissions endpoints (setAdminSuperAdminRole / updateAdminPermissions).
+//
+// The "Accountant" department works the same way for the finance-only
+// `accountant` role (utils/financeRoles.ts): it replaces `admin` so the
+// account reaches the Finance section and nothing else.
+const DEPARTMENT_ROLES: Record<string, string> = {
+  sales: "sales",
+  accountant: ACCOUNTANT_ROLE,
+};
+
 async function syncSalesRoleForDepartment(
   tx: Pick<typeof prisma, "roles" | "user_roles">,
   userId: string,
   department: string | null | undefined,
 ) {
-  const wantsSales = (department ?? "").trim().toLowerCase() === "sales";
-  const [salesRole, adminRole] = await Promise.all([
-    tx.roles.findUnique({ where: { code: "sales" } }),
-    tx.roles.findUnique({ where: { code: "admin" } }),
-  ]);
-  if (!salesRole || !adminRole) return;
+  const wantedCode = DEPARTMENT_ROLES[(department ?? "").trim().toLowerCase()] ?? "admin";
+  const codes = ["admin", ...new Set(Object.values(DEPARTMENT_ROLES))];
+  const roles = await tx.roles.findMany({ where: { code: { in: codes } } });
+  const wanted = roles.find((r) => r.code === wantedCode);
+  if (!wanted) {
+    // Never fall back to leaving `admin` on the account: a Sales/Accountant
+    // user silently kept as a full admin is a privilege escalation. Fail the
+    // creation so the missing role row (unapplied migration/seed) gets fixed.
+    throw new AppError(500, `The "${wantedCode}" role is not set up. Apply the database migrations, then create this account again.`);
+  }
 
-  const [hasSales, hasAdmin] = await Promise.all([
-    tx.user_roles.findUnique({
-      where: { user_id_role_id: { user_id: userId, role_id: salesRole.id } },
-    }),
-    tx.user_roles.findUnique({
-      where: { user_id_role_id: { user_id: userId, role_id: adminRole.id } },
-    }),
-  ]);
-
-  if (wantsSales) {
-    if (!hasSales) await tx.user_roles.create({ data: { user_id: userId, role_id: salesRole.id } });
-    if (hasAdmin) {
+  for (const role of roles) {
+    const held = await tx.user_roles.findUnique({
+      where: { user_id_role_id: { user_id: userId, role_id: role.id } },
+    });
+    if (role.id === wanted.id && !held) {
+      await tx.user_roles.create({ data: { user_id: userId, role_id: role.id } });
+    } else if (role.id !== wanted.id && held) {
       await tx.user_roles.delete({
-        where: { user_id_role_id: { user_id: userId, role_id: adminRole.id } },
+        where: { user_id_role_id: { user_id: userId, role_id: role.id } },
       });
     }
-  } else {
-    if (hasSales) {
-      await tx.user_roles.delete({
-        where: { user_id_role_id: { user_id: userId, role_id: salesRole.id } },
-      });
-    }
-    if (!hasAdmin) await tx.user_roles.create({ data: { user_id: userId, role_id: adminRole.id } });
   }
 }
 
@@ -246,6 +260,31 @@ async function assertSalesOwnsVendor(actorRoles: string[], actorUserId: string, 
 
 function isPureSales(roles: string[]) {
   return !roles.includes("super_admin") && !roles.includes("admin") && roles.includes("sales");
+}
+
+// A branch-scoped admin manages only riders assigned to their branch's
+// coverage. No-op for every other actor (super_admin, unrestricted admin,
+// non-rider target).
+async function assertBranchAdminOwnsRider(actorUserId: string, roles: string[], riderId: string) {
+  const ids = await adminBranchScopeIds({ id: actorUserId, roles });
+  if (!ids) return;
+  const rider = await prisma.riders.findFirst({
+    where: { id: riderId, location_id: { in: ids } },
+    select: { id: true },
+  });
+  if (!rider) throw new AppError(403, "This rider is not assigned to your branch");
+}
+
+// As above, for vendors: a branch-scoped admin manages only the vendors
+// registered at its branch.
+async function assertBranchAdminOwnsVendor(actorUserId: string, roles: string[], vendorId: string) {
+  const ids = await adminBranchScopeIds({ id: actorUserId, roles });
+  if (!ids) return;
+  const vendor = await prisma.vendors.findFirst({
+    where: { id: vendorId, location_id: { in: ids } },
+    select: { id: true },
+  });
+  if (!vendor) throw new AppError(403, "This vendor is not registered at your branch");
 }
 
 // The root super admin is the very first account ever granted the super_admin
@@ -314,6 +353,8 @@ export async function updateManagedUserProfile(
 ) {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, data.type);
   if (data.type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+  if (data.type === "vendor") await assertBranchAdminOwnsVendor(actorUserId, actorRoles, id);
+  if (data.type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
 
   const isStaff = actorRoles.includes("super_admin") || actorRoles.includes("admin");
   const actorIsSales = !isStaff && actorRoles.includes("sales");
@@ -407,7 +448,13 @@ export async function updateManagedUserProfile(
       putText(u, "bank_name", data.bankName);
       putText(u, "bank_account_no", data.bankAccountNo);
       putText(u, "bank_account_holder", data.bankAccountHolder);
-      if (data.locationId !== undefined) u.location_id = data.locationId || null;
+      if (data.locationId !== undefined) {
+        u.location_id = data.locationId || null;
+        // branch_scoped tracks the hub, not a manual toggle - recompute it
+        // whenever the hub changes (only reachable by a super_admin; see the
+        // locationId strip above for every other actor).
+        u.branch_scoped = await deriveBranchScoped(tx, data.locationId || null);
+      }
       if (joinedAt) u.joined_at = joinedAt;
       // Department is a display attribute only past account creation - it must
       // not silently re-derive the account's RBAC role (that previously made
@@ -448,6 +495,8 @@ export async function updateManagedUserProfile(
       putRate(u, "extra_weight_percent", data.extraWeightPercent);
       putRate(u, "return_inside_valley_percent", data.returnInsideValleyPercent);
       putRate(u, "return_outside_valley_percent", data.returnOutsideValleyPercent);
+      putRate(u, "branch_return_inside_valley_percent", data.branchReturnInsideValleyPercent);
+      putRate(u, "branch_return_outside_valley_percent", data.branchReturnOutsideValleyPercent);
       putRate(u, "branch_flat_inside_valley", data.branchFlatInsideValley);
       putRate(u, "branch_flat_outside_valley", data.branchFlatOutsideValley);
       putRate(u, "branch_flat_outside_ring_road", data.branchFlatOutsideRingRoad);
@@ -488,6 +537,8 @@ export async function updateManagedUserProfile(
 export async function getManagedUserDetail(actorUserId: string, type: ManagedUserType, id: string) {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
   if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+  if (type === "vendor") await assertBranchAdminOwnsVendor(actorUserId, actorRoles, id);
+  if (type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
 
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const dateStr = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "");
@@ -515,6 +566,8 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
       extraWeightPercent: num(v.extra_weight_percent),
       returnInsideValleyPercent: num(v.return_inside_valley_percent),
       returnOutsideValleyPercent: num(v.return_outside_valley_percent),
+      branchReturnInsideValleyPercent: num(v.branch_return_inside_valley_percent),
+      branchReturnOutsideValleyPercent: num(v.branch_return_outside_valley_percent),
       branchFlatInsideValley: num(v.branch_flat_inside_valley), branchFlatOutsideValley: num(v.branch_flat_outside_valley),
       branchFlatOutsideRingRoad: num(v.branch_flat_outside_ring_road),
       branchZoneMajorCities: num(v.branch_zone_major_cities), branchZoneUrbanAreas: num(v.branch_zone_urban_areas),
@@ -531,12 +584,16 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
     if (!a) throw new AppError(404, "Admin not found");
     return {
       type, id: a.id, userId: a.user_id,
+      employeeId: a.employee_number ? `PM-${a.employee_number}` : "",
       fullName: a.users.full_name, email: a.users.email, phone: a.users.phone,
-      locationId: a.location_id, position: a.position, department: a.department,
+      locationId: a.location_id, branchScoped: a.branch_scoped, position: a.position, department: a.department,
       address: a.address, citizenshipNo: a.citizenship_no, pan: a.pan,
       fatherName: a.father_name, motherName: a.mother_name, grandfatherName: a.grandfather_name,
       permanentAddress: a.permanent_address, currentAddress: a.current_address, experience: a.experience,
       idDocumentType: a.id_document_type, idDocumentNumber: a.id_document_number,
+      idDocument: a.id_document, citizenshipDoc: a.citizenship_doc,
+      citizenshipDocBack: a.citizenship_doc_back, panDoc: a.pan_doc,
+      experienceLetterDoc: a.experience_letter_doc, agreementDoc: a.agreement_doc,
       bankName: a.bank_name, bankAccountNo: a.bank_account_no, bankAccountHolder: a.bank_account_holder,
       joinedAt: dateStr(a.joined_at),
     };
@@ -546,10 +603,13 @@ export async function getManagedUserDetail(actorUserId: string, type: ManagedUse
   if (!r) throw new AppError(404, "Rider not found");
   return {
     type, id: r.id, userId: r.user_id,
+    employeeId: r.employee_number ? `PM-${r.employee_number}` : "",
     fullName: r.name, email: r.users?.email ?? "", phone: r.phone,
     locationId: r.location_id, riderLocation: r.rider_location,
     citizenshipNo: r.citizenship_no, licenceNo: r.licence_no, vehicleNo: r.vehicle_no,
     salaryCommission: r.salary_commission, pan: r.pan,
+    citizenshipDoc: r.citizenship_doc, citizenshipDocBack: r.citizenship_doc_back, panVatDoc: r.pan_vat_doc,
+    licenceDoc: r.licence_doc, bluebookDoc: r.bluebook_doc, agreementDoc: r.agreement_doc,
     bankName: r.bank_name, bankAccountNo: r.bank_account_no, bankAccountHolder: r.bank_account_holder,
     joinedAt: dateStr(r.joined_at),
     carrierCode: r.carrier_code ?? "",
@@ -565,24 +625,30 @@ export interface ManagedUserDocument {
 
 // Labels mirror the upload fields on each registration form, so what staff see
 // here reads the same as what the applicant filled in.
-const ADMIN_DOCUMENT_FIELDS: { key: string; label: string; column: "id_document" | "citizenship_doc" | "pan_doc" | "experience_letter_doc" }[] = [
+const ADMIN_DOCUMENT_FIELDS: { key: string; label: string; column: "id_document" | "citizenship_doc" | "citizenship_doc_back" | "pan_doc" | "experience_letter_doc" | "agreement_doc" }[] = [
   { key: "idDocument", label: "ID document", column: "id_document" },
-  { key: "citizenshipDoc", label: "Citizenship", column: "citizenship_doc" },
+  { key: "citizenshipDoc", label: "Citizenship (front)", column: "citizenship_doc" },
+  { key: "citizenshipDocBack", label: "Citizenship (back)", column: "citizenship_doc_back" },
   { key: "panDoc", label: "PAN", column: "pan_doc" },
   { key: "experienceLetterDoc", label: "Experience letter", column: "experience_letter_doc" },
+  { key: "agreementDoc", label: "Agreement", column: "agreement_doc" },
 ];
 
-const VENDOR_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "pan_vat_doc" | "business_cert_doc" }[] = [
-  { key: "citizenshipDoc", label: "Citizenship", column: "citizenship_doc" },
+const VENDOR_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "citizenship_doc_back" | "pan_vat_doc" | "business_cert_doc" | "agreement_doc" }[] = [
+  { key: "citizenshipDoc", label: "Citizenship (front)", column: "citizenship_doc" },
+  { key: "citizenshipDocBack", label: "Citizenship (back)", column: "citizenship_doc_back" },
   { key: "panVatDoc", label: "PAN / VAT", column: "pan_vat_doc" },
   { key: "businessCertDoc", label: "Business certificate", column: "business_cert_doc" },
+  { key: "agreementDoc", label: "Agreement", column: "agreement_doc" },
 ];
 
-const RIDER_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "pan_vat_doc" | "licence_doc" | "bluebook_doc" }[] = [
-  { key: "citizenshipDoc", label: "Citizenship", column: "citizenship_doc" },
+const RIDER_DOCUMENT_FIELDS: { key: string; label: string; column: "citizenship_doc" | "citizenship_doc_back" | "pan_vat_doc" | "licence_doc" | "bluebook_doc" | "agreement_doc" }[] = [
+  { key: "citizenshipDoc", label: "Citizenship (front)", column: "citizenship_doc" },
+  { key: "citizenshipDocBack", label: "Citizenship (back)", column: "citizenship_doc_back" },
   { key: "panVatDoc", label: "PAN / VAT", column: "pan_vat_doc" },
   { key: "licenceDoc", label: "License", column: "licence_doc" },
   { key: "bluebookDoc", label: "Blue book", column: "bluebook_doc" },
+  { key: "agreementDoc", label: "Agreement", column: "agreement_doc" },
 ];
 
 /**
@@ -596,6 +662,8 @@ export async function getManagedUserDocuments(
   id: string,
 ): Promise<{ type: ManagedUserType; id: string; name: string; documents: ManagedUserDocument[] }> {
   const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
+  if (type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
+  if (type === "vendor") await assertBranchAdminOwnsVendor(actorUserId, actorRoles, id);
 
   const collect = (
     fields: { key: string; label: string; column: string }[],
@@ -653,6 +721,8 @@ export async function updateManagedUserPassword(
   // without it here any sales account could reset any vendor's password,
   // revoking their sessions, including clients belonging to another rep.
   if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
+  if (type === "vendor") await assertBranchAdminOwnsVendor(actorUserId, actorRoles, id);
+  if (type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
 
   if (!password?.trim() || password.length < 8) {
     throw new AppError(400, "Password must be at least 8 characters long");
@@ -837,7 +907,10 @@ function validateRegisterInput(input: RegisterUserInput) {
     // shows an empty document list. Self-service KYC applications already
     // enforce the same rule (see kyc.service.ts).
     if (!input.citizenshipDocPath) {
-      throw new AppError(400, "Citizenship document is required for vendor");
+      throw new AppError(400, "Citizenship document (front side) is required for vendor");
+    }
+    if (!input.citizenshipDocBackPath) {
+      throw new AppError(400, "Citizenship document (back side) is required for vendor");
     }
   }
 
@@ -902,7 +975,8 @@ export async function registerUserBySuperAdmin(
 
   // Sales (without admin rights) may only onboard vendor (client) accounts, and
   // those are always linked to the sales user who created them.
-  if (!isSuperAdmin && !isAdmin && isSales) {
+  const isPureSalesCreator = !isSuperAdmin && !isAdmin && isSales;
+  if (isPureSalesCreator) {
     if (data.type !== "vendor") {
       throw new AppError(403, "Sales can only create vendor accounts");
     }
@@ -912,7 +986,14 @@ export async function registerUserBySuperAdmin(
   // Hub inheritance: accounts created by anyone below super_admin always land
   // in the creator's own hub (e.g. an Imadol admin's vendors/riders/admins are
   // all Imadol). Only a super_admin may choose a different hub.
-  if (!isSuperAdmin && superAdmin.admins?.location_id) {
+  //
+  // Sales is exempt: a sales rep's job is onboarding vendors wherever the
+  // vendor actually is, often nationwide - forcing every vendor they sign up
+  // into the sales rep's own hub would misprice and misroute it (destination
+  // pricing/branch attribution key off the vendor's real location). Sales
+  // already stays scoped to only the vendors they created (salesUserId
+  // above), regardless of which hub each of those vendors lands in.
+  if (!isSuperAdmin && !isPureSalesCreator && superAdmin.admins?.location_id) {
     data.locationId = superAdmin.admins.location_id;
   }
 
@@ -924,6 +1005,16 @@ export async function registerUserBySuperAdmin(
   }
 
   validateRegisterInput(data);
+
+  // No longer a manual toggle: every hub except Imadol gets the branch
+  // workspace automatically, computed once here so the transaction below just
+  // writes the value.
+  const adminBranchScoped = data.type === "admin"
+    ? await deriveBranchScoped(prisma, data.locationId ?? null)
+    : false;
+  // New vendors are assigned the current system default credit limit as their
+  // own stored value — a later default change applies to later vendors only.
+  const defaultCreditLimit = await getDefaultCreditLimit();
 
   const role = await prisma.roles.findUnique({
     where: { code: data.type },
@@ -962,6 +1053,7 @@ export async function registerUserBySuperAdmin(
         data: {
           user_id: user.id,
           location_id: data.locationId ?? null,
+          branch_scoped: adminBranchScoped,
           position: data.position ?? null,
           department: data.department ?? null,
           id_document_type: data.idDocumentType ?? null,
@@ -977,8 +1069,10 @@ export async function registerUserBySuperAdmin(
           current_address: data.currentAddress ?? null,
           experience: data.experience ?? null,
           citizenship_doc: data.citizenshipDocPath ?? null,
+          citizenship_doc_back: data.citizenshipDocBackPath ?? null,
           pan_doc: data.panDocPath ?? null,
           experience_letter_doc: data.experienceLetterDocPath ?? null,
+          agreement_doc: data.agreementDocPath ?? null,
           bank_name: data.bankName ?? null,
           bank_account_no: data.bankAccountNo ?? null,
           bank_account_holder: data.bankAccountHolder ?? null,
@@ -997,6 +1091,7 @@ export async function registerUserBySuperAdmin(
             documentsSubmitted: {
               idDocument: !!data.idDocumentPath,
               citizenshipDoc: !!data.citizenshipDocPath,
+              citizenshipDocBack: !!data.citizenshipDocBackPath,
               panDoc: !!data.panDocPath,
               experienceLetterDoc: !!data.experienceLetterDocPath,
             },
@@ -1032,6 +1127,8 @@ export async function registerUserBySuperAdmin(
           extra_weight_percent: parseRate(data.extraWeightPercent),
           return_inside_valley_percent: parseRate(data.returnInsideValleyPercent),
           return_outside_valley_percent: parseRate(data.returnOutsideValleyPercent),
+          branch_return_inside_valley_percent: parseRate(data.branchReturnInsideValleyPercent),
+          branch_return_outside_valley_percent: parseRate(data.branchReturnOutsideValleyPercent),
           branch_flat_inside_valley: parseRate(data.branchFlatInsideValley),
           branch_flat_outside_valley: parseRate(data.branchFlatOutsideValley),
           branch_flat_outside_ring_road: parseRate(data.branchFlatOutsideRingRoad),
@@ -1044,13 +1141,16 @@ export async function registerUserBySuperAdmin(
           registration_no: data.registrationNo ?? null,
           pan_vat_no: data.panVatNo ?? null,
           citizenship_doc: data.citizenshipDocPath ?? null,
+          citizenship_doc_back: data.citizenshipDocBackPath ?? null,
           pan_vat_doc: data.panVatDocPath ?? null,
           business_cert_doc: data.businessCertDocPath ?? null,
+          agreement_doc: data.agreementDocPath ?? null,
           bank_name: data.bankName ?? null,
           bank_account_no: data.bankAccountNo ?? null,
           bank_account_holder: data.bankAccountHolder ?? null,
           status: "active",
           joined_at: data.joinedAt ? new Date(data.joinedAt) : null,
+          credit_limit: defaultCreditLimit,
         },
       });
       await tx.audit_logs.create({
@@ -1063,6 +1163,7 @@ export async function registerUserBySuperAdmin(
             email: data.email,
             documentsSubmitted: {
               citizenshipDoc: !!data.citizenshipDocPath,
+              citizenshipDocBack: !!data.citizenshipDocBackPath,
               panVatDoc: !!data.panVatDocPath,
               businessCertDoc: !!data.businessCertDocPath,
             },
@@ -1085,9 +1186,11 @@ export async function registerUserBySuperAdmin(
         salary_commission: data.salaryCommission ?? null,
         pan: data.pan ?? null,
         citizenship_doc: data.citizenshipDocPath ?? null,
+        citizenship_doc_back: data.citizenshipDocBackPath ?? null,
         pan_vat_doc: data.panVatDocPath ?? null,
         licence_doc: data.licenceDocPath ?? null,
         bluebook_doc: data.bluebookDocPath ?? null,
+        agreement_doc: data.agreementDocPath ?? null,
         bank_name: data.bankName ?? null,
         bank_account_no: data.bankAccountNo ?? null,
         bank_account_holder: data.bankAccountHolder ?? null,
@@ -1106,6 +1209,7 @@ export async function registerUserBySuperAdmin(
           email: data.email,
           documentsSubmitted: {
             citizenshipDoc: !!data.citizenshipDocPath,
+            citizenshipDocBack: !!data.citizenshipDocBackPath,
             panVatDoc: !!data.panVatDocPath,
             licenceDoc: !!data.licenceDocPath,
             bluebookDoc: !!data.bluebookDocPath,
@@ -1154,18 +1258,32 @@ export async function loginUser(data: IuserLoginData) {
     // For vendor_staff and plain admins, surface their permission list so the
     // frontend can render only the nav items they're allowed to access.
     let staffPermissions: string[] | undefined;
+    // The admin's own assigned hub - lets the UI default a manifest/settlement
+    // "From" field to it instead of making the operator pick their own branch
+    // every time. Fetched for super_admin too (rare but harmless if set).
+    let locationId: string | null | undefined;
+    let locationName: string | null | undefined;
+    let branchScoped: boolean | undefined;
     if (roles.includes("vendor_staff")) {
       const staffRecord = await prisma.vendor_staff.findFirst({
         where: { user_id: user.id, deleted_at: null, enabled: true },
         select: { permissions: true },
       });
       staffPermissions = (staffRecord?.permissions ?? []) as string[];
-    } else if (roles.includes("admin") && !roles.includes("super_admin")) {
+    } else if (roles.includes("admin") || roles.includes("super_admin")) {
       const adminRecord = await prisma.admins.findFirst({
         where: { user_id: user.id },
-        select: { permissions: true },
+        select: {
+          permissions: true,
+          location_id: true,
+          branch_scoped: true,
+          locations: { select: { name: true } },
+        },
       });
-      staffPermissions = adminRecord?.permissions ?? [];
+      if (!roles.includes("super_admin")) staffPermissions = adminRecord?.permissions ?? [];
+      locationId = adminRecord?.location_id ?? null;
+      locationName = adminRecord?.locations?.name ?? null;
+      branchScoped = adminRecord?.branch_scoped ?? false;
     }
 
     const mustChangePassword = user.must_change_password;
@@ -1198,6 +1316,9 @@ export async function loginUser(data: IuserLoginData) {
         roles,
         mustChangePassword,
         ...(staffPermissions !== undefined && { permissions: staffPermissions }),
+        ...(locationId !== undefined && { locationId }),
+        ...(locationName !== undefined && { locationName }),
+        ...(branchScoped !== undefined && { branchScoped }),
       }
     }
 
@@ -1280,18 +1401,28 @@ export async function getCurrentUserProfile(userId: string) {
   // vendor they belong to (no direct relation, so look it up).
   let hubId = user.admins?.location_id ?? user.vendors?.location_id ?? null;
   let hubName = user.admins?.locations?.name ?? user.vendors?.locations?.name ?? null;
-  if (!hubId && user.vendor_staff?.vendor_id) {
+  // The vendor's registered company name - shown as the account's display
+  // name on the vendor's own profile in place of the owner's personal
+  // full_name (which stays untouched, since it's what the rest of the app's
+  // "welcome" greeting still reads). Staff have no `vendors` row of their
+  // own, so it's looked up the same way as their hub.
+  let businessName: string | null = user.vendors?.business_name ?? null;
+  if (user.vendor_staff?.vendor_id && (!hubId || !businessName)) {
     const staffVendor = await prisma.vendors.findUnique({
       where: { id: user.vendor_staff.vendor_id },
       include: { locations: true },
     });
-    hubId = staffVendor?.location_id ?? null;
-    hubName = staffVendor?.locations?.name ?? null;
+    if (!hubId) {
+      hubId = staffVendor?.location_id ?? null;
+      hubName = staffVendor?.locations?.name ?? null;
+    }
+    businessName = businessName ?? staffVendor?.business_name ?? null;
   }
 
   return {
     id: user.id,
     fullName: user.full_name,
+    businessName,
     email: user.email,
     phone: user.phone,
     status: user.status,
@@ -1301,6 +1432,7 @@ export async function getCurrentUserProfile(userId: string) {
     department: user.admins?.department ?? null,
     // Delegated permissions for plain admin accounts (super_admin holds all).
     permissions: user.admins?.permissions ?? [],
+    branchScoped: user.admins?.branch_scoped ?? false,
   };
 }
 

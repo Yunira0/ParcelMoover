@@ -3,7 +3,18 @@ import path from "path";
 import { AppError } from "../utils/AppError";
 import { encryptDocument } from "./documentEncryption";
 
-const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+export const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+// DOCX is only ever let through by an upload whose multer filter accepts it
+// (the registration agreement slot); every other upload still rejects it there.
+const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf", DOCX_MIME_TYPE]);
+
+// iPhones save camera photos as HEIC by default, and nothing downstream can
+// serve or render one - the /uploads route's Content-Type map only knows the
+// four types above, and most browsers can't display a raw HEIC in an <img>
+// tag anyway. Every HEIC/HEIF upload is converted to JPEG below before it's
+// ever encrypted and stored, so ALLOWED_MIME_TYPES itself never needs to grow.
+const HEIC_MIME_TYPES = new Set(["image/heic", "image/heic-sequence", "image/heif", "image/heif-sequence"]);
 
 // Uploaded document photos are often multi-MB camera shots. Anything above
 // this size gets recompressed to a bounded JPEG before encryption so the
@@ -13,6 +24,32 @@ const COMPRESS_THRESHOLD_BYTES = 300 * 1024;
 const COMPRESSIBLE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_DIMENSION_PX = 1600;
 const JPEG_QUALITY = 72;
+
+// Unconditional, unlike compressImageIfLarge below: a HEIC file can never be
+// stored as-is (nothing can serve or render one), so this always converts and
+// never silently falls back to the original bytes on failure.
+async function convertHeicToJpeg(file: Express.Multer.File, plaintext: Buffer): Promise<Buffer> {
+  const sharp = (await import("sharp")).default;
+  const converted = await sharp(plaintext)
+    // Bake in the EXIF orientation before metadata is stripped, or phone
+    // photos would display sideways.
+    .rotate()
+    .jpeg({ quality: 85, mozjpeg: true })
+    .toBuffer();
+
+  // Multer wrote the pre-conversion file with a .heic/.heif extension (see
+  // uploadExtension.ts) - move it to .jpg so the served Content-Type is right
+  // and so compressImageIfLarge below has an extension to replace.
+  const jpgPath = file.path.replace(/\.[^.]+$/, ".jpg");
+  if (jpgPath !== file.path) {
+    await unlink(file.path).catch(() => {});
+    file.path = jpgPath;
+    file.filename = path.basename(jpgPath);
+  }
+  file.mimetype = "image/jpeg";
+  file.size = converted.length;
+  return converted;
+}
 
 // Returns the (possibly compressed) bytes to store, updating the multer file
 // record in place when the compression converts the format — callers read
@@ -65,15 +102,26 @@ export async function secureUploadedFiles(files: Express.Multer.File[]): Promise
   const { fileTypeFromBuffer } = await import("file-type");
 
   for (const file of files) {
-    const plaintext = await readFile(file.path);
+    let plaintext: Buffer = await readFile(file.path);
     const detected = await fileTypeFromBuffer(plaintext);
+    const isHeic = Boolean(detected && HEIC_MIME_TYPES.has(detected.mime));
 
     // No detectable signature, or the signature doesn't match what the client
     // declared (and multer already filtered on) — treat as untrusted rather
     // than falling back to the client-supplied Content-Type.
-    if (!detected || detected.mime !== file.mimetype || !ALLOWED_MIME_TYPES.has(detected.mime)) {
+    if (!detected || detected.mime !== file.mimetype || !(ALLOWED_MIME_TYPES.has(detected.mime) || isHeic)) {
       await unlink(file.path).catch(() => {});
       throw new AppError(400, `"${file.originalname}" is not a valid ${describeExpected(file.mimetype)} file`);
+    }
+
+    if (isHeic) {
+      try {
+        plaintext = await convertHeicToJpeg(file, plaintext);
+      } catch (err) {
+        await unlink(file.path).catch(() => {});
+        console.error(`[uploads] Failed to convert HEIC file "${file.originalname}":`, err);
+        throw new AppError(400, `"${file.originalname}" could not be converted — please upload a JPG or PNG instead.`);
+      }
     }
 
     const output = await compressImageIfLarge(file, plaintext);
@@ -91,6 +139,11 @@ function describeExpected(mimetype: string): string {
       return "WebP";
     case "application/pdf":
       return "PDF";
+    case DOCX_MIME_TYPE:
+      return "DOCX";
+    case "image/heic":
+    case "image/heif":
+      return "HEIC";
     default:
       return "supported";
   }

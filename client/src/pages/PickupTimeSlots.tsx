@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
+import ConfirmDialog from '../components/ConfirmDialog';
 import {
   getAllPickupTimeSlots,
   createPickupTimeSlot,
@@ -43,6 +44,8 @@ const PickupTimeSlots: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
+  // The slot awaiting delete confirmation; null when the dialog is closed.
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [newStart, setNewStart] = useState('09:00');
   const [newEnd, setNewEnd] = useState('12:00');
   const [adding, setAdding] = useState(false);
@@ -85,14 +88,17 @@ const PickupTimeSlots: React.FC = () => {
     }
   };
 
-  const removeRow = async (id: string) => {
-    if (!window.confirm('Delete this pickup time slot?')) return;
+  const removeRow = async () => {
+    const id = deleteId;
+    if (!id) return;
     setSavingId(id);
     setError('');
     try {
       await deletePickupTimeSlot(id);
       setRows((prev) => prev.filter((r) => r.id !== id));
+      setDeleteId(null);
     } catch (err: any) {
+      setDeleteId(null);
       setError(err.response?.data?.message || 'Failed to delete that slot.');
     } finally {
       setSavingId(null);
@@ -123,7 +129,6 @@ const PickupTimeSlots: React.FC = () => {
     <div className="pickup-slots-page">
       <PageHeader
         title="Pickup Time Slots"
-        subtitle="Slots vendors can choose from when raising a pickup ticket. Each slot closes 1 hour before it ends; toggle a slot off instead of deleting it if it's only temporary."
       />
 
       {error && <p className="pickup-slots-error">{error}</p>}
@@ -178,7 +183,7 @@ const PickupTimeSlots: React.FC = () => {
                       variant="ghost"
                       size="icon"
                       disabled={savingId === row.id}
-                      onClick={() => removeRow(row.id)}
+                      onClick={() => setDeleteId(row.id)}
                       aria-label="Delete slot"
                     >
                       <Trash2 size={16} />
@@ -204,6 +209,17 @@ const PickupTimeSlots: React.FC = () => {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={deleteId !== null}
+        danger
+        busy={savingId !== null && savingId === deleteId}
+        title="Delete this pickup time slot?"
+        message="Vendors will no longer be able to choose it when booking a pickup."
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={removeRow}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   );
 };

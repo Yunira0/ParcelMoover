@@ -54,6 +54,15 @@ export interface CreateOrderInput {
    * assertVendorCanCreateOrder in billing.service.
    */
   overrideBillingBlock?: boolean;
+
+  /**
+   * Daraz-style voucher: either a previously claimed voucher's id (picked from
+   * "My Vouchers") or its code (e.g. MOVE100 — resolved to this vendor's claim
+   * at creation). Mutually exclusive. Delivery orders only; the discount shows
+   * as discount_amount against gross_delivery_charge.
+   */
+  voucherClaimId?: string;
+  voucherCode?: string;
 }
 
 export interface UpdateOrderDetailsInput {
@@ -82,6 +91,14 @@ export interface RedirectOrderInput {
   reason: string;
   /** Diversion fee added on top of the parcel's existing delivery charge. */
   redirectCharge: number;
+}
+
+/** Delivered parcel forwarded on to another destination, with a manual charge. */
+export interface ForwardOrderInput {
+  destinationLocationId: string;
+  /** Added on top of the parcel's existing delivery charge. */
+  forwardingCharge: number;
+  reason?: string;
 }
 
 export type ParcelStatus =
@@ -127,12 +144,25 @@ export type OrderSortField = (typeof ORDER_SORT_FIELDS)[number];
 export interface ListOrdersQuery {
   status?: ParcelStatus[];
   orderType?: OrderType;
+  // Paired together to express "status IN (...) OR (order_type = X AND status
+  // IN (Y))" in one query, instead of the caller running two separate sweeps
+  // and merging them. No-op unless both are set. See buildOrdersWhere.
+  secondaryOrderType?: OrderType;
+  secondaryStatus?: ParcelStatus[];
   search?: string;
   // Narrow the list to these vendors. Always intersected with the actor's own
   // scope, so it can only ever shrink what a vendor/sales actor already sees.
   vendorId?: string[];
+  // Narrow the list to parcels whose vendor is owned by this sales user
+  // (vendors.sales_user_id). Like `vendorId`, it's a separate AND condition
+  // intersected with the actor's own scope, never a way to widen it.
+  salesUserId?: string;
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId?: string;
+  // Rider Overview's filter: parcels this rider has ever handled, pickup or
+  // delivery leg (Rider Management's per-rider totals use the same rule) —
+  // broader than deliveryRiderId, which is only the current delivery leg.
+  riderId?: string;
   // Display-only page hint echoed back in meta; the actual position comes
   // from the keyset cursor, never from a row offset.
   page?: number;
@@ -150,12 +180,27 @@ export interface ListOrdersQuery {
   // dashboard card counts by delivered_at, so its drill-down needs the same
   // filter server-side to page and total consistently with the card.
   deliveredToday?: boolean;
+  // Only parcels that went through transit (ever moved to oov).
+  viaTransit?: boolean;
   // Which date the day range below is compared against. Defaults to the
   // created date, matching the UI's own default.
   dateField?: "createdAt" | "lastUpdatedAt";
   // Inclusive Nepal-local day bounds, "YYYY-MM-DD".
   dateFrom?: string;
   dateTo?: string;
+  /** Vendor settlement state used by Merchant Overview. */
+  settlement?: "settled" | "pending";
+  /** Which payee's statements `settlement` refers to (default vendor). */
+  settlementPayee?: "vendor" | "rider";
+  /** Internal-only branch scope. These are never accepted by GET /orders. */
+  originLocationIds?: string[];
+  destinationLocationIds?: string[];
+  branchSettlement?: "settled" | "pending" | "unassigned";
+  // Lists trashed (soft-deleted) parcels instead of live ones. Deliberately
+  // absent from listOrdersQuerySchema so ?trashed=true on the public list
+  // endpoint is stripped before it reaches the service — only the admin-only
+  // trash route sets it.
+  trashed?: boolean;
 }
 
 export interface BulkUpdateParcelStatusInput {
@@ -178,9 +223,21 @@ export interface BulkUpdateParcelStatusInput {
    * that schema would let anyone close someone else's manifest.
    */
   returnManifestId?: string;
+  /**
+   * The transit manifest driving this transition, set only by
+   * transitManifest.service - never accepted over HTTP.
+   *
+   * Same contract as returnManifestId above: bulkUpdateOrderStatusSchema
+   * deliberately omits it, and validate() strips unknown keys, so a client
+   * cannot inject it into PATCH /orders/bulk-status. Adding it to that schema
+   * would let anyone dispatch onto someone else's manifest.
+   */
+  transitManifestId?: string;
 }
 
 export interface BulkCreateOrderInput {
+  /** Confirm an identical batch imported in the previous hour. */
+  confirmDuplicateBatch?: boolean;
   /** Sender applied to every order that omits its own sender field. */
   defaultSender?: OrderPartyInput;
   orders: CreateOrderInput[];
@@ -205,7 +262,9 @@ export const STATUS_TRANSITIONS = {
   // returning to us (their "Sent to Vendor") - not reachable by an internal
   // rider, only by the NCM return action/reconcile sweep (see ncm.service.ts).
   dispatched:        ["arrived_at_branch", "follow_up"],
-  arrived_at_branch: ["ready_to_deliver", "follow_up"],
+  // "oov" is the relay hop: a parcel that reaches Imadol on its way to another
+  // branch is forwarded (see assertRelayForward).
+  arrived_at_branch: ["ready_to_deliver", "follow_up", "oov"],
   ready_to_deliver:  ["sent_for_delivery", "hold", "cancelled"],
   sent_for_delivery: ["delivered", "partially_delivered", "failed_delivery", "follow_up"],
   oov:               ["dispatched","hold", "follow_up"],
@@ -215,13 +274,19 @@ export const STATUS_TRANSITIONS = {
   // straight away (Return-to-Origin) when recovery is clearly hopeless.
   partially_delivered: ["ready_to_deliver", "follow_up", "ready_to_return"],
   failed_pickup:     ["pickup_ordered", "cancelled"],
-  // A failed delivery can be re-attempted, sent into NDR follow-up, or returned
-  // straight away (Return-to-Origin) when recovery is clearly hopeless.
-  failed_delivery:   ["ready_to_deliver", "follow_up", "ready_to_return"],
+  // A failed delivery can be re-attempted, sent into NDR follow-up, returned
+  // straight away (Return-to-Origin), or - like follow_up below - sent to
+  // transit directly, since Return Operations' Follow Up tab bundles both
+  // statuses and an operator shouldn't have to promote to follow_up first
+  // just to unlock Transit.
+  failed_delivery:   ["ready_to_deliver", "follow_up", "ready_to_return", "oov"],
   cancelled:         [],
   loss_and_damage:   ["ready_to_deliver","arrived_at_branch"],
   // ── Return-to-Origin (RTO) workflow ───────────────────────────────────────
-  follow_up:          ["ready_to_deliver", "ready_to_return"],
+  // "oov" here lets a branch that can't directly hand the parcel back to the
+  // vendor (it's not physically at the right hub) route it through the same
+  // transit system any other inter-branch parcel uses, instead of being stuck.
+  follow_up:          ["ready_to_deliver", "ready_to_return", "oov"],
   ready_to_return:    ["sent_to_vendor"],
   sent_to_vendor:     ["returned_to_vendor"],
   returned_to_vendor: [],

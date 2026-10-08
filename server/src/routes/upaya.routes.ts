@@ -24,6 +24,7 @@ const upayaReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("upaya-read"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -37,6 +38,7 @@ const upayaWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("upaya-write"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -50,6 +52,7 @@ const upayaWebhookLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("upaya-webhook"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? ""),
 });
@@ -98,8 +101,8 @@ upayaRouter.post(
 
 // GET /api/upaya/delivery-areas — every delivery area across Upaya's network
 // (live, Redis-cached 1h), flattened, for diagnostics (e.g. checking why a
-// destination didn't auto-match) — same "not called by the UI" status as
-// /locations above, now that handoff matches areas automatically.
+// destination didn't auto-match), and the Upaya area picker on Destination
+// settings, which pins a destination to one area.
 upayaRouter.get(
   "/delivery-areas",
   authMiddleware,

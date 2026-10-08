@@ -6,17 +6,15 @@ export const COD_SETTLEMENT_REQUEST_STATUSES = ["open", "in_progress", "settled"
 /** The states staff can move a live request into. */
 export const COD_SETTLEMENT_REQUEST_ACTIONS = ["in_progress", "settled", "rejected"] as const;
 
+// The note is all a vendor supplies. Bank details are read off their profile by
+// the service, never accepted from the body — see createCodSettlementRequest for
+// why. The three fields are still declared, and still ignored, so an older
+// client that posts them gets a request rather than a validation error; `strip`
+// (zod's default) drops them before they can reach anything.
 export const createCodSettlementRequestSchema = z.object({
-  bankName: z.string().trim().min(2, "Bank name is required").max(120),
-  // Kept as a string, not a number: account numbers carry meaningful leading
-  // zeros and are long enough to lose precision as a float.
-  accountNumber: z
-    .string()
-    .trim()
-    .min(5, "Account number is required")
-    .max(34, "Account number must not exceed 34 characters")
-    .regex(/^[0-9A-Za-z-]+$/, "Account number may only contain letters, numbers and dashes"),
-  accountName: z.string().trim().min(2, "Account holder name is required").max(120),
+  bankName: z.string().trim().max(120).optional(),
+  accountNumber: z.string().trim().max(34).optional(),
+  accountName: z.string().trim().max(120).optional(),
   note: z
     .string()
     .optional()

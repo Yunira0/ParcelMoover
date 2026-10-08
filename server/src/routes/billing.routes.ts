@@ -15,6 +15,8 @@ import {
   reviewVendorPaymentController,
   submitVendorPaymentController,
   updateBillingSettingsController,
+  updateBranchCreditLimitController,
+  updateVendorCreditLimitController,
   uploadPaymentQrController,
 } from "../controllers/billing.controller";
 
@@ -30,6 +32,7 @@ const billingReadLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("billing-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -43,6 +46,7 @@ const paymentSubmitLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("billing-payment-submit"),
   keyGenerator: actorOrIpKey,
 });
@@ -54,6 +58,7 @@ const billingWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("billing-write"),
   keyGenerator: actorOrIpKey,
 });
@@ -63,7 +68,7 @@ const billingWriteLimiter = rateLimit({
 billingRouter.get(
   "/status",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   billingReadLimiter,
   getBillingStatusController,
@@ -73,7 +78,7 @@ billingRouter.get(
 billingRouter.get(
   "/payments",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff"),
   requireStaffPermission("FINANCE_ACCESS"),
   billingReadLimiter,
   listVendorPaymentsController,
@@ -97,7 +102,7 @@ billingRouter.patch(
   "/payments/:id/review",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   billingWriteLimiter,
   reviewVendorPaymentController,
 );
@@ -108,7 +113,7 @@ billingRouter.patch(
 billingRouter.get(
   "/qr",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "sales"),
+  authorizeRoles("super_admin", "accountant", "admin", "vendor", "vendor_staff", "sales"),
   requireStaffPermission("FINANCE_ACCESS"),
   billingReadLimiter,
   getPaymentQrFileController,
@@ -118,7 +123,7 @@ billingRouter.get(
 billingRouter.get(
   "/settings",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   billingReadLimiter,
   getBillingSettingsController,
 );
@@ -129,7 +134,7 @@ billingRouter.patch(
   "/settings",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   billingWriteLimiter,
   updateBillingSettingsController,
 );
@@ -139,7 +144,7 @@ billingRouter.post(
   "/settings/qr",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin"),
+  authorizeRoles("super_admin", "accountant"),
   billingWriteLimiter,
   paymentQrUpload,
   uploadPaymentQrController,
@@ -150,9 +155,30 @@ billingRouter.post(
 billingRouter.get(
   "/vendors",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   billingReadLimiter,
   listVendorBalancesController,
+);
+
+// PATCH /api/billing/vendors/:vendorId/credit-limit — override one vendor's
+// credit limit. Super_admin only, like the thresholds: this decides who can
+// trade.
+billingRouter.patch(
+  "/branches/:branchId/credit-limit",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "accountant"),
+  billingWriteLimiter,
+  updateBranchCreditLimitController,
+);
+
+billingRouter.patch(
+  "/vendors/:vendorId/credit-limit",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "accountant"),
+  billingWriteLimiter,
+  updateVendorCreditLimitController,
 );
 
 export default billingRouter;

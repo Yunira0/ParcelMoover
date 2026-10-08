@@ -61,6 +61,9 @@ export interface CreateOrderInput {
   vendorId?: string;
   /** Set true to bypass the same-day duplicate warning after the user confirms. */
   confirmDuplicate?: boolean;
+  /** Claimed voucher id (from "My Vouchers") or its code — mutually exclusive. */
+  voucherClaimId?: string;
+  voucherCode?: string;
 }
 
 export interface Order {
@@ -85,12 +88,19 @@ export interface Order {
   destinationLocationId?: string | null;
   /** "inside" | "outside" | null — the destination location's valley classification. */
   destinationValley?: string | null;
+  /** Arrived-at-origin parcels only: destination is in the arrival branch's
+   *  coverage, so it goes to Ready to Deliver rather than Transit. */
+  skipsTransit?: boolean;
   pieces: number;
   weightKg?: number;
   attemptCount: number;
   codAmount: number;
   itemValue: number;
   deliveryCharge: number;
+  grossDeliveryCharge?: number;
+  discountAmount?: number;
+  /** Attached shipping voucher, if any (order detail only). */
+  voucher?: { code: string; title: string } | null;
   /** Cash actually collected from the receiver. 0 until delivered, and below codAmount on a partial. */
   collectedAmount: number;
   packageType?: string;
@@ -103,13 +113,22 @@ export interface Order {
   labelWidthMm: number;
   labelHeightMm: number;
   riderName?: string;
+  /** Which 3PL (if any) this order was API-handed-off to — null once carried by our own rider or not yet handed off. */
+  carrierCode?: 'ncm' | 'upaya' | null;
+  carrierLabel?: string | null;
   remarks?: string;
   lastUpdatedBy?: string;
   lastUpdatedAt?: string;
   createdAt: string;
   createdAtRaw: string;
-  /** AD "YYYY-MM-DD" of the first "arrived at origin" status change, or '' if never. */
+  /** ISO timestamp of the first "arrived at origin" status change, or '' if never. */
   arrivedAtOrigin?: string;
+  /**
+   * ISO timestamp of the moment the parcel first entered each status it has
+   * held, keyed by status. Only sent for export requests (withArrival); a
+   * status the parcel never reached is simply absent.
+   */
+  statusTimestamps?: Partial<Record<ParcelStatus, string>>;
   /** AD "YYYY-MM-DD" the parcel was delivered, or '' if not delivered. */
   deliveredAt?: string;
   /** Vendor-declared at creation: this shipment may be accepted in part. */
@@ -119,6 +138,8 @@ export interface Order {
   partialCodCollected?: number | null;
   /** Set only on an auto-created return leg — points back at its source exchange order. */
   sourceOrderId?: string | null;
+  /** The stage the parcel was in right before it was cancelled. Only set while status is still 'cancelled'. */
+  cancelledFromStatus?: ParcelStatus;
 }
 
 export const ORDER_SORT_FIELDS = ['createdAt', 'codAmount', 'deliveryCharge', 'trackingId', 'status'] as const;
@@ -127,11 +148,28 @@ export type OrderSortField = (typeof ORDER_SORT_FIELDS)[number];
 export interface ListOrdersParams {
   status?: ParcelStatus[];
   orderType?: OrderType;
+  /** Paired together: "status IN (...) OR (order_type = X AND status IN (Y))"
+   *  in one query - e.g. Return Operations' ready_to_return tab, which holds
+   *  both a true RTO parcel (by status) and a reverse-shipment order still
+   *  mid-delivery (by orderType + a different status). No-op alone. */
+  secondaryOrderType?: OrderType;
+  secondaryStatus?: ParcelStatus[];
   search?: string;
   /** Narrow to these vendors. Server intersects it with the caller's own scope. */
   vendorId?: string[];
+  /** Narrow to parcels whose vendor is assigned to this sales user (an admin in
+   *  the Sales department). Joined through vendors.sales_user_id server-side. */
+  salesUserId?: string;
   /** Narrows the list to parcels carried by one delivery rider. */
   deliveryRiderId?: string;
+  /** Rider Overview's filter: parcels this rider has ever handled, pickup or
+   *  delivery leg — broader than deliveryRiderId, which is only the current
+   *  delivery leg. */
+  riderId?: string;
+  /** Origin/destination hub filters, by location id - matches OrderFilterOptions'
+   *  origins/destinations, which are keyed by id for exactly this reason. */
+  originLocationId?: string;
+  destinationLocationId?: string;
   /** Display-only page hint echoed back in meta; position comes from the cursor. */
   page?: number;
   pageSize?: number;
@@ -145,11 +183,17 @@ export interface ListOrdersParams {
   /** Narrow to parcels delivered since local midnight, as the dashboard's
    *  "Delivered today" card counts them. */
   deliveredToday?: boolean;
+  /** Only parcels that went through transit (ever moved to oov). */
+  viaTransit?: boolean;
   /** Which date `dateFrom`/`dateTo` are compared against. */
   dateField?: 'createdAt' | 'lastUpdatedAt';
   /** Inclusive Nepal-local day bounds, "YYYY-MM-DD". */
   dateFrom?: string;
   dateTo?: string;
+  /** Merchant overview settlement filter — settled = delivered parcels in a settled settlement, pending = delivered not yet settled */
+  settlement?: 'settled' | 'pending';
+  /** Whose statements `settlement` refers to; defaults to the vendor's. */
+  settlementPayee?: 'vendor' | 'rider';
 }
 
 export interface OrdersPageMeta {
@@ -206,6 +250,25 @@ export interface SlaStatusBreach {
   count: number;
 }
 
+/** One side of an SLA group's valley split: its total and per-status breakdown. */
+export interface SlaValleySide {
+  count: number;
+  breaches: SlaStatusBreach[];
+}
+
+/** An SLA group split by valley. Inside valley covers both sides of the ring
+ *  road; every other destination - including one with no valley configured -
+ *  counts as outside. */
+export interface SlaValleySplit {
+  insideValley: SlaValleySide;
+  outsideValley: SlaValleySide;
+}
+
+export const EMPTY_VALLEY_SPLIT: SlaValleySplit = {
+  insideValley: { count: 0, breaches: [] },
+  outsideValley: { count: 0, breaches: [] },
+};
+
 export interface DashboardSummary {
   overview: {
     totalOrders: number;
@@ -252,6 +315,11 @@ export interface DashboardSummary {
     overdueTransit: number;
     overdueRemarks: number;
     overdueReturn: number;
+    /** Delivered parcels whose COD is not yet on a branch settlement, past the
+     *  branch COD submission SLA — with the money they represent. */
+    overdueBranchCod: number;
+    overdueBranchCodAmount: number;
+    branchCodHours: number | null;
     /** Representative SLA threshold (hours) per group — null if unset. */
     pickupHours: number | null;
     deliveryHours: number | null;
@@ -263,13 +331,17 @@ export interface DashboardSummary {
     deliveryBreaches: SlaStatusBreach[];
     transitBreaches: SlaStatusBreach[];
     returnBreaches: SlaStatusBreach[];
+    /** Delivery breaches split by the destination's valley. Delivery only:
+     *  pickup stays a single count, since a pickup is worked by the origin
+     *  branch's own riders and the split says nothing there. */
+    deliveryByValley: SlaValleySplit;
   };
   codSettlement: {
     totalCod: number;
     settledCod: number;
     pendingCod: number;
-    /** codFromPmRider + codFromNcm (+ future 3PLs) - the umbrella "COD to
-     *  collect from riders" figure; carriers below break it down. */
+    /** codFromPmRider + codFromNcm + codFromUpaya + codFromBranches - the
+     *  umbrella "COD still to collect" figure; the lines below break it down. */
     codFromRiders: number;
     /** Cash a ParcelMoover rider has collected but not yet remitted to the office. */
     codFromPmRider: number;
@@ -277,6 +349,8 @@ export interface DashboardSummary {
     codFromNcm: number;
     /** Cash Upaya's placeholder rider is holding, not yet remitted to the office. */
     codFromUpaya: number;
+    /** Cash riders have handed to a branch that the branch has not yet passed on to head office. */
+    codFromBranches: number;
     /** Delivery charge owed on orders whose COD hasn't been settled yet. */
     pendingDeliveryCharge: number;
     /** Total delivery charges (office cut) on the delivered orders in the COD window. */
@@ -309,13 +383,26 @@ export const subscribeToOrderStatusChanged = (handler: () => void) => {
   return () => window.removeEventListener(ORDER_STATUS_CHANGED_EVENT, handler);
 };
 
+// Past this, a `search` batch (comma-joined tracking ids from a scanner) risks
+// tripping a GET request's URL-length ceiling (browsers, proxies, load
+// balancers) - route it through POST /orders/search instead, which carries
+// the identical filters in the body with no such limit. Small typed searches
+// stay on GET so normal listing keeps behaving exactly as before.
+const SEARCH_POST_THRESHOLD = 1500;
+
 export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal): Promise<OrdersListResponse> => {
   const query: Record<string, string> = {};
   if (params?.status?.length) query.status = params.status.join(',');
   if (params?.orderType) query.orderType = params.orderType;
+  if (params?.secondaryOrderType) query.secondaryOrderType = params.secondaryOrderType;
+  if (params?.secondaryStatus?.length) query.secondaryStatus = params.secondaryStatus.join(',');
   if (params?.vendorId?.length) query.vendorId = params.vendorId.join(',');
+  if (params?.salesUserId) query.salesUserId = params.salesUserId;
   if (params?.search) query.search = params.search;
   if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
+  if (params?.riderId) query.riderId = params.riderId;
+  if (params?.originLocationId) query.originLocationId = params.originLocationId;
+  if (params?.destinationLocationId) query.destinationLocationId = params.destinationLocationId;
   if (params?.page !== undefined) query.page = String(params.page);
   if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
   if (params?.cursor !== undefined) query.cursor = params.cursor;
@@ -324,17 +411,68 @@ export const getOrders = async (params?: ListOrdersParams, signal?: AbortSignal)
   if (params?.sortDir) query.sortDir = params.sortDir;
   if (params?.withArrival) query.withArrival = 'true';
   if (params?.deliveredToday) query.deliveredToday = 'true';
+  if (params?.viaTransit) query.viaTransit = 'true';
+  if (params?.dateField) query.dateField = params.dateField;
+  if (params?.dateFrom) query.dateFrom = params.dateFrom;
+  if (params?.dateTo) query.dateTo = params.dateTo;
+  if (params?.settlement) query.settlement = params.settlement;
+  if (params?.settlementPayee) query.settlementPayee = params.settlementPayee;
+
+  const response = (params?.search?.length ?? 0) > SEARCH_POST_THRESHOLD
+    ? await api.post('/orders/search', query, { signal })
+    : await api.get('/orders', { params: query, signal });
+  return response.data;
+};
+
+/** Per-status totals behind the orders list page's tab badges. */
+export type OrderCountsByStatus = Record<ParcelStatus, number>;
+
+// Every filter the list pushes down except `status` — the counts describe the
+// same set of orders the table does, broken down per status rather than paged.
+export type OrderCountsByStatusParams = Pick<
+  ListOrdersParams,
+  | 'orderType'
+  | 'vendorId'
+  | 'salesUserId'
+  | 'search'
+  | 'deliveryRiderId'
+  | 'originLocationId'
+  | 'destinationLocationId'
+  | 'deliveredToday'
+  | 'dateField'
+  | 'dateFrom'
+  | 'dateTo'
+>;
+
+// Deliberately not derived from getOrders: that endpoint returns one keyset
+// page and its meta.total only ever describes the active tab, so the other
+// tabs' badges can't be read off it.
+export const getOrderCountsByStatus = async (
+  params?: OrderCountsByStatusParams,
+  signal?: AbortSignal,
+): Promise<{ success: boolean; data: OrderCountsByStatus }> => {
+  const query: Record<string, string> = {};
+  if (params?.orderType) query.orderType = params.orderType;
+  if (params?.vendorId?.length) query.vendorId = params.vendorId.join(',');
+  if (params?.salesUserId) query.salesUserId = params.salesUserId;
+  if (params?.search) query.search = params.search;
+  if (params?.deliveryRiderId) query.deliveryRiderId = params.deliveryRiderId;
+  if (params?.originLocationId) query.originLocationId = params.originLocationId;
+  if (params?.destinationLocationId) query.destinationLocationId = params.destinationLocationId;
+  if (params?.deliveredToday) query.deliveredToday = 'true';
   if (params?.dateField) query.dateField = params.dateField;
   if (params?.dateFrom) query.dateFrom = params.dateFrom;
   if (params?.dateTo) query.dateTo = params.dateTo;
 
-  const response = await api.get('/orders', { params: query, signal });
+  const response = await api.get('/orders/count-by-status', { params: query, signal });
   return response.data;
 };
 
 export interface OrderFilterOptions {
-  origins: string[];
-  destinations: string[];
+  // Keyed by location id, not just a name string - two different hubs can
+  // share a display name (see order.service.ts's getOrderFilterOptions).
+  origins: { id: string; name: string }[];
+  destinations: { id: string; name: string }[];
   riders: string[];
 }
 
@@ -388,6 +526,12 @@ export const getDashboardSummary = async (trendDays: 7 | 30 = 7) => {
   return response.data;
 };
 
+/** Just the COD Settlement card's figures (the accountant's finance overview). */
+export const getCodSettlementSummary = async (): Promise<DashboardSummary['codSettlement']> => {
+  const response = await api.get('/orders/cod-settlement-summary');
+  return response.data.data;
+};
+
 // ── COD settlement drill-down ───────────────────────────────────────────────
 // One bucket per line of the COD Settlement dashboard card. Carrier buckets
 // ('pm-rider', 'ncm', 'upaya') sit under the "COD to collect from riders"
@@ -400,6 +544,7 @@ export const COD_DETAIL_BUCKETS = [
   'pm-rider',
   'ncm',
   'upaya',
+  'branches',
   'delivery-charge',
 ] as const;
 export type CodDetailBucket = (typeof COD_DETAIL_BUCKETS)[number];
@@ -436,14 +581,17 @@ export const getStatusCounts = async (
   groups: Record<string, string[]>,
   filters?: { deliveryRiderId?: string; vendorId?: string[]; search?: string },
 ): Promise<Record<string, number>> => {
-  const response = await api.get('/orders/status-counts', {
-    params: {
-      groups: JSON.stringify(groups),
-      ...(filters?.deliveryRiderId ? { deliveryRiderId: filters.deliveryRiderId } : {}),
-      ...(filters?.vendorId?.length ? { vendorId: filters.vendorId.join(',') } : {}),
-      ...(filters?.search ? { search: filters.search } : {}),
-    },
-  });
+  const params = {
+    groups: JSON.stringify(groups),
+    ...(filters?.deliveryRiderId ? { deliveryRiderId: filters.deliveryRiderId } : {}),
+    ...(filters?.vendorId?.length ? { vendorId: filters.vendorId.join(',') } : {}),
+    ...(filters?.search ? { search: filters.search } : {}),
+  };
+  // Same URL-length concern as getOrders - a long scan-batch search goes via
+  // POST so the tab badges can keep up with a big batch instead of erroring.
+  const response = (filters?.search?.length ?? 0) > SEARCH_POST_THRESHOLD
+    ? await api.post('/orders/status-counts', params)
+    : await api.get('/orders/status-counts', { params });
   return response.data.data;
 };
 
@@ -458,6 +606,7 @@ export interface RunSheetParcel {
   status: ParcelStatus;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone?: string;
   address: string;
   destination: string;
   pieces: number;
@@ -544,6 +693,13 @@ export interface OrderStatusHistoryEntry {
   oldStatus: ParcelStatus | null;
   newStatus: ParcelStatus;
   remarks: string;
+  /** Staff only: the 3PL this handoff entry went to. */
+  carrier?: 'NCM' | 'Upaya' | null;
+  /**
+   * The rider tied to this milestone: the pickup rider for "rider_assigned",
+   * the delivery rider for "sent_for_delivery". null for every other entry.
+   */
+  riderName: string | null;
   changedBy: string;
   /** 'user' for staff-visible attribution, 'branch' when the viewer only gets a branch/company name, 'rider' for rider-driven milestones. */
   changedByType: 'user' | 'branch' | 'rider';
@@ -563,6 +719,8 @@ export interface PriceLogEntry {
 /** One destination change made because the customer moved after booking. */
 export interface RedirectLogEntry {
   id: string;
+  /** "redirect" = customer moved before delivery; "forward" = delivered parcel forwarded with a forwarding charge. */
+  kind: 'redirect' | 'forward';
   fromBranch: string | null;
   toBranch: string;
   fromAddress: string | null;
@@ -669,6 +827,23 @@ export const redirectOrder = async (orderId: string, data: RedirectOrderInput) =
   return response.data;
 };
 
+export interface ForwardOrderInput {
+  destinationLocationId: string;
+  /** Manual forwarding charge added on top of the existing delivery charge. */
+  forwardingCharge: number;
+  reason?: string;
+}
+
+/** Admin-only: a delivered parcel was forwarded on to another destination. Status stays delivered. */
+export const forwardOrder = async (orderId: string, data: ForwardOrderInput) => {
+  const idempotencyKey = uuidv4();
+  const response = await api.post(`/orders/${orderId}/forward`, data, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
 export const updateOrderStatus = async (
   orderId: string,
   status: ParcelStatus,
@@ -702,6 +877,7 @@ export interface BulkCreateOrderRow {
   serviceType?: ServiceType;
   packageType?: string;
   deliveryInstruction?: string;
+  remarks?: string;
   originLocationId?: string;
   destinationLocationId?: string;
   /** Set by admin/super_admin/sales when bulk-importing on behalf of a vendor. */
@@ -711,6 +887,8 @@ export interface BulkCreateOrderRow {
 export interface BulkCreateOrderInput {
   defaultSender?: { name: string; phone: string; address?: string };
   orders: BulkCreateOrderRow[];
+  /** Resend with this after the user confirms the "already imported?" prompt. */
+  confirmDuplicateBatch?: boolean;
 }
 
 export interface BulkCreateResult {
@@ -752,5 +930,61 @@ export const bulkUpdateOrderStatus = async (
     { headers: { 'Idempotency-Key': idempotencyKey } },
   );
   notifyOrderStatusChanged();
+  return response.data;
+};
+
+// ── Trash (soft-deleted orders) ──────────────────────────────────────────────
+// Admin-only on the server. Trashed orders are excluded from every other list,
+// so the only way back to one is getTrashedOrders below.
+
+/** Admin-only: soft-delete an order — it leaves every list and lands in the trash. */
+export const trashOrder = async (orderId: string) => {
+  const response = await api.post(`/orders/${orderId}/trash`);
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+/** The stages a trashed order can be restored into (server: TRASH_RESTORE_STAGES). */
+export const TRASH_RESTORE_STAGES = ['pickup_ordered'] as const;
+export type TrashRestoreStage = (typeof TRASH_RESTORE_STAGES)[number];
+
+/**
+ * Admin-only: put a trashed order back into the live lists at `restoreTo`.
+ *
+ * This is the only path allowed past the server's STATUS_TRANSITIONS, so it can
+ * un-cancel an order — which nothing else in the app can do.
+ */
+export const restoreOrder = async (orderId: string, restoreTo: TrashRestoreStage) => {
+  const response = await api.post(`/orders/${orderId}/restore`, { restoreTo });
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+/**
+ * Admin-only and unrecoverable. The server refuses with 409 for any order
+ * carrying accounting or COD records, so callers should surface the message
+ * rather than assuming success.
+ */
+export const deleteOrderPermanently = async (orderId: string) => {
+  const response = await api.delete(`/orders/${orderId}/permanent`);
+  notifyOrderStatusChanged();
+  return response.data;
+};
+
+/** Admin-only: the trash listing. Same row shape and paging as getOrders. */
+export const getTrashedOrders = async (
+  params?: ListOrdersParams,
+  signal?: AbortSignal,
+): Promise<OrdersListResponse> => {
+  const query: Record<string, string> = {};
+  if (params?.search) query.search = params.search;
+  if (params?.page !== undefined) query.page = String(params.page);
+  if (params?.pageSize !== undefined) query.pageSize = String(params.pageSize);
+  if (params?.cursor !== undefined) query.cursor = params.cursor;
+  if (params?.dir !== undefined) query.dir = params.dir;
+  if (params?.sortBy) query.sortBy = params.sortBy;
+  if (params?.sortDir) query.sortDir = params.sortDir;
+
+  const response = await api.get('/orders/trash', { params: query, signal });
   return response.data;
 };

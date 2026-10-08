@@ -12,6 +12,7 @@ import {
   listNcmBranchesController,
   markNcmReturnController,
   ncmHandoffController,
+  ncmMatchPreviewController,
   ncmReconcileController,
   ncmWebhookController,
   registerNcmWebhookController,
@@ -27,6 +28,7 @@ const ncmReadLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("ncm-read"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -40,6 +42,7 @@ const ncmWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("ncm-write"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -53,6 +56,7 @@ const ncmWebhookLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("ncm-webhook"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? ""),
 });
@@ -67,7 +71,17 @@ ncmRouter.get(
   listNcmBranchesController,
 );
 
-// POST /api/ncm/handoff — create NCM orders for oov parcels (OOV page "Via 3PL").
+// GET /api/ncm/match-preview — debug why a destination maps to a branch (or not)
+// e.g. /api/ncm/match-preview?destination=Jhiljhile&district=Jhapa  or  ?locationId=<uuid>
+ncmRouter.get(
+  "/match-preview",
+  authMiddleware,
+  authorizeRoles("super_admin", "admin"),
+  ncmReadLimiter,
+  ncmMatchPreviewController,
+);
+
+// POST /api/ncm/handoff — create NCM orders for oov parcels (OOV page "Via 3PL (NCM)").
 ncmRouter.post(
   "/handoff",
   authMiddleware,

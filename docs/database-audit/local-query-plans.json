@@ -1,0 +1,847 @@
+{
+  "capturedAt": "2026-10-06T06:41:08.231Z",
+  "scope": "Local development database; read-only",
+  "counts": {
+    "parcels": 113,
+    "parcel_status_history": 523,
+    "settlements": 17,
+    "settlement_items": 23,
+    "notifications": 62,
+    "locations": 6097
+  },
+  "plans": {
+    "vendorOrderPage": {
+      "queryShape": "SELECT id,order_number FROM parcels WHERE deleted_at IS NULL AND vendor_id=$1::uuid ORDER BY order_number DESC,id DESC LIMIT 21",
+      "sampleCount": 1,
+      "plan": {
+        "Plan": {
+          "Node Type": "Limit",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 0.14,
+          "Total Cost": 11.41,
+          "Plan Rows": 21,
+          "Plan Width": 20,
+          "Actual Startup Time": 0.027,
+          "Actual Total Time": 0.06,
+          "Actual Rows": 21,
+          "Actual Loops": 1,
+          "Disabled": false,
+          "Shared Hit Blocks": 35,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Index Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "idx_parcels_order_number_id",
+              "Relation Name": "parcels",
+              "Alias": "parcels",
+              "Startup Cost": 0.14,
+              "Total Cost": 47.9,
+              "Plan Rows": 89,
+              "Plan Width": 20,
+              "Actual Startup Time": 0.026,
+              "Actual Total Time": 0.056,
+              "Actual Rows": 21,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Rows Removed by Filter": 2,
+              "Index Searches": 1,
+              "Shared Hit Blocks": 35,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 12,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.217,
+        "Triggers": [],
+        "Execution Time": 0.108
+      }
+    },
+    "exactOrderCount": {
+      "queryShape": "SELECT count(*) FROM parcels WHERE deleted_at IS NULL AND vendor_id=$1::uuid",
+      "sampleCount": 1,
+      "plan": {
+        "Plan": {
+          "Node Type": "Aggregate",
+          "Strategy": "Plain",
+          "Partial Mode": "Simple",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 11.63,
+          "Total Cost": 11.64,
+          "Plan Rows": 1,
+          "Plan Width": 8,
+          "Actual Startup Time": 0.098,
+          "Actual Total Time": 0.098,
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Disabled": false,
+          "Shared Hit Blocks": 10,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Seq Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Relation Name": "parcels",
+              "Alias": "parcels",
+              "Startup Cost": 0,
+              "Total Cost": 11.41,
+              "Plan Rows": 89,
+              "Plan Width": 0,
+              "Actual Startup Time": 0.013,
+              "Actual Total Time": 0.083,
+              "Actual Rows": 89,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Rows Removed by Filter": 24,
+              "Shared Hit Blocks": 10,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 0,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.113,
+        "Triggers": [],
+        "Execution Time": 0.113
+      }
+    },
+    "returnHistory": {
+      "queryShape": "SELECT count(DISTINCT h.parcel_id) FROM parcel_status_history h JOIN parcels p ON p.id=h.parcel_id WHERE h.new_status::text='returned_to_vendor' AND h.created_at >= $1::timestamptz AND p.deleted_at IS NULL",
+      "sampleCount": 1,
+      "plan": {
+        "Plan": {
+          "Node Type": "Aggregate",
+          "Strategy": "Plain",
+          "Partial Mode": "Simple",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 31.48,
+          "Total Cost": 31.49,
+          "Plan Rows": 1,
+          "Plan Width": 8,
+          "Actual Startup Time": 0.215,
+          "Actual Total Time": 0.216,
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Disabled": false,
+          "Shared Hit Blocks": 24,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Sort",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 31.47,
+              "Total Cost": 31.48,
+              "Plan Rows": 1,
+              "Plan Width": 16,
+              "Actual Startup Time": 0.213,
+              "Actual Total Time": 0.214,
+              "Actual Rows": 0,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Sort Key": [
+                "h.parcel_id"
+              ],
+              "Sort Method": "quicksort",
+              "Sort Space Used": 25,
+              "Sort Space Type": "Memory",
+              "Shared Hit Blocks": 24,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Nested Loop",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Join Type": "Inner",
+                  "Startup Cost": 0.14,
+                  "Total Cost": 31.46,
+                  "Plan Rows": 1,
+                  "Plan Width": 16,
+                  "Actual Startup Time": 0.198,
+                  "Actual Total Time": 0.198,
+                  "Actual Rows": 0,
+                  "Actual Loops": 1,
+                  "Disabled": false,
+                  "Inner Unique": true,
+                  "Shared Hit Blocks": 21,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Plans": [
+                    {
+                      "Node Type": "Seq Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Relation Name": "parcel_status_history",
+                      "Alias": "h",
+                      "Startup Cost": 0,
+                      "Total Cost": 23.16,
+                      "Plan Rows": 1,
+                      "Plan Width": 16,
+                      "Actual Startup Time": 0.197,
+                      "Actual Total Time": 0.197,
+                      "Actual Rows": 0,
+                      "Actual Loops": 1,
+                      "Disabled": false,
+                      "Rows Removed by Filter": 523,
+                      "Shared Hit Blocks": 21,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    },
+                    {
+                      "Node Type": "Index Scan",
+                      "Parent Relationship": "Inner",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Scan Direction": "Forward",
+                      "Index Name": "parcels_pkey",
+                      "Relation Name": "parcels",
+                      "Alias": "p",
+                      "Startup Cost": 0.14,
+                      "Total Cost": 8.16,
+                      "Plan Rows": 1,
+                      "Plan Width": 16,
+                      "Actual Startup Time": 0,
+                      "Actual Total Time": 0,
+                      "Actual Rows": 0,
+                      "Actual Loops": 0,
+                      "Disabled": false,
+                      "Rows Removed by Index Recheck": 0,
+                      "Rows Removed by Filter": 0,
+                      "Index Searches": 0,
+                      "Shared Hit Blocks": 0,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 51,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.75,
+        "Triggers": [],
+        "Execution Time": 0.241
+      }
+    },
+    "latestVendorSettlement": {
+      "queryShape": "SELECT amount,payable_amount,settlement_date,created_at FROM settlements WHERE status='settled' AND vendor_id=$1::uuid ORDER BY settlement_date DESC,created_at DESC LIMIT 1",
+      "sampleCount": 1,
+      "plan": {
+        "Plan": {
+          "Node Type": "Limit",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 1.22,
+          "Total Cost": 1.22,
+          "Plan Rows": 1,
+          "Plan Width": 22,
+          "Actual Startup Time": 0.034,
+          "Actual Total Time": 0.035,
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Disabled": false,
+          "Shared Hit Blocks": 7,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Sort",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 1.22,
+              "Total Cost": 1.22,
+              "Plan Rows": 1,
+              "Plan Width": 22,
+              "Actual Startup Time": 0.034,
+              "Actual Total Time": 0.034,
+              "Actual Rows": 1,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Sort Key": [
+                "settlement_date DESC",
+                "created_at DESC"
+              ],
+              "Sort Method": "quicksort",
+              "Sort Space Used": 25,
+              "Sort Space Type": "Memory",
+              "Shared Hit Blocks": 7,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Seq Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Relation Name": "settlements",
+                  "Alias": "settlements",
+                  "Startup Cost": 0,
+                  "Total Cost": 1.21,
+                  "Plan Rows": 1,
+                  "Plan Width": 22,
+                  "Actual Startup Time": 0.014,
+                  "Actual Total Time": 0.015,
+                  "Actual Rows": 2,
+                  "Actual Loops": 1,
+                  "Disabled": false,
+                  "Rows Removed by Filter": 15,
+                  "Shared Hit Blocks": 1,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                }
+              ]
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 31,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.137,
+        "Triggers": [],
+        "Execution Time": 0.046
+      }
+    },
+    "vendorSettlementPage": {
+      "queryShape": "SELECT id FROM settlements WHERE payee_type='vendor' AND vendor_id=$1::uuid ORDER BY created_at DESC LIMIT 20",
+      "sampleCount": 1,
+      "plan": {
+        "Plan": {
+          "Node Type": "Limit",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 1.22,
+          "Total Cost": 1.22,
+          "Plan Rows": 1,
+          "Plan Width": 24,
+          "Actual Startup Time": 0.008,
+          "Actual Total Time": 0.009,
+          "Actual Rows": 6,
+          "Actual Loops": 1,
+          "Disabled": false,
+          "Shared Hit Blocks": 1,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Sort",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 1.22,
+              "Total Cost": 1.22,
+              "Plan Rows": 1,
+              "Plan Width": 24,
+              "Actual Startup Time": 0.008,
+              "Actual Total Time": 0.008,
+              "Actual Rows": 6,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Sort Key": [
+                "created_at DESC"
+              ],
+              "Sort Method": "quicksort",
+              "Sort Space Used": 25,
+              "Sort Space Type": "Memory",
+              "Shared Hit Blocks": 1,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Seq Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Relation Name": "settlements",
+                  "Alias": "settlements",
+                  "Startup Cost": 0,
+                  "Total Cost": 1.21,
+                  "Plan Rows": 1,
+                  "Plan Width": 24,
+                  "Actual Startup Time": 0.004,
+                  "Actual Total Time": 0.006,
+                  "Actual Rows": 6,
+                  "Actual Loops": 1,
+                  "Disabled": false,
+                  "Rows Removed by Filter": 11,
+                  "Shared Hit Blocks": 1,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                }
+              ]
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 3,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.03,
+        "Triggers": [],
+        "Execution Time": 0.013
+      }
+    }
+  },
+  "distinctProbe": {
+    "queryShape": "getOrderFilterOptions origin dimension, unscoped active parcels",
+    "returnedUniqueOrigins": 3,
+    "statements": [
+      {
+        "usesSqlDistinct": false,
+        "durationMs": 6
+      },
+      {
+        "usesSqlDistinct": false,
+        "durationMs": 2
+      },
+      {
+        "usesSqlDistinct": false,
+        "durationMs": 0
+      }
+    ],
+    "nativeDistinctEnabledInSchema": false
+  },
+  "statistics": [
+    {
+      "relname": "locations",
+      "n_live_tup": "0",
+      "n_dead_tup": "577",
+      "last_analyze": null,
+      "last_autoanalyze": null,
+      "last_vacuum": null,
+      "last_autovacuum": null
+    },
+    {
+      "relname": "parcel_status_history",
+      "n_live_tup": "523",
+      "n_dead_tup": "14",
+      "last_analyze": null,
+      "last_autoanalyze": "2026-09-02T06:58:24.259Z",
+      "last_vacuum": null,
+      "last_autovacuum": null
+    },
+    {
+      "relname": "parcels",
+      "n_live_tup": "113",
+      "n_dead_tup": "61",
+      "last_analyze": null,
+      "last_autoanalyze": "2026-09-29T14:02:15.486Z",
+      "last_vacuum": null,
+      "last_autovacuum": "2026-09-11T09:44:38.477Z"
+    }
+  ],
+  "statisticsReset": {
+    "stats_reset": null
+  },
+  "missingForeignKeyIndexes": [
+    {
+      "table_name": "accounting_periods",
+      "constraint_name": "accounting_periods_closed_by_fkey",
+      "columns": "{closed_by}"
+    },
+    {
+      "table_name": "announcements",
+      "constraint_name": "announcements_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "banners",
+      "constraint_name": "banners_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "branch_payments",
+      "constraint_name": "branch_payments_reviewed_by_fkey",
+      "columns": "{reviewed_by}"
+    },
+    {
+      "table_name": "branch_payments",
+      "constraint_name": "branch_payments_submitted_by_fkey",
+      "columns": "{submitted_by}"
+    },
+    {
+      "table_name": "branch_settlements",
+      "constraint_name": "branch_settlements_settled_by_fkey",
+      "columns": "{settled_by}"
+    },
+    {
+      "table_name": "branch_settlements",
+      "constraint_name": "branch_settlements_to_branch_id_fkey",
+      "columns": "{to_branch_id}"
+    },
+    {
+      "table_name": "branch_virtual_coverage",
+      "constraint_name": "branch_virtual_coverage_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "cod_settlement_requests",
+      "constraint_name": "cod_settlement_requests_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "cod_settlement_requests",
+      "constraint_name": "cod_settlement_requests_reviewed_by_fkey",
+      "columns": "{reviewed_by}"
+    },
+    {
+      "table_name": "cod_settlement_requests",
+      "constraint_name": "cod_settlement_requests_settlement_id_fkey",
+      "columns": "{settlement_id}"
+    },
+    {
+      "table_name": "delivery_rates",
+      "constraint_name": "delivery_rates_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "delivery_rates",
+      "constraint_name": "delivery_rates_destination_location_id_fkey",
+      "columns": "{destination_location_id}"
+    },
+    {
+      "table_name": "expenses",
+      "constraint_name": "expenses_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "expenses",
+      "constraint_name": "expenses_location_id_fkey",
+      "columns": "{location_id}"
+    },
+    {
+      "table_name": "expenses",
+      "constraint_name": "expenses_paid_from_id_fkey",
+      "columns": "{paid_from_id}"
+    },
+    {
+      "table_name": "expenses",
+      "constraint_name": "expenses_voided_by_fkey",
+      "columns": "{voided_by}"
+    },
+    {
+      "table_name": "journal_entries",
+      "constraint_name": "journal_entries_posted_by_fkey",
+      "columns": "{posted_by}"
+    },
+    {
+      "table_name": "journal_lines",
+      "constraint_name": "journal_lines_location_id_fkey",
+      "columns": "{location_id}"
+    },
+    {
+      "table_name": "parcel_redirects",
+      "constraint_name": "parcel_redirects_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "parcel_redirects",
+      "constraint_name": "parcel_redirects_from_location_id_fkey",
+      "columns": "{from_location_id}"
+    },
+    {
+      "table_name": "parcels",
+      "constraint_name": "parcels_voucher_claim_id_fkey",
+      "columns": "{voucher_claim_id}"
+    },
+    {
+      "table_name": "payment_methods",
+      "constraint_name": "payment_methods_ledger_account_id_fkey",
+      "columns": "{ledger_account_id}"
+    },
+    {
+      "table_name": "promotion_grants",
+      "constraint_name": "promotion_grants_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "return_manifests",
+      "constraint_name": "return_manifests_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "return_manifests",
+      "constraint_name": "return_manifests_received_by_fkey",
+      "columns": "{received_by}"
+    },
+    {
+      "table_name": "return_manifests",
+      "constraint_name": "return_manifests_sent_by_fkey",
+      "columns": "{sent_by}"
+    },
+    {
+      "table_name": "run_sheets",
+      "constraint_name": "run_sheets_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "settlement_documents",
+      "constraint_name": "settlement_documents_uploaded_by_fkey",
+      "columns": "{uploaded_by}"
+    },
+    {
+      "table_name": "settlement_items",
+      "constraint_name": "settlement_items_cod_collection_id_fkey",
+      "columns": "{cod_collection_id}"
+    },
+    {
+      "table_name": "settlement_payments",
+      "constraint_name": "settlement_payments_recorded_by_fkey",
+      "columns": "{recorded_by}"
+    },
+    {
+      "table_name": "settlements",
+      "constraint_name": "settlements_rider_id_fkey",
+      "columns": "{rider_id}"
+    },
+    {
+      "table_name": "settlements",
+      "constraint_name": "settlements_vendor_id_fkey",
+      "columns": "{vendor_id}"
+    },
+    {
+      "table_name": "transit_manifests",
+      "constraint_name": "transit_manifests_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "transit_manifests",
+      "constraint_name": "transit_manifests_dispatched_by_fkey",
+      "columns": "{dispatched_by}"
+    },
+    {
+      "table_name": "transit_manifests",
+      "constraint_name": "transit_manifests_received_by_fkey",
+      "columns": "{received_by}"
+    },
+    {
+      "table_name": "transit_manifests",
+      "constraint_name": "transit_manifests_to_location_id_fkey",
+      "columns": "{to_location_id}"
+    },
+    {
+      "table_name": "user_roles",
+      "constraint_name": "user_roles_role_id_fkey",
+      "columns": "{role_id}"
+    },
+    {
+      "table_name": "vendor_payments",
+      "constraint_name": "vendor_payments_reviewed_by_fkey",
+      "columns": "{reviewed_by}"
+    },
+    {
+      "table_name": "vendor_payments",
+      "constraint_name": "vendor_payments_submitted_by_fkey",
+      "columns": "{submitted_by}"
+    },
+    {
+      "table_name": "voucher_campaigns",
+      "constraint_name": "voucher_campaigns_created_by_fkey",
+      "columns": "{created_by}"
+    },
+    {
+      "table_name": "voucher_claims",
+      "constraint_name": "voucher_claims_claimed_by_fkey",
+      "columns": "{claimed_by}"
+    },
+    {
+      "table_name": "voucher_events",
+      "constraint_name": "voucher_events_parcel_id_fkey",
+      "columns": "{parcel_id}"
+    },
+    {
+      "table_name": "vouchers",
+      "constraint_name": "vouchers_created_by_fkey",
+      "columns": "{created_by}"
+    }
+  ],
+  "plannerTableEstimates": [
+    {
+      "relname": "locations",
+      "reltuples": 6096,
+      "relpages": 82
+    },
+    {
+      "relname": "parcel_status_history",
+      "reltuples": 458,
+      "relpages": 14
+    },
+    {
+      "relname": "parcels",
+      "reltuples": 113,
+      "relpages": 10
+    }
+  ]
+}

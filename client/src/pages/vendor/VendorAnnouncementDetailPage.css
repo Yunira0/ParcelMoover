@@ -1,0 +1,169 @@
+/* Full page, not a narrow centered card — fills the content width next to
+   the sidebar instead of leaving dead space beside it (same reasoning as
+   RemarkDetail.css). Readable measure is enforced inside .vandp-content
+   instead, so the sheet itself can still span the page. */
+.vandp-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.vandp-back {
+  align-items: center;
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  padding: 0;
+  transition: color 150ms ease;
+}
+
+.vandp-back:hover {
+  color: var(--color-text-default);
+}
+
+.vandp-back:focus-visible {
+  border-radius: var(--border-radius-default);
+  outline: 2px solid var(--color-border-primary);
+  outline-offset: 2px;
+}
+
+.vandp-notice {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-10) var(--space-10) var(--space-8);
+}
+
+/* Letterhead: the mark this notice is issued under, signing off the page
+   before a word of the notice itself is read. */
+.vandp-letterhead {
+  align-items: center;
+  border-bottom: 1px solid var(--color-border-default);
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-5);
+}
+
+.vandp-letterhead-mark {
+  height: 28px;
+  width: auto;
+}
+
+.vandp-letterhead-word {
+  color: var(--color-text-default);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.vandp-letterhead-accent {
+  color: var(--color-text-primary);
+}
+
+/* Prose measure: the sheet is full-width, the text isn't — a 75ch-wide
+   notice is what a real printed one would read like too. */
+.vandp-content {
+  max-width: 75ch;
+}
+
+.vandp-title {
+  color: var(--color-text-default);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-2xl);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.vandp-meta {
+  color: var(--color-text-caption);
+  display: flex;
+  font-size: var(--font-size-xs);
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.vandp-body {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-lg);
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.vandp-muted {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.vandp-error {
+  color: var(--color-danger-text);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+/* Closing contact block — the notice's sign-off, same spirit as the
+   letterhead at the top but pointing the reader outward (call, browse,
+   or raise a ticket) instead of just naming who issued it. */
+.vandp-footer {
+  align-items: center;
+  border-top: 1px solid var(--color-border-default);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+  margin-top: var(--space-8);
+  padding-top: var(--space-5);
+}
+
+.vandp-footer-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+.vandp-footer-item {
+  align-items: center;
+  color: var(--color-text-caption);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1-5);
+  text-decoration: none;
+}
+
+a.vandp-footer-item:hover {
+  color: var(--color-text-default);
+}
+
+.vandp-footer-help {
+  align-items: center;
+  color: var(--color-text-primary);
+  display: inline-flex;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-1-5);
+  text-decoration: none;
+}
+
+.vandp-footer-help:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 560px) {
+  .vandp-notice {
+    padding: var(--space-6) var(--space-5);
+  }
+
+  .vandp-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

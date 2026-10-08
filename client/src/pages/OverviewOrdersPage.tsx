@@ -12,12 +12,13 @@ import {
   type OrdersPageMeta,
 } from '../services/orders.service';
 import { METRIC_STATUS_GROUPS, type MetricKey } from '../components/OverviewMetrics';
-import { ORDER_STATUS_LABELS, getOrderStatusTone } from '../utils/orderStatus';
+import { ORDER_STATUS_LABELS, getOrderStatusTone, STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { downloadExcel } from '../utils/excel';
 import { useCursorPagination } from '../hooks/useCursorPagination';
-import { toBsDate } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
 import { formatCurrency } from '../utils/format';
 import './OverviewOrdersPage.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 const PAGE_SIZE = 10;
 // The server caps a page at 100 rows, so the export walks the list in
@@ -115,7 +116,7 @@ const OverviewOrdersPage: React.FC = () => {
         accessor: (o: Order) => (
           <div>
             <div>{o.receiverName}</div>
-            <div className="overview-orders-subtext">{o.receiverPhone}</div>
+            <div className="overview-orders-subtext"><ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} /></div>
           </div>
         ),
       },
@@ -170,9 +171,9 @@ const OverviewOrdersPage: React.FC = () => {
       '#', 'Tracking ID', 'Status', 'Order Type', 'Service Type', 'Origin', 'Destination',
       'Sender', 'Sender Phone', 'Sender Address',
       'Receiver', 'Receiver Phone', 'Receiver Alt Phone', 'Receiver Address',
-      'Pieces', 'Weight (kg)', 'COD', 'Delivery Charge', 'Package Type', 'Delivery Instruction',
+      'Pieces', 'Weight (kg)', 'COD', 'Delivery Charge', 'Package Description', 'Delivery Instruction',
       'Vendor', 'Rider', 'Attempts', 'Remarks',
-      'Order Created Date', 'Arrived at Origin Date', 'Delivered At', 'Last Updated By', 'Last Updated At',
+      'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS,
     ];
     const sheetRows = rows.map((o) => [
       `#${o.orderNumber}`,
@@ -199,15 +200,14 @@ const OverviewOrdersPage: React.FC = () => {
       o.riderName || '',
       o.attemptCount,
       o.remarks || '',
-      toBsDate(o.createdAt) || '',
-      toBsDate(o.arrivedAtOrigin) || '',
-      toBsDate(o.deliveredAt) || '',
+      toBsDateTimeCell(o.createdAtRaw || o.createdAt) || '',
       o.lastUpdatedBy || '',
-      toBsDate(o.lastUpdatedAt) || '',
+      toBsDateTimeCell(o.lastUpdatedAt) || '',
+      ...statusTimelineCells(o.statusTimestamps),
     ]);
     const label = group?.label ?? 'orders';
     const slug = label.toLowerCase().replace(/\s+/g, '-');
-    downloadExcel(`${slug}.xlsx`, label.slice(0, 31), headers, sheetRows);
+    await downloadExcel(`${slug}.xlsx`, label.slice(0, 31), headers, sheetRows);
   };
 
   if (!group) return null;

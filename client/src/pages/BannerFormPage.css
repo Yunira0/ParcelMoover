@@ -1,0 +1,386 @@
+.bfp-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  max-width: 1080px;
+}
+
+.bfp-muted {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+}
+
+/* Back navigation */
+.bfp-back {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+  padding: 0;
+  transition: color 150ms ease;
+  align-self: flex-start;
+}
+
+.bfp-back:hover {
+  color: var(--color-text-default);
+}
+
+.bfp-back:focus-visible {
+  border-radius: var(--border-radius-default);
+  outline: 2px solid var(--color-border-primary);
+  outline-offset: 2px;
+}
+
+/* Header */
+.bfp-header h1 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-2xl);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.bfp-header p {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  margin: 0;
+  max-width: 680px;
+}
+
+/* Form */
+.bfp-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.bfp-section {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+  padding: var(--space-6);
+}
+
+.bfp-creative-section {
+  padding: var(--space-5);
+}
+
+.bfp-creative-intro {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.bfp-creative-intro h2,
+.bfp-creative-guide h3 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-md);
+  margin: 0;
+}
+
+.bfp-creative-intro p,
+.bfp-guide-lead,
+.bfp-creative-guide li,
+.bfp-template-note {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+}
+
+.bfp-creative-intro p {
+  margin: var(--space-1) 0 0;
+}
+
+.bfp-dimension-badge {
+  background: var(--color-background-primary-subtle);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-primary);
+  flex: none;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-sm);
+  padding: var(--space-1-5) var(--space-2-5);
+}
+
+.bfp-creative-layout {
+  align-items: start;
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.bfp-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.bfp-settings-section {
+  padding: var(--space-5);
+}
+
+.bfp-settings-intro {
+  margin-bottom: var(--space-5);
+}
+
+.bfp-settings-intro h2 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-md);
+  margin: 0;
+}
+
+.bfp-settings-intro p {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  margin: var(--space-1) 0 0;
+}
+
+/* Banner details naturally fall into pairs on desktop. This page cannot rely
+   on Modal.css's generic .form-grid because its CSS chunk is not guaranteed to
+   be loaded with the banner route. */
+.bfp-fields .form-grid {
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bfp-fields .form-grid > .form-group {
+  min-width: 0;
+}
+
+/* Image field */
+.bfp-image-dropzone {
+  align-items: center;
+  background: var(--color-background-canvas);
+  border: 1.5px dashed var(--color-border-default);
+  border-radius: var(--border-radius-lg);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  aspect-ratio: 1600 / 270;
+  min-height: 0;
+  padding: var(--space-6);
+  text-align: center;
+  width: 100%;
+}
+
+.bfp-image-dropzone:hover {
+  border-color: var(--color-border-primary);
+  color: var(--color-text-default);
+}
+
+.bfp-image-dropzone span {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-default);
+}
+
+.bfp-image-dropzone small {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+}
+
+.bfp-image-preview-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1600 / 270;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  background: var(--color-background-elevated);
+}
+
+.bfp-creative-guide {
+  background: var(--color-background-canvas);
+  border-radius: var(--border-radius-lg);
+  display: grid;
+  align-items: center;
+  column-gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 1.35fr) auto;
+  padding: var(--space-4);
+}
+
+.bfp-creative-guide h3 {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.bfp-guide-lead {
+  grid-column: 1;
+  grid-row: 2;
+  margin: var(--space-1) 0 0;
+}
+
+.bfp-guide-rules {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.bfp-guide-rules p {
+  display: grid;
+  gap: var(--space-0-5);
+  margin: 0;
+}
+
+.bfp-guide-rules strong {
+  color: var(--color-text-default);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.bfp-guide-rules span {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+}
+
+.bfp-template-link {
+  align-items: center;
+  align-self: flex-start;
+  color: var(--color-text-primary);
+  display: inline-flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  gap: var(--space-2);
+  grid-column: 3;
+  grid-row: 1;
+  margin-top: 0;
+}
+
+.bfp-template-link:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}
+
+.bfp-template-link:focus-visible {
+  border-radius: var(--border-radius-default);
+  outline: 2px solid var(--color-border-primary);
+  outline-offset: 3px;
+}
+
+.bfp-template-note {
+  display: block;
+  font-size: var(--font-size-xs);
+  grid-column: 3;
+  grid-row: 2;
+  margin-top: var(--space-1);
+}
+
+.bfp-image-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bfp-image-replace {
+  position: absolute;
+  bottom: var(--space-3);
+  right: var(--space-3);
+  background: rgb(3 7 18 / 65%);
+  color: var(--color-text-base);
+  border: none;
+  border-radius: var(--border-radius-default);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  padding: var(--space-1-5) var(--space-3);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.bfp-image-replace:hover {
+  background: rgb(3 7 18 / 85%);
+}
+
+/* Enabled toggle row */
+.bfp-toggle-row {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+  height: 36px;
+}
+
+.bfp-toggle-label {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+}
+
+/* Error */
+.bfp-error {
+  align-items: center;
+  background: var(--color-danger-surface);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--border-radius-default);
+  color: var(--color-danger-text);
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-2);
+  line-height: var(--line-height-sm);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Actions */
+.bfp-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .bfp-creative-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .bfp-creative-guide {
+    align-items: start;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .bfp-guide-lead,
+  .bfp-guide-rules,
+  .bfp-template-link,
+  .bfp-template-note {
+    margin: 0;
+  }
+
+  .bfp-guide-rules {
+    margin: var(--space-2) 0;
+  }
+
+  .bfp-creative-intro {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .bfp-image-dropzone {
+    min-height: 140px;
+    aspect-ratio: auto;
+  }
+
+  .bfp-fields .form-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,109 @@
+/* The vendor's COD settlement page.
+ *
+ * Its own stylesheet rather than the admin screen's CodSettlementRequests.css,
+ * which it used to import: two different pages for two different audiences
+ * sharing one file means a change for one silently restyles the other.
+ *
+ * Deliberately small. Everything the design system already owns lives in its
+ * own component — the header is <PageHeader>, the table is <Table>, the notes
+ * are <Banner>, the chips are <StatusChip>, the input is <FormField>, the
+ * button is <Button>. What is left is the page shell and the read-only account
+ * block, and every value in both comes from styles/tokens.css.
+ */
+
+.vcr-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────────────── */
+
+.vcr-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-modal);
+}
+
+.vcr-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.vcr-card-head h2 {
+  margin: 0;
+  color: var(--color-text-default);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.vcr-card-head p {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+}
+
+/* ── The registered payout account ─────────────────────────────────────────── */
+
+/* A definition list, not a form. These are facts being quoted back to the
+   vendor, and disabled inputs would read as "editable later" when they never
+   are — where the money goes is a profile change, which is reviewed. */
+.vcr-bank {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--color-primary-subtle);
+  border: 1px solid var(--color-border-default);
+  /* The brand colour marking the one fact on the page that matters most: where
+     the money is going. A rule rather than a fill, so it reads as emphasis
+     without competing with the primary button below it. */
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--border-radius-sm);
+}
+
+.vcr-bank dt {
+  margin-bottom: var(--space-1);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vcr-bank dd {
+  margin: 0;
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  /* Account numbers have no spaces to break at, so a narrow column would push
+     the card sideways without this. */
+  overflow-wrap: anywhere;
+}
+
+/* ── Bits inside the table ─────────────────────────────────────────────────── */
+
+/* Bank over account number in one cell. No font-size or colour of its own:
+   both inherit from the table cell, so the column matches every other one. */
+.vcr-line {
+  display: block;
+}
+
+.vcr-line + .vcr-line {
+  margin-top: var(--space-1);
+}
+
+/* ── Actions ───────────────────────────────────────────────────────────────── */
+
+.vcr-actions {
+  display: flex;
+  justify-content: flex-end;
+}

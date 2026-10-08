@@ -120,6 +120,68 @@ export async function registerNcmWebhookController(req: Request, res: Response) 
   }
 }
 
+export async function ncmMatchPreviewController(req: Request, res: Response) {
+  try {
+    const { destination, district, ncmBranch, locationId } = req.query as Record<string, string | undefined>;
+    let dest: { name: string; district: string | null; ncm_branch?: string | null } | null = null;
+
+    if (locationId) {
+      const { default: prisma } = await import("../lib/prisma");
+      const loc = await prisma.locations.findUnique({ where: { id: locationId } });
+      if (!loc) return res.status(404).json({ success: false, message: `Location ${locationId} not found` });
+      dest = { name: loc.name, district: loc.district, ncm_branch: (loc as any).ncm_branch ?? null };
+    } else if (destination) {
+      dest = { name: destination, district: district ?? null, ncm_branch: ncmBranch ?? null };
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Provide ?locationId=<uuid> or ?destination=<name>&district=<district>&ncmBranch=<branch>",
+      });
+    }
+
+    const { listNcmBranches, matchNcmBranch } = await import("../services/ncm.service");
+    const branches = await listNcmBranches();
+    const matched = matchNcmBranch(dest as any, branches);
+
+    // Build per-tier debug info so ops can see why a village was skipped or misrouted
+    const placeName = dest.name.includes(" - ") ? dest.name.slice(0, dest.name.indexOf(" - ")).trim() : dest.name.trim();
+    const normalizeDistrict = (s: string) =>
+      s.trim().toUpperCase().replace(/\s+DISTRICT\s*$/, "").replace(/\s+/g, " ").trim();
+    const districtNorm = dest.district?.trim() ? normalizeDistrict(dest.district) : null;
+    const byDistrict = districtNorm
+      ? branches.filter((b) => {
+          const bd = b.district?.trim();
+          return bd ? normalizeDistrict(bd) === districtNorm : false;
+        })
+      : [];
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        destination: dest,
+        placeName,
+        branchesChecked: branches.length,
+        districtMatches: byDistrict.map((b) => ({ name: b.name, district: b.district })),
+        matched: matched ? { name: matched.name, district: matched.district, covered_areas: matched.covered_areas } : null,
+        hint: !matched
+          ? byDistrict.length > 1
+            ? `District '${dest.district}' has ${byDistrict.length} branches (${byDistrict.map((b) => b.name).join(", ")}) — ambiguous, no single match — parcel left as is.`
+            : byDistrict.length === 0 && districtNorm
+              ? `District '${dest.district}' has 0 branches in NCM's live list (${branches.length} total: ${branches.map((b) => b.name).join(", ")}). No match — parcel left as is.`
+              : `No exact match — parcel left as is.`
+          : byDistrict.length > 1
+            ? `Matched via name/covered_areas despite ${byDistrict.length} branches sharing district '${dest.district}'.`
+            : "Matched successfully",
+      },
+    });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Match preview failed",
+    });
+  }
+}
+
 // Hash both sides before comparing so timingSafeEqual gets equal-length
 // buffers (it throws on length mismatch, which would itself leak length).
 function secretMatches(candidate: string, secret: string): boolean {

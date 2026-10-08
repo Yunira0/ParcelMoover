@@ -5,9 +5,9 @@ import './PageHeader.css';
 
 interface PageHeaderProps {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   /** When provided, a back-button icon is rendered before the title. */
-  onBack?: () => void;
+  onBack?: () => void | Promise<void>;
   actionLabel?: string;
   actionIcon?: React.ReactNode;
   onAction?: () => void;
@@ -37,7 +37,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
       )}
       <div>
         <h1>{title}</h1>
-        <p>{subtitle}</p>
+        {subtitle && <p>{subtitle}</p>}
       </div>
     </div>
     {(actionLabel || children) && (

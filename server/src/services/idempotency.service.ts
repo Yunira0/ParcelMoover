@@ -49,7 +49,7 @@ export async function withIdempotency<T>(
   key: string,
   payload: unknown,
   fn: () => Promise<{ result: T; response: IdempotencyResponse }>,
-  options?: { lockTtlSeconds?: number },
+  options?: { lockTtlSeconds?: number; legacyKey?: string },
 ): Promise<T> {
   const lockKey = `${LOCK_PREFIX}${key}`;
   const responseKey = `${RESPONSE_PREFIX}${key}`;
@@ -78,6 +78,25 @@ export async function withIdempotency<T>(
     }
 
     return parsed.body as T;
+  }
+
+  // Earlier dashboard and Partner API keys lacked an actor/operation namespace.
+  // Do not replay those untrusted responses, and do not execute a retry as a
+  // fresh write during the old cache's 24-hour lifetime. The client can
+  // reconcile the original action through the corresponding read endpoint.
+  if (options?.legacyKey) {
+    try {
+      const [legacyResponse, legacyLock] = await Promise.all([
+        redis.get(`${RESPONSE_PREFIX}${options.legacyKey}`),
+        redis.get(`${LOCK_PREFIX}${options.legacyKey}`),
+      ]);
+      if (legacyResponse || legacyLock) {
+        throw new AppError(409, "Idempotency key was used before the cache upgrade; check whether the original action completed before retrying");
+      }
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      console.error("[Idempotency] Legacy key check failed, proceeding without dedup check:", error);
+    }
   }
 
   //step 2 acquire distributed lock

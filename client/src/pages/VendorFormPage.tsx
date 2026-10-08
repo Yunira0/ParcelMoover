@@ -1,22 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, Upload, X, Building2, User, FileText, CreditCard, Lock, Tag, ExternalLink } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Upload, X, Building2, User, FileText, CreditCard, Lock, Tag, ExternalLink, Receipt } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import {
   registerUser,
-  getLocations,
-  getAdmins,
   getManagedUser,
   updateUserProfile,
   getUserDocuments,
+  AGREEMENT_FILE_ACCEPT,
   type ManagedUserDocument,
 } from '../services/users.service';
+import { getAllAdmins, getLocations } from '../queries/lookups';
 import { getCurrentUser } from '../services/auth.service';
 import { getCurrentUser as getCachedUser, getCurrentUserRoles, isAdminSide } from '../utils/auth';
 import { toDocumentUrl } from '../utils/documentUrl';
 import { getPricingSettings } from '../services/pricing.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, hasLetter, isDigits, normalizePhone } from '../utils/serverValidation';
+import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { useHubLock } from '../hooks/useHubLock';
 import './VendorFormPage.css';
 
@@ -36,9 +37,11 @@ const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
 const MAX_REGISTRATION_UPLOAD_BYTES = 9 * 1024 * 1024;
 
 const DOCUMENT_LABELS: Partial<Record<keyof VendorFormInput, string>> = {
-  citizenshipDoc: 'Citizenship document',
+  citizenshipDoc: 'Citizenship (front)',
+  citizenshipDocBack: 'Citizenship (back)',
   panVatDoc: 'PAN / VAT document',
   businessCertDoc: 'Business certificate',
+  agreementDoc: 'Agreement',
 };
 
 const scrollToFirstFieldError = () => {
@@ -88,6 +91,8 @@ interface VendorFormInput {
   extraWeightPercent: string;
   returnInsideValleyPercent: string;
   returnOutsideValleyPercent: string;
+  branchReturnInsideValleyPercent: string;
+  branchReturnOutsideValleyPercent: string;
   branchFlatInsideValley: string;
   branchFlatOutsideValley: string;
   branchFlatOutsideRingRoad: string;
@@ -95,12 +100,14 @@ interface VendorFormInput {
   branchZoneUrbanAreas: string;
   branchZoneRemoteAreas: string;
   branchZoneInsideValley: string;
+  companyName: string;
   registeredAddress: string;
-  registrationNo: string;
   panVatNo: string;
   citizenshipDoc: File | null;
+  citizenshipDocBack: File | null;
   panVatDoc: File | null;
   businessCertDoc: File | null;
+  agreementDoc: File | null;
   bankName: string;
   bankAccountNo: string;
   bankAccountHolder: string;
@@ -133,6 +140,8 @@ const emptyForm: VendorFormInput = {
   extraWeightPercent: '',
   returnInsideValleyPercent: '',
   returnOutsideValleyPercent: '',
+  branchReturnInsideValleyPercent: '',
+  branchReturnOutsideValleyPercent: '',
   branchFlatInsideValley: '',
   branchFlatOutsideValley: '',
   branchFlatOutsideRingRoad: '',
@@ -140,12 +149,14 @@ const emptyForm: VendorFormInput = {
   branchZoneUrbanAreas: '',
   branchZoneRemoteAreas: '',
   branchZoneInsideValley: '',
+  companyName: '',
   registeredAddress: '',
-  registrationNo: '',
   panVatNo: '',
   citizenshipDoc: null,
+  citizenshipDocBack: null,
   panVatDoc: null,
   businessCertDoc: null,
+  agreementDoc: null,
   bankName: '',
   bankAccountNo: '',
   bankAccountHolder: '',
@@ -160,8 +171,19 @@ const FileInput: React.FC<{
   file: File | null | undefined;
   onChange: (file: File | null) => void;
   accept?: string;
-}> = ({ label, required, file, onChange, accept = 'image/*,.pdf' }) => {
+  hint?: string;
+}> = ({ label, required, file, onChange, accept = 'image/*,.pdf', hint = 'JPG, PNG or PDF · max 5 MB' }) => {
   const ref = useRef<HTMLInputElement>(null);
+  const [converting, setConverting] = useState(false);
+  const handleFile = async (picked: File | null) => {
+    if (!picked) { onChange(null); return; }
+    setConverting(true);
+    try {
+      onChange(await convertHeicFileIfNeeded(picked));
+    } finally {
+      setConverting(false);
+    }
+  };
   return (
     <div className="vfp-file-field">
       <label className="vfp-file-label">
@@ -179,9 +201,10 @@ const FileInput: React.FC<{
         <button
           type="button"
           className="vfp-file-btn"
+          disabled={converting}
           onClick={() => ref.current?.click()}
         >
-          <Upload size={15} /> Choose file
+          <Upload size={15} /> {converting ? 'Converting…' : 'Choose file'}
         </button>
       )}
       <input
@@ -189,9 +212,9 @@ const FileInput: React.FC<{
         type="file"
         accept={accept}
         style={{ display: 'none' }}
-        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
-      <span className="vfp-file-hint">JPG, PNG or PDF · max 5 MB</span>
+      <span className="vfp-file-hint">{hint}</span>
     </div>
   );
 };
@@ -241,8 +264,6 @@ const VendorFormPage: React.FC = () => {
   // the Sales field is prefilled with their own name and locked.
   const roles = getCurrentUserRoles();
   const isSalesUser = roles.includes('sales') && !roles.includes('admin') && !roles.includes('super_admin');
-  // Only super admins can open the rate-config screen, so the shortcut is theirs.
-  const isSuperAdmin = roles.includes('super_admin');
   // A plain admin's vendors always land in that admin's own hub; the hub
   // field stays free for super_admin (and sales, who have no admin hub).
   const { hubLocked, isPlainAdmin } = useHubLock();
@@ -263,10 +284,10 @@ const VendorFormPage: React.FC = () => {
   // Documents already on file, so an edit can show which slots are filled and
   // fill the ones that are not. null while still loading.
   const [existingDocs, setExistingDocs] = useState<ManagedUserDocument[] | null>(null);
-  const [locations, setLocations] = useState<Array<{ value: string; label: string }>>([]);
+  const [locations, setLocations] = useState<Array<{ value: string; label: string; code: string | null; isMasterHub: boolean }>>([]);
   // Sales-department admins, kept unfiltered so the dropdown can be re-filtered
   // by hub whenever the selected pickup location changes.
-  const [salesAdmins, setSalesAdmins] = useState<Array<{ userId: string; name: string; locationId: string | null }>>([]);
+  const [salesAdmins, setSalesAdmins] = useState<Array<{ userId: string; name: string; locationId: string | null; active: boolean }>>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   // Set if the global default rates couldn't be fetched to pre-fill the rate
   // fields. Non-blocking: blank rate fields mean "use the Settings default"
@@ -280,14 +301,22 @@ const VendorFormPage: React.FC = () => {
         const [res, me, adminsRes] = await Promise.all([
           getLocations(),
           getCurrentUser().catch(() => null),
-          getAdmins().catch(() => null),
+          getAllAdmins().catch(() => null),
         ]);
-        let hubs: Array<{ value: string; label: string }> = [];
+        let hubs: Array<{ value: string; label: string; code: string | null; isMasterHub: boolean }> = [];
         if (res && res.success && Array.isArray(res.data)) {
           // Vendors are assigned to a hub/branch, so only show hub locations.
           hubs = res.data
             .filter((loc: any) => loc.is_hub)
-            .map((loc: any) => ({ value: loc.id, label: loc.name }));
+            .map((loc: any) => ({
+              value: loc.id,
+              label: loc.name,
+              code: loc.code ?? null,
+              // Branches are top-level hubs too (parent_id null, is_hub true), so
+              // the only thing that marks the central hub is its IMADOL code -
+              // matching the server's getMasterHubId().
+              isMasterHub: String(loc.code ?? '').trim().toUpperCase() === 'IMADOL',
+            }));
           setLocations(hubs);
         }
         // Sales staff = admins in the "Sales" department, each carrying their
@@ -296,7 +325,12 @@ const VendorFormPage: React.FC = () => {
           setSalesAdmins(
             adminsRes.data
               .filter((a: any) => (a.department || '').toLowerCase() === 'sales')
-              .map((a: any) => ({ userId: a.userId, name: a.name, locationId: a.locationId ?? null })),
+              .map((a: any) => ({
+                userId: a.userId,
+                name: a.name,
+                locationId: a.locationId ?? null,
+                active: String(a.status ?? '').toLowerCase() === 'active',
+              })),
           );
         }
         // Hub defaults to whichever hub the current staff member (super_admin
@@ -314,6 +348,7 @@ const VendorFormPage: React.FC = () => {
         }
       } catch (err) {
         console.error('Failed to load hubs:', err);
+        setFieldErrors(prev => ({ ...prev, pickupLocation: "Couldn't load hubs - refresh the page to try again." }));
       }
     };
     fetchHubs();
@@ -329,9 +364,38 @@ const VendorFormPage: React.FC = () => {
     // regardless so the locked, disabled field doesn't render blank.
     if (isSalesUser) return salesName ? [{ value: ownSalesUserId, label: salesName }] : [];
     return salesAdmins
+      // Only active sales can be assigned; an already-assigned one stays
+      // listed so editing a vendor doesn't blank its current selection.
+      .filter((a) => a.active || a.userId === form.salesUserId)
       .filter((a) => a.locationId && a.locationId === form.pickupLocation)
       .map((a) => ({ value: a.userId, label: a.name }));
-  }, [salesAdmins, form.pickupLocation, isSalesUser, salesName, ownSalesUserId]);
+  }, [salesAdmins, form.pickupLocation, form.salesUserId, isSalesUser, salesName, ownSalesUserId]);
+
+  // The vendor's own branch, for labelling its branch-delivery rates as
+  // "inside / outside <branch>" instead of "inside / outside valley".
+  const selectedHub = locations.find((l) => l.value === form.pickupLocation) || null;
+  const branchLabel =
+    (selectedHub?.label || '')
+      .split(' - ')[0]
+      .replace(/\s*branch\s*$/i, '')
+      .trim() || 'the branch';
+  // A vendor assigned to a non-central branch (e.g. Hetauda) isn't priced by the
+  // Kathmandu-valley split: on the flat model its inside/outside pair means
+  // inside/outside that branch's coverage (blank falls back to the branch's
+  // route rates), otherwise it prices off those route rates. Drop valley
+  // wording and the valley-only inputs for them; the pair is relabelled to the
+  // branch name.
+  const useBranchRateModel = Boolean(selectedHub) && !selectedHub!.isMasterHub;
+  const insideLabel = useBranchRateModel ? `inside ${branchLabel}` : 'inside valley';
+  const outsideLabel = useBranchRateModel ? `outside ${branchLabel}` : 'outside valley';
+  // The inside-valley flat rate toggle is only offered for these models. When
+  // it's hidden, a value left over from an earlier model/hub must not keep
+  // being saved - it would silently override the rates on screen.
+  const insideValleyRateOffered =
+    form.rateType === 'zone'
+    || form.rateType === 'per_destination'
+    || (useBranchRateModel && form.rateType === 'flat');
+  const insideValleyRateActive = insideValleyRateOffered && form.insideValleyEnabled;
 
   // Prefill the per-vendor rate fields with the global defaults from Settings;
   // the creator can then edit them so this vendor gets its own rates. Create
@@ -398,6 +462,8 @@ const VendorFormPage: React.FC = () => {
           extraWeightPercent: s(d.extraWeightPercent),
           returnInsideValleyPercent: s(d.returnInsideValleyPercent),
           returnOutsideValleyPercent: s(d.returnOutsideValleyPercent),
+          branchReturnInsideValleyPercent: s(d.branchReturnInsideValleyPercent),
+          branchReturnOutsideValleyPercent: s(d.branchReturnOutsideValleyPercent),
           branchFlatInsideValley: s(d.branchFlatInsideValley),
           branchFlatOutsideValley: s(d.branchFlatOutsideValley),
           branchFlatOutsideRingRoad: s(d.branchFlatOutsideRingRoad),
@@ -406,7 +472,7 @@ const VendorFormPage: React.FC = () => {
           branchZoneRemoteAreas: s(d.branchZoneRemoteAreas),
           branchZoneInsideValley: s(d.branchZoneInsideValley),
           pickupLandmark: s(d.pickupLandmark),
-          registrationNo: s(d.registrationNo),
+          companyName: s(d.billingBusinessName),
           panVatNo: s(d.panVatNo),
           bankName: s(d.bankName),
           bankAccountNo: s(d.bankAccountNo),
@@ -474,23 +540,34 @@ const VendorFormPage: React.FC = () => {
     if (!form.joinedAt.trim()) errors.joinedAt = 'Joined date is required';
     if (!form.registeredAddress.trim()) errors.registeredAddress = 'Address is required';
     // Optional identity/bank fields: validate format only when provided.
-    if (form.registrationNo.trim() && !/^[\p{L}\d\s/-]+$/u.test(form.registrationNo.trim()))
-      errors.registrationNo = 'Enter a valid registration number';
+    if (form.companyName.trim() && !hasLetter(form.companyName))
+      errors.companyName = 'Company name must contain letters';
     if (form.panVatNo.trim() && !isDigits(form.panVatNo, 9, 9)) errors.panVatNo = 'PAN/VAT must be 9 digits';
-    if (form.bankName.trim() && !hasLetter(form.bankName)) errors.bankName = 'Enter a valid bank name';
-    if (form.bankAccountNo.trim() && !isDigits(form.bankAccountNo, 6, 20))
+    // Bank details are required, not optional like the identity fields above.
+    // Every COD payout is a transfer to this account, and the vendor's own
+    // settlement request quotes it back to them rather than taking one per
+    // request — so a vendor registered without it cannot be paid at all.
+    if (!form.bankName.trim()) errors.bankName = 'Bank name is required';
+    else if (!hasLetter(form.bankName)) errors.bankName = 'Enter a valid bank name';
+    if (!form.bankAccountNo.trim()) errors.bankAccountNo = 'Account number is required';
+    else if (!isDigits(form.bankAccountNo, 6, 20))
       errors.bankAccountNo = 'Account number must be 6–20 digits';
-    if (form.bankAccountHolder.trim() && !isValidName(form.bankAccountHolder))
+    if (!form.bankAccountHolder.trim()) errors.bankAccountHolder = 'Account holder name is required';
+    else if (!isValidName(form.bankAccountHolder))
       errors.bankAccountHolder = 'Enter a valid account holder name';
     // A document is only *required* when creating - an edit uploads one to
     // fill a slot the vendor was registered without, so 'none selected' is
     // the normal case there.
     if (!isEdit && !form.citizenshipDoc) {
-      errors.citizenshipDoc = 'Citizenship document is required';
+      errors.citizenshipDoc = 'Citizenship front side is required';
+    }
+    if (!isEdit && !form.citizenshipDocBack) {
+      errors.citizenshipDocBack = 'Citizenship back side is required';
     }
     // Size limits apply to anything actually being uploaded, either way.
     const documents = [
       ['citizenshipDoc', form.citizenshipDoc],
+      ['citizenshipDocBack', form.citizenshipDocBack],
       ['panVatDoc', form.panVatDoc],
       ['businessCertDoc', form.businessCertDoc],
     ] as const;
@@ -503,6 +580,47 @@ const VendorFormPage: React.FC = () => {
     if (totalUploadBytes > MAX_REGISTRATION_UPLOAD_BYTES) {
       errors.citizenshipDoc = `Uploaded documents are ${formatFileSize(totalUploadBytes)} total. Please keep all documents under 9 MB combined.`;
     }
+    // Every rate the chosen model uses is required - there are no editable
+    // network defaults to fall back to any more. Outside ring road (falls back
+    // to the inside rate) and extra weight (falls back to the Rates tab value)
+    // stay optional.
+    const rateLabels: Record<string, string> = {
+      flatInsideValley: `${insideLabel} rate`,
+      flatOutsideValley: `${outsideLabel} rate`,
+      branchFlatInsideValley: `Branch delivery ${insideLabel} rate`,
+      branchFlatOutsideValley: `Branch delivery ${outsideLabel} rate`,
+      zoneMajorCities: 'Major cities rate',
+      zoneUrbanAreas: 'Urban areas rate',
+      zoneRemoteAreas: 'Remote areas rate',
+      zoneInsideValley: 'Inside valley rate',
+      branchZoneMajorCities: 'Branch major cities rate',
+      branchZoneUrbanAreas: 'Branch urban areas rate',
+      branchZoneRemoteAreas: 'Branch remote areas rate',
+      branchZoneInsideValley: 'Branch inside valley rate',
+      returnInsideValleyPercent: `Return ${insideLabel} %`,
+      returnOutsideValleyPercent: `Return ${outsideLabel} %`,
+      branchReturnInsideValleyPercent: `Branch return ${insideLabel} %`,
+      branchReturnOutsideValleyPercent: `Branch return ${outsideLabel} %`,
+      insideValleyFlatRate: 'Inside valley flat rate',
+    };
+    const requiredRates = [
+      ...(form.rateType === 'flat'
+        ? ['flatInsideValley', 'flatOutsideValley', 'branchFlatInsideValley', 'branchFlatOutsideValley']
+        : []),
+      ...(form.rateType === 'zone'
+        ? ['zoneMajorCities', 'zoneUrbanAreas', 'zoneRemoteAreas', 'zoneInsideValley',
+           'branchZoneMajorCities', 'branchZoneUrbanAreas', 'branchZoneRemoteAreas', 'branchZoneInsideValley']
+        : []),
+      'returnInsideValleyPercent', 'returnOutsideValleyPercent',
+      'branchReturnInsideValleyPercent', 'branchReturnOutsideValleyPercent',
+      ...(form.insideValleyEnabled ? ['insideValleyFlatRate'] : []),
+    ] as const;
+    for (const key of requiredRates) {
+      const value = String(form[key as keyof VendorFormInput] ?? '').trim();
+      if (value === '') errors[key] = `${rateLabels[key]} is required`;
+      else if (!(Number(value) >= 0)) errors[key] = `${rateLabels[key]} must be a non-negative number`;
+    }
+
     // The password is set once, at creation.
     if (!isEdit) {
       if (!form.password.trim()) errors.password = 'Password is required';
@@ -549,9 +667,11 @@ const VendorFormPage: React.FC = () => {
           zoneUrbanAreas: form.zoneUrbanAreas,
           zoneRemoteAreas: form.zoneRemoteAreas,
           zoneInsideValley: form.zoneInsideValley,
-          insideValleyFlatRate: form.insideValleyEnabled ? form.insideValleyFlatRate : '',
+          insideValleyFlatRate: insideValleyRateActive ? form.insideValleyFlatRate : '',
           returnInsideValleyPercent: form.returnInsideValleyPercent,
           returnOutsideValleyPercent: form.returnOutsideValleyPercent,
+          branchReturnInsideValleyPercent: form.branchReturnInsideValleyPercent,
+          branchReturnOutsideValleyPercent: form.branchReturnOutsideValleyPercent,
           branchFlatInsideValley: form.branchFlatInsideValley,
           branchFlatOutsideValley: form.branchFlatOutsideValley,
           branchFlatOutsideRingRoad: form.branchFlatOutsideRingRoad,
@@ -560,8 +680,7 @@ const VendorFormPage: React.FC = () => {
           branchZoneRemoteAreas: form.branchZoneRemoteAreas,
           branchZoneInsideValley: form.branchZoneInsideValley,
           pickupLandmark: form.pickupLandmark,
-          billingBusinessName: form.onlineBusinessName,
-          registrationNo: form.registrationNo,
+          billingBusinessName: form.companyName,
           panVatNo: form.panVatNo,
           bankName: form.bankName,
           bankAccountNo: form.bankAccountNo,
@@ -571,8 +690,10 @@ const VendorFormPage: React.FC = () => {
           ...(canManageDocuments
             ? {
                 ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
+                ...(form.citizenshipDocBack ? { citizenshipDocBack: form.citizenshipDocBack } : {}),
                 ...(form.panVatDoc ? { panVatDoc: form.panVatDoc } : {}),
                 ...(form.businessCertDoc ? { businessCertDoc: form.businessCertDoc } : {}),
+                ...(form.agreementDoc ? { agreementDoc: form.agreementDoc } : {}),
               }
             : {}),
         });
@@ -614,10 +735,12 @@ const VendorFormPage: React.FC = () => {
         ...(form.rateType === 'per_destination'
           ? { extraWeightPercent: form.extraWeightPercent }
           : {}),
-        ...(form.insideValleyEnabled ? { insideValleyFlatRate: form.insideValleyFlatRate } : {}),
+        ...(insideValleyRateActive ? { insideValleyFlatRate: form.insideValleyFlatRate } : {}),
         // Return percents apply regardless of the primary rate model.
         returnInsideValleyPercent: form.returnInsideValleyPercent,
         returnOutsideValleyPercent: form.returnOutsideValleyPercent,
+        branchReturnInsideValleyPercent: form.branchReturnInsideValleyPercent,
+        branchReturnOutsideValleyPercent: form.branchReturnOutsideValleyPercent,
         // Branch overrides mirror the chosen model.
         ...(form.rateType === 'flat'
           ? {
@@ -635,15 +758,16 @@ const VendorFormPage: React.FC = () => {
             }
           : {}),
         pickupLandmark: form.pickupLandmark,
-        billingBusinessName: form.onlineBusinessName,
-        registrationNo: form.registrationNo,
+        billingBusinessName: form.companyName,
         panVatNo: form.panVatNo,
         bankName: form.bankName,
         bankAccountNo: form.bankAccountNo,
         bankAccountHolder: form.bankAccountHolder,
         citizenshipDoc: form.citizenshipDoc,
+        citizenshipDocBack: form.citizenshipDocBack,
         panVatDoc: form.panVatDoc,
         businessCertDoc: form.businessCertDoc,
+        agreementDoc: form.agreementDoc,
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -772,6 +896,26 @@ const VendorFormPage: React.FC = () => {
                 {fieldErrors.sales && (
                   <span className="vfp-field-error">{fieldErrors.sales}</span>
                 )}
+              </div>
+            </section>
+
+            {/* Billing Details */}
+            <section className="vfp-section">
+              <SectionHeader
+                icon={<Receipt size={18} />}
+                title="Billing Details"
+                description="Company name, address & tax details used for invoicing"
+              />
+              <div className="vfp-fields">
+                <FormField
+                  label="Company Name"
+                  value={form.companyName}
+                  onChange={set('companyName')}
+                  placeholder="Registered / legal company name"
+                />
+                {fieldErrors.companyName && (
+                  <span className="vfp-field-error">{fieldErrors.companyName}</span>
+                )}
                 <FormField
                   label="Registered Address"
                   required
@@ -781,15 +925,6 @@ const VendorFormPage: React.FC = () => {
                 />
                 {fieldErrors.registeredAddress && (
                   <span className="vfp-field-error">{fieldErrors.registeredAddress}</span>
-                )}
-                <FormField
-                  label="Registration No."
-                  value={form.registrationNo}
-                  onChange={set('registrationNo')}
-                  placeholder="Business registration number"
-                />
-                {fieldErrors.registrationNo && (
-                  <span className="vfp-field-error">{fieldErrors.registrationNo}</span>
                 )}
                 <FormField
                   label="PAN / VAT No."
@@ -910,7 +1045,7 @@ const VendorFormPage: React.FC = () => {
               <div className="vfp-docs">
                 <div>
                   <FileInput
-                    label="Citizenship"
+                    label="Citizenship (Front)"
                     required={!isEdit}
                     file={form.citizenshipDoc}
                     onChange={setFile('citizenshipDoc')}
@@ -918,6 +1053,18 @@ const VendorFormPage: React.FC = () => {
                   {isEdit && <ExistingDoc docs={existingDocs} slot="citizenshipDoc" />}
                   {fieldErrors.citizenshipDoc && (
                     <span className="vfp-field-error">{fieldErrors.citizenshipDoc}</span>
+                  )}
+                </div>
+                <div>
+                  <FileInput
+                    label="Citizenship (Back)"
+                    required={!isEdit}
+                    file={form.citizenshipDocBack}
+                    onChange={setFile('citizenshipDocBack')}
+                  />
+                  {isEdit && <ExistingDoc docs={existingDocs} slot="citizenshipDocBack" />}
+                  {fieldErrors.citizenshipDocBack && (
+                    <span className="vfp-field-error">{fieldErrors.citizenshipDocBack}</span>
                   )}
                 </div>
                 <div>
@@ -942,6 +1089,19 @@ const VendorFormPage: React.FC = () => {
                     <span className="vfp-field-error">{fieldErrors.businessCertDoc}</span>
                   )}
                 </div>
+                <div>
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
+                  />
+                  {isEdit && <ExistingDoc docs={existingDocs} slot="agreementDoc" />}
+                  {fieldErrors.agreementDoc && (
+                    <span className="vfp-field-error">{fieldErrors.agreementDoc}</span>
+                  )}
+                </div>
               </div>
               {isEdit && (
                 <p className="vfp-hint">
@@ -957,11 +1117,12 @@ const VendorFormPage: React.FC = () => {
               <SectionHeader
                 icon={<CreditCard size={18} />}
                 title="Bank Details"
-                description="Payment account information"
+                description="Where COD payouts are transferred. Required — the vendor cannot be settled without it."
               />
               <div className="vfp-fields">
                 <FormField
                   label="Name of Bank"
+                  required
                   value={form.bankName}
                   onChange={set('bankName')}
                   placeholder="e.g. Nabil Bank"
@@ -971,6 +1132,7 @@ const VendorFormPage: React.FC = () => {
                 )}
                 <FormField
                   label="Account No."
+                  required
                   value={form.bankAccountNo}
                   onChange={set('bankAccountNo')}
                   placeholder="Bank account number"
@@ -980,6 +1142,7 @@ const VendorFormPage: React.FC = () => {
                 )}
                 <FormField
                   label="Name of Account Holder"
+                  required
                   value={form.bankAccountHolder}
                   onChange={set('bankAccountHolder')}
                   placeholder="Name as on bank account"
@@ -1006,8 +1169,13 @@ const VendorFormPage: React.FC = () => {
               <div className="vfp-rate-options">
                 {[
                   { value: 'per_destination', title: 'Per-destination', desc: "Each destination's own configured rate." },
-                  { value: 'zone', title: 'Zone-based', desc: 'Priced by zone: major cities, urban, remote.' },
-                  { value: 'flat', title: 'Flat rate', desc: 'One rate inside valley, one outside valley.' },
+                  { value: 'flat', title: 'Flat rate', desc: `One rate ${insideLabel}, one ${outsideLabel}.` },
+                  // Zone-based pricing stays available for central (Imadol) vendors;
+                  // it's retired from branch vendor setup. Legacy zone vendors on
+                  // any hub can still edit their zone rates below.
+                  ...(!useBranchRateModel || form.rateType === 'zone'
+                    ? [{ value: 'zone', title: 'Zone-based', desc: 'Priced by zone.' }]
+                    : []),
                 ].map((opt) => (
                   <button
                     type="button"
@@ -1027,35 +1195,39 @@ const VendorFormPage: React.FC = () => {
               {/* Editable per-vendor rates, prefilled from the Settings defaults. */}
               {form.rateType === 'flat' && (
                 <div className="vfp-rate-fields">
-                  <p className="vfp-rate-note">Rates default to Settings; edit to give this vendor its own.</p>
+                  <p className="vfp-rate-note">Pre-filled with the standard rates; adjust them for this vendor.</p>
                   <div className="vfp-fields">
-                    <FormField label="Inside valley (Rs.)" type="number" min={0}
-                      value={form.flatInsideValley} onChange={set('flatInsideValley')} placeholder="e.g. 120" />
-                    <FormField label="Outside valley (Rs.)" type="number" min={0}
-                      value={form.flatOutsideValley} onChange={set('flatOutsideValley')} placeholder="e.g. 250" />
-                    <FormField label="Outside ring road (Rs.)" type="number" min={0}
-                      value={form.flatOutsideRingRoad} onChange={set('flatOutsideRingRoad')} placeholder="e.g. 170" />
+                    <FormField label={`${useBranchRateModel ? `Inside ${branchLabel}` : 'Inside valley'} (Rs.)`} type="number" min={0}
+                      value={form.flatInsideValley} onChange={set('flatInsideValley')} required error={fieldErrors.flatInsideValley} placeholder="e.g. 120" />
+                    <FormField label={`${useBranchRateModel ? `Outside ${branchLabel}` : 'Outside valley'} (Rs.)`} type="number" min={0}
+                      value={form.flatOutsideValley} onChange={set('flatOutsideValley')} required error={fieldErrors.flatOutsideValley} placeholder="e.g. 250" />
+                    {!useBranchRateModel && (
+                      <FormField label="Outside ring road (Rs.)" type="number" min={0}
+                        value={form.flatOutsideRingRoad} onChange={set('flatOutsideRingRoad')} placeholder="e.g. 170" />
+                    )}
                     <FormField label="Extra weight surcharge (%)" type="number" min={0} max={100}
                       value={form.extraWeightPercent} onChange={set('extraWeightPercent')} placeholder="e.g. 10" />
                   </div>
-                  <p className="vfp-rate-note">
-                    Outside ring road applies to inside-valley destinations flagged “outside ring
-                    road” in Rate Setup. Leave blank to charge them the normal inside-valley rate.
-                  </p>
+                  {!useBranchRateModel && (
+                    <p className="vfp-rate-note">
+                      Outside ring road applies to inside-valley destinations flagged “outside ring
+                      road” in Rate Setup. Leave blank to charge them the normal inside-valley rate.
+                    </p>
+                  )}
                 </div>
               )}
               {form.rateType === 'zone' && (
                 <div className="vfp-rate-fields">
-                  <p className="vfp-rate-note">Rates default to Settings; edit to give this vendor its own.</p>
+                  <p className="vfp-rate-note">Pre-filled with the standard rates; adjust them for this vendor.</p>
                   <div className="vfp-fields">
                     <FormField label="Major cities (Rs.)" type="number" min={0}
-                      value={form.zoneMajorCities} onChange={set('zoneMajorCities')} placeholder="e.g. 300" />
+                      value={form.zoneMajorCities} onChange={set('zoneMajorCities')} required error={fieldErrors.zoneMajorCities} placeholder="e.g. 300" />
                     <FormField label="Urban areas (Rs.)" type="number" min={0}
-                      value={form.zoneUrbanAreas} onChange={set('zoneUrbanAreas')} placeholder="e.g. 350" />
+                      value={form.zoneUrbanAreas} onChange={set('zoneUrbanAreas')} required error={fieldErrors.zoneUrbanAreas} placeholder="e.g. 350" />
                     <FormField label="Remote areas (Rs.)" type="number" min={0}
-                      value={form.zoneRemoteAreas} onChange={set('zoneRemoteAreas')} placeholder="e.g. 500" />
+                      value={form.zoneRemoteAreas} onChange={set('zoneRemoteAreas')} required error={fieldErrors.zoneRemoteAreas} placeholder="e.g. 500" />
                     <FormField label="Inside valley (Rs.)" type="number" min={0}
-                      value={form.zoneInsideValley} onChange={set('zoneInsideValley')} placeholder="e.g. 200" />
+                      value={form.zoneInsideValley} onChange={set('zoneInsideValley')} required error={fieldErrors.zoneInsideValley} placeholder="e.g. 200" />
                     <FormField label="Extra weight surcharge (%)" type="number" min={0} max={100}
                       value={form.extraWeightPercent} onChange={set('extraWeightPercent')} placeholder="e.g. 10" />
                   </div>
@@ -1072,9 +1244,13 @@ const VendorFormPage: React.FC = () => {
                   </div>
                 </div>
               )}
-              {/* Optional second rate: a flat inside-valley rate that overrides the
-                  primary model for inside-valley destinations. */}
-              {(form.rateType === 'zone' || form.rateType === 'per_destination') && (
+              {/* Optional extra rate: a flat inside-valley rate that overrides the
+                  primary model for inside-valley destinations. Keyed off the
+                  destination's real Kathmandu-valley classification, so it
+                  applies the same way regardless of the vendor's own hub —
+                  including a branch's "flat" model, whose Inside/Outside
+                  <branch> pair otherwise has no separate valley rate. */}
+              {insideValleyRateOffered && (
                 <div className={`vfp-rate-fields vfp-inside-valley-block${form.insideValleyEnabled ? ' is-on' : ''}`}>
                   <label className="vfp-inside-valley-toggle">
                     <input
@@ -1085,15 +1261,17 @@ const VendorFormPage: React.FC = () => {
                     <span className="vfp-rate-text">
                       <strong>Also charge a flat rate for inside-valley deliveries</strong>
                       <small>
-                        Overrides the {form.rateType === 'zone' ? 'zone' : 'per-destination'} rate above for
-                        destinations classified inside valley.
+                        {form.rateType === 'flat'
+                          ? `Overrides the ${insideLabel} rate above for destinations in Kathmandu valley, so this vendor can price valley deliveries separately from the rest of ${branchLabel}.`
+                          : `Overrides the ${form.rateType === 'zone' ? 'zone' : 'per-destination'} rate above for
+                        destinations classified inside valley${useBranchRateModel ? ' (Kathmandu valley, regardless of this vendor’s own branch)' : ''}.`}
                       </small>
                     </span>
                   </label>
                   {form.insideValleyEnabled && (
                     <div className="vfp-fields">
                       <FormField label="Inside valley flat rate (Rs.)" type="number" min={0}
-                        value={form.insideValleyFlatRate} onChange={set('insideValleyFlatRate')} placeholder="e.g. 120" />
+                        value={form.insideValleyFlatRate} onChange={set('insideValleyFlatRate')} required error={fieldErrors.insideValleyFlatRate} placeholder="e.g. 120" />
                     </div>
                   )}
                 </div>
@@ -1102,58 +1280,65 @@ const VendorFormPage: React.FC = () => {
                   falls back to the Settings branch defaults. */}
               {form.rateType === 'flat' && (
                 <div className="vfp-rate-fields">
-                  <p className="vfp-rate-note">Branch delivery rates (parcel dropped at a branch). Blank uses Settings.</p>
+                  <h4 className="vfp-rate-subhead">Branch delivery rate</h4>
+                  <p className="vfp-rate-note">For parcels dropped at a branch.</p>
                   <div className="vfp-fields">
-                    <FormField label="Branch — inside valley (Rs.)" type="number" min={0}
-                      value={form.branchFlatInsideValley} onChange={set('branchFlatInsideValley')} placeholder="e.g. 80" />
-                    <FormField label="Branch — outside valley (Rs.)" type="number" min={0}
-                      value={form.branchFlatOutsideValley} onChange={set('branchFlatOutsideValley')} placeholder="e.g. 180" />
-                    <FormField label="Branch — outside ring road (Rs.)" type="number" min={0}
-                      value={form.branchFlatOutsideRingRoad} onChange={set('branchFlatOutsideRingRoad')} placeholder="e.g. 130" />
+                    <FormField label={`${useBranchRateModel ? `Inside ${branchLabel}` : 'Branch — inside valley'} (Rs.)`} type="number" min={0}
+                      value={form.branchFlatInsideValley} onChange={set('branchFlatInsideValley')} required error={fieldErrors.branchFlatInsideValley} placeholder="e.g. 80" />
+                    <FormField label={`${useBranchRateModel ? `Outside ${branchLabel}` : 'Branch — outside valley'} (Rs.)`} type="number" min={0}
+                      value={form.branchFlatOutsideValley} onChange={set('branchFlatOutsideValley')} required error={fieldErrors.branchFlatOutsideValley} placeholder="e.g. 180" />
                   </div>
                 </div>
               )}
               {form.rateType === 'zone' && (
                 <div className="vfp-rate-fields">
-                  <p className="vfp-rate-note">Branch delivery rates (parcel dropped at a branch). Blank uses Settings.</p>
+                  <h4 className="vfp-rate-subhead">Branch delivery rate</h4>
+                  <p className="vfp-rate-note">For parcels dropped at a branch.</p>
                   <div className="vfp-fields">
                     <FormField label="Branch — major cities (Rs.)" type="number" min={0}
-                      value={form.branchZoneMajorCities} onChange={set('branchZoneMajorCities')} placeholder="e.g. 200" />
+                      value={form.branchZoneMajorCities} onChange={set('branchZoneMajorCities')} required error={fieldErrors.branchZoneMajorCities} placeholder="e.g. 200" />
                     <FormField label="Branch — urban areas (Rs.)" type="number" min={0}
-                      value={form.branchZoneUrbanAreas} onChange={set('branchZoneUrbanAreas')} placeholder="e.g. 250" />
+                      value={form.branchZoneUrbanAreas} onChange={set('branchZoneUrbanAreas')} required error={fieldErrors.branchZoneUrbanAreas} placeholder="e.g. 250" />
                     <FormField label="Branch — remote areas (Rs.)" type="number" min={0}
-                      value={form.branchZoneRemoteAreas} onChange={set('branchZoneRemoteAreas')} placeholder="e.g. 400" />
+                      value={form.branchZoneRemoteAreas} onChange={set('branchZoneRemoteAreas')} required error={fieldErrors.branchZoneRemoteAreas} placeholder="e.g. 400" />
                     <FormField label="Branch — inside valley (Rs.)" type="number" min={0}
-                      value={form.branchZoneInsideValley} onChange={set('branchZoneInsideValley')} placeholder="e.g. 150" />
+                      value={form.branchZoneInsideValley} onChange={set('branchZoneInsideValley')} required error={fieldErrors.branchZoneInsideValley} placeholder="e.g. 150" />
                   </div>
                 </div>
               )}
 
               {/* Return rate: a return parcel has no COD but is billed this
-                  percent of the normal delivery rate, by valley side. */}
+                  percent of the normal delivery rate. */}
               <div className="vfp-rate-fields">
+                <h4 className="vfp-rate-subhead">Return rate</h4>
                 <p className="vfp-rate-note">
                   Return parcels carry no COD but are charged this percent of the normal delivery
-                  rate. Leave blank to use the Settings default (e.g. 0% inside, 50% outside).
+                  rate.
                 </p>
                 <div className="vfp-fields">
-                  <FormField label="Return — inside valley (% of delivery)" type="number" min={0} max={100}
-                    value={form.returnInsideValleyPercent} onChange={set('returnInsideValleyPercent')} placeholder="e.g. 0" />
-                  <FormField label="Return — outside valley (% of delivery)" type="number" min={0} max={100}
-                    value={form.returnOutsideValleyPercent} onChange={set('returnOutsideValleyPercent')} placeholder="e.g. 50" />
+                  <FormField label={`Return — ${insideLabel} (% of delivery)`} type="number" min={0} max={100}
+                    value={form.returnInsideValleyPercent} onChange={set('returnInsideValleyPercent')} required error={fieldErrors.returnInsideValleyPercent} placeholder="e.g. 0" />
+                  <FormField label={`Return — ${outsideLabel} (% of delivery)`} type="number" min={0} max={100}
+                    value={form.returnOutsideValleyPercent} onChange={set('returnOutsideValleyPercent')} required error={fieldErrors.returnOutsideValleyPercent} placeholder="e.g. 50" />
                 </div>
               </div>
 
-              {isSuperAdmin && (form.rateType === 'zone' || form.rateType === 'flat') && (
-                <button
-                  type="button"
-                  className="vfp-rate-config-link"
-                  onClick={() => window.open('/settings?tab=rates', '_blank', 'noopener')}
-                >
-                  <ExternalLink size={14} />
-                  Edit default {form.rateType === 'zone' ? 'zone' : 'flat'} rates in Settings
-                </button>
-              )}
+              {/* Branch return rate: return parcels dropped at a branch, priced
+                  off the branch delivery charge. Blank = falls back to the
+                  return rate above. */}
+              <div className="vfp-rate-fields">
+                <h4 className="vfp-rate-subhead">Branch return rate</h4>
+                <p className="vfp-rate-note">
+                  For return parcels handed in at a branch.
+                </p>
+                <div className="vfp-fields">
+                  <FormField label={`${useBranchRateModel ? `Inside ${branchLabel}` : 'Branch — inside valley'} (%)`} type="number" min={0} max={100}
+                    value={form.branchReturnInsideValleyPercent} onChange={set('branchReturnInsideValleyPercent')} required error={fieldErrors.branchReturnInsideValleyPercent} placeholder="e.g. 0" />
+                  <FormField label={`${useBranchRateModel ? `Outside ${branchLabel}` : 'Branch — outside valley'} (%)`} type="number" min={0} max={100}
+                    value={form.branchReturnOutsideValleyPercent} onChange={set('branchReturnOutsideValleyPercent')} required error={fieldErrors.branchReturnOutsideValleyPercent} placeholder="e.g. 40" />
+                </div>
+              </div>
+
             </section>
           </div>
         </div>

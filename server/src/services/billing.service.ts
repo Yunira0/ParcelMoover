@@ -3,6 +3,7 @@ import { vendor_billing_state } from "../generated/prisma/enums";
 import prisma from "../lib/prisma";
 import redis from "../lib/redis";
 import { AppError } from "../utils/AppError";
+import { earnedChargeSql } from "./money-rules";
 import { createNotification } from "./notification.service";
 
 // ── Vendor credit control ────────────────────────────────────────────────────
@@ -12,7 +13,7 @@ import { createNotification } from "./notification.service";
 //
 //   balance = COD collected on their behalf
 //           - delivery charges earned on their parcels
-//           - payouts already settled to them
+//           - payouts already made to them (part payments included)
 //           + payments they have made back to the office
 //
 // Negative means the vendor owes us. That is the normal direction for a vendor
@@ -30,34 +31,15 @@ const SETTINGS_CACHE_TTL_SECONDS = 300;
 
 const balanceCacheKey = (vendorId: string) => `finance:${vendorId}:balance`;
 
-// When a delivery charge becomes the vendor's to pay.
+// When a delivery charge becomes the vendor's to pay. The rule and its SQL
+// both come from money-rules.ts, which generates the fragment below from the
+// same constant the TypeScript predicate reads - so there is no second copy to
+// drift. There used to be, and it did.
 //
-// `delivered` / `partially_delivered` are the plain case: the service was
-// performed, the charge is earned.
-//
-// `returned_to_vendor` also earns it — both for a genuine return leg
-// (order_type "return", priced at the vendor's return percent, see
-// getReturnDeliveryQuote) and for a plain RTO (a delivery that failed and
-// went follow_up -> ready_to_return -> sent_to_vendor -> returned_to_vendor):
-// the outbound leg was still run, so the vendor is billed its
-// delivery_charge same as a normal delivery.
-const EARNED_CHARGE_SQL = Prisma.sql`
-  p.status::text IN ('delivered', 'partially_delivered', 'returned_to_vendor')
-`;
+// Re-exported here because this is where callers have always looked for it.
+const EARNED_CHARGE_SQL = earnedChargeSql();
 
-// Statuses whose entry or exit changes what a vendor owes — the TypeScript
-// mirror of EARNED_CHARGE_SQL, used to decide when a status change is worth
-// re-evaluating the balance for. Exit matters too: partially_delivered can
-// transition back to ready_to_deliver, un-earning the charge.
-export const BALANCE_AFFECTING_STATUSES = [
-  "delivered",
-  "partially_delivered",
-  "returned_to_vendor",
-] as const;
-
-export function statusAffectsBalance(status: string | null | undefined): boolean {
-  return Boolean(status) && (BALANCE_AFFECTING_STATUSES as readonly string[]).includes(status as string);
-}
+export { BALANCE_AFFECTING_STATUSES, statusAffectsBalance } from "./money-rules";
 
 export interface VendorAccountBalance {
   /** Lifetime COD actually collected from receivers on this vendor's parcels. */
@@ -80,14 +62,22 @@ export interface BillingThresholds {
 export interface VendorBillingStatus extends VendorAccountBalance, BillingThresholds {
   vendorId: string;
   state: vendor_billing_state;
+  /** This vendor's own credit limit (positive NPR). Block trips at balance <= -creditLimit. */
+  creditLimit: number;
   /** Convenience for the client: how much would clear the block. */
   amountToClearBlock: number;
   /** Payment claims awaiting admin verification (not yet in the balance). */
   pendingPaymentAmount: number;
 }
 
-export interface BillingSettings extends BillingThresholds {
+export interface BillingSettings extends Omit<BillingThresholds, "blockThreshold"> {
   id: string;
+  /** System default credit limit assigned to every new vendor. The
+      settings-level block threshold is gone; the block line is always
+      -creditLimit, per vendor. */
+  defaultCreditLimit: number;
+  branchWarnThreshold: number;
+  branchBlockThreshold: number;
   paymentQrPath: string | null;
   paymentNote: string | null;
 }
@@ -116,7 +106,9 @@ export async function getBillingSettings(): Promise<BillingSettings> {
   const result: BillingSettings = {
     id: settings.id,
     warnThreshold: money(settings.warn_threshold),
-    blockThreshold: money(settings.block_threshold),
+    defaultCreditLimit: money(settings.default_credit_limit),
+    branchWarnThreshold: money(settings.branch_warn_threshold),
+    branchBlockThreshold: money(settings.branch_block_threshold),
     paymentQrPath: settings.payment_qr_path,
     paymentNote: settings.payment_note,
   };
@@ -141,26 +133,41 @@ export async function updateBillingSettings(
   actorId: string,
   input: {
     warnThreshold?: number;
-    blockThreshold?: number;
+    defaultCreditLimit?: number;
+    branchWarnThreshold?: number;
+    branchBlockThreshold?: number;
     paymentQrPath?: string | null;
     paymentNote?: string | null;
   },
 ): Promise<BillingSettings> {
   const current = await getBillingSettings();
   const warn = input.warnThreshold ?? current.warnThreshold;
-  const block = input.blockThreshold ?? current.blockThreshold;
+  const credit = money(input.defaultCreditLimit ?? current.defaultCreditLimit);
+  const branchWarn = input.branchWarnThreshold ?? current.branchWarnThreshold;
+  const branchBlock = input.branchBlockThreshold ?? current.branchBlockThreshold;
 
-  // The block threshold must be the harsher of the two, or a vendor could be
-  // blocked before ever being warned.
-  if (block > warn) {
-    throw new AppError(400, "blockThreshold must be less than or equal to warnThreshold");
+  if (!Number.isFinite(credit) || credit <= 0) {
+    throw new AppError(400, "defaultCreditLimit must be greater than zero");
+  }
+  // The block line (-creditLimit) must stay harsher than the warn line, or a
+  // vendor could be blocked before ever being warned.
+  if (-credit > warn) {
+    throw new AppError(
+      400,
+      `defaultCreditLimit must be at least Rs. ${Math.abs(warn).toFixed(2)} so vendors are warned before being blocked`,
+    );
+  }
+  if (branchBlock > branchWarn) {
+    throw new AppError(400, "branchBlockThreshold must be less than or equal to branchWarnThreshold");
   }
 
   await prisma.billing_settings.update({
     where: { id: current.id },
     data: {
       warn_threshold: warn,
-      block_threshold: block,
+      default_credit_limit: credit,
+      branch_warn_threshold: branchWarn,
+      branch_block_threshold: branchBlock,
       ...(input.paymentQrPath !== undefined ? { payment_qr_path: input.paymentQrPath } : {}),
       ...(input.paymentNote !== undefined ? { payment_note: input.paymentNote } : {}),
     },
@@ -172,8 +179,8 @@ export async function updateBillingSettings(
       entity_type: "billing_settings",
       entity_id: current.id,
       action: "UPDATE_BILLING_SETTINGS",
-      old_data: { warnThreshold: current.warnThreshold, blockThreshold: current.blockThreshold },
-      new_data: { warnThreshold: warn, blockThreshold: block },
+      old_data: { warnThreshold: current.warnThreshold, defaultCreditLimit: current.defaultCreditLimit, branchWarnThreshold: current.branchWarnThreshold, branchBlockThreshold: current.branchBlockThreshold },
+      new_data: { warnThreshold: warn, defaultCreditLimit: credit, branchWarnThreshold: branchWarn, branchBlockThreshold: branchBlock },
     },
   });
 
@@ -181,7 +188,81 @@ export async function updateBillingSettings(
   return getBillingSettings();
 }
 
+// The snapshot every new vendor is assigned. Read live (through the cached
+// settings) at creation time so a default change applies to later vendors
+// only — never retroactively to existing ones.
+export async function getDefaultCreditLimit(): Promise<number> {
+  return (await getBillingSettings()).defaultCreditLimit;
+}
+
+/**
+ * Admin override of one vendor's credit limit. Touches only that row — the
+ * system default and every other vendor keep their values. Re-evaluates the
+ * vendor immediately so a raised limit unblocks them without waiting for
+ * their next delivery (mirrors payment verification).
+ */
+export async function updateVendorCreditLimit(
+  actorId: string,
+  vendorId: string,
+  creditLimit: number,
+): Promise<VendorBillingStatus> {
+  const rounded = money(creditLimit);
+  if (!Number.isFinite(rounded) || rounded <= 0) {
+    throw new AppError(400, "creditLimit must be greater than zero");
+  }
+  if (rounded > 100_000_000) {
+    throw new AppError(400, "creditLimit is unrealistically large");
+  }
+  const vendor = await prisma.vendors.findFirst({
+    where: { id: vendorId, deleted_at: null },
+    select: { id: true, business_name: true, client_name: true, credit_limit: true },
+  });
+  if (!vendor) throw new AppError(404, "Vendor not found");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.vendors.update({ where: { id: vendorId }, data: { credit_limit: rounded } });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actorId,
+        entity_type: "vendor",
+        entity_id: vendorId,
+        action: "UPDATE_VENDOR_CREDIT_LIMIT",
+        old_data: { creditLimit: money(vendor.credit_limit) },
+        new_data: { creditLimit: rounded },
+      },
+    });
+  });
+
+  await invalidateVendorBalanceCache(vendorId);
+  // Best-effort by contract (see evaluateVendorBilling): a raise must lift a
+  // block in the same breath, and a failure here must not fail the update.
+  await evaluateVendorBilling(vendorId);
+  return getVendorBillingStatus(vendorId, { skipCache: true });
+}
+
 // ── Balance ─────────────────────────────────────────────────────────────────
+
+// What a vendor statement `s` has actually moved so far. A settled one moved its
+// whole payable; a partially_paid one only its instalments, signed like the
+// payable (negative when the vendor was paying a shortfall in).
+// Cash collected on a cancelled order is never billed or paid out (the pending
+// bill and statements skip it), so it stays out of the balance too - unless it
+// already went onto a statement before the cancellation, in which case the
+// payout that statement makes is counted and the collection must be as well.
+const COUNTED_COLLECTION_SQL = Prisma.sql`
+  p.status::text <> 'cancelled' OR EXISTS (
+    SELECT 1 FROM settlement_items si JOIN settlements s ON s.id = si.settlement_id
+     WHERE si.cod_collection_id = c.id AND s.payee_type = 'vendor' AND s.status::text <> 'cancelled')
+`;
+
+const MOVED_SQL = Prisma.sql`CASE
+  WHEN s.status::text = 'settled' THEN s.payable_amount
+  ELSE SIGN(COALESCE(s.payable_amount, s.amount)) * s.paid_amount
+END`;
+// A negative payable is the vendor paying a shortfall in, so it is a payment
+// received, not a negative payout. The balance is the same either way.
+const PAYOUT_SQL = Prisma.sql`GREATEST(${MOVED_SQL}, 0)`;
+const STATEMENT_PAYMENT_SQL = Prisma.sql`GREATEST(-(${MOVED_SQL}), 0)`;
 
 // One round trip for all four components. COD collected and delivery charges
 // both come off the same parcels join so they share a scope (soft-deleted
@@ -192,7 +273,7 @@ async function computeBalance(vendorId: string): Promise<VendorAccountBalance> {
   >(Prisma.sql`
     WITH parcel_totals AS (
       SELECT
-        COALESCE(SUM(c.collected_amount), 0) AS collected,
+        COALESCE(SUM(c.collected_amount) FILTER (WHERE ${COUNTED_COLLECTION_SQL}), 0) AS collected,
         COALESCE(SUM(p.delivery_charge) FILTER (WHERE ${EARNED_CHARGE_SQL}), 0) AS charges
       FROM parcels p
       LEFT JOIN cod_collections c ON c.parcel_id = p.id
@@ -203,17 +284,23 @@ async function computeBalance(vendorId: string): Promise<VendorAccountBalance> {
       pt.collected,
       pt.charges,
       (
-        SELECT COALESCE(SUM(s.payable_amount), 0)
+        SELECT COALESCE(SUM(${PAYOUT_SQL}), 0)
         FROM settlements s
         WHERE s.vendor_id = ${vendorId}::uuid
           AND s.payee_type = 'vendor'
-          AND s.status::text = 'settled'
+          AND s.status::text IN ('settled', 'partially_paid')
       ) AS payouts,
       (
         SELECT COALESCE(SUM(vp.amount), 0)
         FROM vendor_payments vp
         WHERE vp.vendor_id = ${vendorId}::uuid
           AND vp.status::text = 'verified'
+      ) + (
+        SELECT COALESCE(SUM(${STATEMENT_PAYMENT_SQL}), 0)
+        FROM settlements s
+        WHERE s.vendor_id = ${vendorId}::uuid
+          AND s.payee_type = 'vendor'
+          AND s.status::text IN ('settled', 'partially_paid')
       ) AS payments
     FROM parcel_totals pt
   `);
@@ -259,16 +346,21 @@ export async function getVendorAccountBalance(
 }
 
 export function resolveThresholds(
-  vendor: { billing_warn_threshold: Prisma.Decimal | null; billing_block_threshold: Prisma.Decimal | null },
-  settings: BillingThresholds,
+  vendor: { billing_warn_threshold: Prisma.Decimal | null; credit_limit: Prisma.Decimal },
+  settings: { warnThreshold: number },
 ): BillingThresholds {
   return {
     warnThreshold:
       vendor.billing_warn_threshold === null ? settings.warnThreshold : money(vendor.billing_warn_threshold),
-    blockThreshold:
-      vendor.billing_block_threshold === null ? settings.blockThreshold : money(vendor.billing_block_threshold),
+    // The block line is always this vendor's own credit limit, expressed as
+    // the negative balance that trips it. There is no settings fallback: the
+    // default was snapshotted onto the row at creation.
+    blockThreshold: -money(vendor.credit_limit),
   };
 }
+
+// Worklist order for the credit-control list: the harshest state leads.
+const STATE_ORDER: Record<vendor_billing_state, number> = { blocked: 0, warned: 1, ok: 2 };
 
 export function stateForBalance(balance: number, thresholds: BillingThresholds): vendor_billing_state {
   // Block is checked first: it is the lower (harsher) of the two, so a balance
@@ -278,6 +370,13 @@ export function stateForBalance(balance: number, thresholds: BillingThresholds):
   return "ok";
 }
 
+// The block line is inclusive (balance <= blockThreshold is blocked), so the
+// amount that lifts a block is one paisa past the line, not up to it.
+export function clearBlockAmount(balance: number, thresholds: Pick<BillingThresholds, "blockThreshold">): number {
+  if (balance > thresholds.blockThreshold) return 0;
+  return money(thresholds.blockThreshold - balance + 0.01);
+}
+
 export async function getVendorBillingStatus(
   vendorId: string,
   options: { skipCache?: boolean } = {},
@@ -285,7 +384,7 @@ export async function getVendorBillingStatus(
   const [vendor, settings, balance] = await Promise.all([
     prisma.vendors.findFirst({
       where: { id: vendorId },
-      select: { id: true, billing_warn_threshold: true, billing_block_threshold: true },
+      select: { id: true, billing_warn_threshold: true, credit_limit: true },
     }),
     getBillingSettings(),
     getVendorAccountBalance(vendorId, options),
@@ -303,8 +402,9 @@ export async function getVendorBillingStatus(
     vendorId,
     ...balance,
     ...thresholds,
+    creditLimit: money(vendor.credit_limit),
     state: stateForBalance(balance.balance, thresholds),
-    amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance.balance)),
+    amountToClearBlock: clearBlockAmount(balance.balance, thresholds),
     pendingPaymentAmount: money(pending._sum.amount),
   };
 }
@@ -322,7 +422,7 @@ export async function getVendorBlockDecision(
   const [vendor, settings, balance] = await Promise.all([
     prisma.vendors.findFirst({
       where: { id: vendorId },
-      select: { billing_warn_threshold: true, billing_block_threshold: true },
+      select: { billing_warn_threshold: true, credit_limit: true },
     }),
     getBillingSettings(),
     getVendorAccountBalance(vendorId),
@@ -334,7 +434,7 @@ export async function getVendorBlockDecision(
   return {
     blocked: stateForBalance(balance.balance, thresholds) === "blocked",
     balance: balance.balance,
-    amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance.balance)),
+    amountToClearBlock: clearBlockAmount(balance.balance, thresholds),
   };
 }
 
@@ -364,7 +464,7 @@ export async function listVendorBalances(
       business_name: string | null;
       billing_alert_state: vendor_billing_state;
       warn_override: Prisma.Decimal | null;
-      block_override: Prisma.Decimal | null;
+      credit_limit: Prisma.Decimal;
       collected: string;
       charges: string;
       payouts: string;
@@ -374,7 +474,7 @@ export async function listVendorBalances(
   >(Prisma.sql`
     WITH parcel_totals AS (
       SELECT p.vendor_id,
-             COALESCE(SUM(c.collected_amount), 0) AS collected,
+             COALESCE(SUM(c.collected_amount) FILTER (WHERE ${COUNTED_COLLECTION_SQL}), 0) AS collected,
              COALESCE(SUM(p.delivery_charge) FILTER (WHERE ${EARNED_CHARGE_SQL}), 0) AS charges
       FROM parcels p
       LEFT JOIN cod_collections c ON c.parcel_id = p.id
@@ -382,10 +482,12 @@ export async function listVendorBalances(
       GROUP BY p.vendor_id
     ),
     payout_totals AS (
-      SELECT vendor_id, COALESCE(SUM(payable_amount), 0) AS payouts
-      FROM settlements
-      WHERE payee_type = 'vendor' AND status::text = 'settled' AND vendor_id IS NOT NULL
-      GROUP BY vendor_id
+      SELECT s.vendor_id,
+             COALESCE(SUM(${PAYOUT_SQL}), 0) AS payouts,
+             COALESCE(SUM(${STATEMENT_PAYMENT_SQL}), 0) AS statement_payments
+      FROM settlements s
+      WHERE s.payee_type = 'vendor' AND s.status::text IN ('settled', 'partially_paid') AND s.vendor_id IS NOT NULL
+      GROUP BY s.vendor_id
     ),
     payment_totals AS (
       SELECT vendor_id,
@@ -399,11 +501,11 @@ export async function listVendorBalances(
            v.business_name,
            v.billing_alert_state,
            v.billing_warn_threshold  AS warn_override,
-           v.billing_block_threshold AS block_override,
+           v.credit_limit            AS credit_limit,
            COALESCE(pt.collected, 0) AS collected,
            COALESCE(pt.charges, 0)   AS charges,
            COALESCE(po.payouts, 0)   AS payouts,
-           COALESCE(pm.payments, 0)  AS payments,
+           COALESCE(pm.payments, 0) + COALESCE(po.statement_payments, 0) AS payments,
            COALESCE(pm.pending, 0)   AS pending
     FROM vendors v
     LEFT JOIN parcel_totals  pt ON pt.vendor_id = v.id
@@ -421,7 +523,7 @@ export async function listVendorBalances(
       const paymentsReceived = money(row.payments);
       const balance = money(codCollected - deliveryCharges - payouts + paymentsReceived);
       const thresholds = resolveThresholds(
-        { billing_warn_threshold: row.warn_override, billing_block_threshold: row.block_override },
+        { billing_warn_threshold: row.warn_override, credit_limit: row.credit_limit },
         settings,
       );
 
@@ -435,14 +537,25 @@ export async function listVendorBalances(
         paymentsReceived,
         balance,
         ...thresholds,
+        creditLimit: money(row.credit_limit),
         state: stateForBalance(balance, thresholds),
-        amountToClearBlock: Math.max(0, money(thresholds.blockThreshold - balance)),
+        amountToClearBlock: clearBlockAmount(balance, thresholds),
         pendingPaymentAmount: money(row.pending),
       };
     })
     // Filtered on the live state, not the stored one - the stored value is only
     // what the vendor was last told, and lags until the next evaluation.
-    .filter((row) => !stateFilter || row.state === stateFilter);
+    .filter((row) => !stateFilter || row.state === stateFilter)
+    // Credit control is a worklist: whoever is blocked needs attention first,
+    // and within a state the deepest debt leads. Balance is negative when the
+    // vendor owes, so ascending balance is descending debt. Name breaks ties
+    // so the order is stable between loads.
+    .sort(
+      (a, b) =>
+        STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
+        a.balance - b.balance ||
+        a.vendorName.localeCompare(b.vendorName),
+    );
 }
 
 export async function invalidateVendorBalanceCache(vendorId: string): Promise<void> {

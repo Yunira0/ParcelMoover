@@ -20,6 +20,8 @@ export interface PricingSettings {
   branchFlatOutsideRingRoad: number | null;
   returnInsideValleyPercent: number | null;
   returnOutsideValleyPercent: number | null;
+  branchReturnInsideValleyPercent: number | null;
+  branchReturnOutsideValleyPercent: number | null;
 }
 
 export type UpdatePricingSettingsInput = Partial<Omit<PricingSettings, 'id'>>;
@@ -51,6 +53,7 @@ export const getVendorQuote = async (
   weightKg: number,
   vendorId?: string,
   serviceType?: 'home_delivery' | 'branch_delivery',
+  isReturn?: boolean,
 ): Promise<{ success: boolean; data: VendorQuote }> => {
   const response = await api.get('/pricing/quote', {
     params: {
@@ -58,6 +61,7 @@ export const getVendorQuote = async (
       weightKg,
       ...(vendorId ? { vendorId } : {}),
       ...(serviceType ? { serviceType } : {}),
+      ...(isReturn ? { isReturn: 'true' } : {}),
     },
   });
   return response.data;

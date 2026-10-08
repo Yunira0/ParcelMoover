@@ -10,6 +10,8 @@ import { formatCurrency as formatCurrencyBase } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
 import { settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
+import ClearableFilter from '../../components/ClearableFilter';
+import { useSessionState } from '../../hooks/useSessionState';
 import './VendorFinance.css';
 
 // The selector below the table goes up to 500, this endpoint's ceiling
@@ -20,10 +22,12 @@ const formatCurrency = (value: number) => formatCurrencyBase(value, 0);
 
 const VendorSettlements: React.FC = () => {
   const navigate = useNavigate();
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  // Kept for the browser tab, so opening a statement and coming back keeps the
+  // range until it is cleared by hand.
+  const [fromDate, setFromDate] = useSessionState('vendor-settlements:from', '');
+  const [toDate, setToDate] = useSessionState('vendor-settlements:to', '');
   const [page, setPage] = useState(1);
-  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  const [pageSizeChoice, setPageSizeChoice] = useSessionState('vendor-settlements:pageSize', PAGE_SIZE);
   const [items, setItems] = useState<SettlementListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -75,9 +79,23 @@ const VendorSettlements: React.FC = () => {
         </button>
       ),
     },
-    { header: 'TRANSFER DATE', accessor: (item: SettlementListItem) => toBsDate(item.transferDate) },
+    // The date the statement was raised - money has only moved once it is paid.
+    { header: 'STATEMENT DATE', accessor: (item: SettlementListItem) => toBsDate(item.transferDate) },
     { header: 'ORDERS', accessor: (item: SettlementListItem) => `${item.orderCount} order(s)` },
-    { header: 'AMOUNT', accessor: (item: SettlementListItem) => formatCurrency(item.amount) },
+    {
+      header: 'AMOUNT',
+      // A negative statement is one where delivery charges beat the COD, so the
+      // money runs from you to us - say that instead of printing a minus sign.
+      accessor: (item: SettlementListItem) =>
+        item.amount < 0 ? (
+          <>
+            {formatCurrency(-item.amount)}
+            <div className="vendor-settlement-status-sub">due from you</div>
+          </>
+        ) : (
+          formatCurrency(item.amount)
+        ),
+    },
     {
       header: 'STATUS',
       accessor: (item: SettlementListItem) => (
@@ -88,7 +106,9 @@ const VendorSettlements: React.FC = () => {
           {/* The chip alone doesn't say how much of the payout has landed. */}
           {item.status === 'partially_paid' && (
             <div className="vendor-settlement-status-sub">
-              {formatCurrency(item.paidAmount)} of {formatCurrency(item.amount)} received
+              {item.amount < 0
+                ? `${formatCurrency(item.paidAmount)} of ${formatCurrency(-item.amount)} paid by you`
+                : `${formatCurrency(item.paidAmount)} of ${formatCurrency(item.amount)} received`}
             </div>
           )}
         </>
@@ -99,33 +119,51 @@ const VendorSettlements: React.FC = () => {
 
   return (
     <div className="vendor-finance-page">
-      <PageHeader title="Settlements" subtitle="Oversee and monitor your payouts throughout the settlement network." />
+      <PageHeader title="Settlements" />
 
       <div className="vendor-finance-toolbar">
         <div className="vendor-finance-date-range">
           <label>
             From
-            <NepaliDatePicker
-              value={fromDate}
-              max={toDate || undefined}
-              aria-label="From date"
-              onChange={(next) => {
+            <ClearableFilter
+              active={Boolean(fromDate)}
+              onClear={() => {
                 setPage(1);
-                setFromDate(next);
+                setFromDate('');
               }}
-            />
+              clearLabel="Clear from date"
+            >
+              <NepaliDatePicker
+                value={fromDate}
+                max={toDate || undefined}
+                aria-label="From date"
+                onChange={(next) => {
+                  setPage(1);
+                  setFromDate(next);
+                }}
+              />
+            </ClearableFilter>
           </label>
           <label>
             To
-            <NepaliDatePicker
-              value={toDate}
-              min={fromDate || undefined}
-              aria-label="To date"
-              onChange={(next) => {
+            <ClearableFilter
+              active={Boolean(toDate)}
+              onClear={() => {
                 setPage(1);
-                setToDate(next);
+                setToDate('');
               }}
-            />
+              clearLabel="Clear to date"
+            >
+              <NepaliDatePicker
+                value={toDate}
+                min={fromDate || undefined}
+                aria-label="To date"
+                onChange={(next) => {
+                  setPage(1);
+                  setToDate(next);
+                }}
+              />
+            </ClearableFilter>
           </label>
         </div>
       </div>

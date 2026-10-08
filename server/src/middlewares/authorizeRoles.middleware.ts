@@ -1,5 +1,4 @@
 import { NextFunction, Request, Response } from "express";
-import { AppError } from "../utils/AppError";
 export function authorizeRoles(...allowedRoles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {

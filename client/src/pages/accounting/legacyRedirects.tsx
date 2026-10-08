@@ -97,17 +97,8 @@ export const PartiesRedirect: React.FC = () => {
 
 export const PartyLedgerRedirect: React.FC = () => {
   const { partyType = 'vendor', id = '' } = useParams<{ partyType: string; id: string }>();
-  return (
-    <Redirect
-      to={`/accounting/people/${partyType}/${id}`}
-      rewrite={(params) => params.set('tab', 'ledger')}
-    />
-  );
+  return <Redirect to={`/finance/ledger/${partyType === 'rider' ? 'rider' : 'vendor'}/${id}`} />;
 };
 
 export const SearchRedirect: React.FC = () => <Redirect to="/accounting/people/search" />;
 
-export const PersonDetailRedirect: React.FC = () => {
-  const { partyType = 'vendor', partyId = '' } = useParams<{ partyType: string; partyId: string }>();
-  return <Redirect to={`/accounting/people/${partyType}/${partyId}`} />;
-};

@@ -69,7 +69,8 @@ const StepRail: React.FC<{ current: 1 | 2 }> = ({ current }) => (
 const SettlementPayPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const isSuperAdmin = hasAnyRole(['super_admin']);
+  // Managing payment methods is office finance: super_admin or accountant.
+  const isSuperAdmin = hasAnyRole(['super_admin', 'accountant']);
 
   const [detail, setDetail] = useState<SettlementDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(true);
@@ -122,7 +123,12 @@ const SettlementPayPage: React.FC = () => {
   const isOver = shortfall < 0;
   const isSubmittable =
     !isOver && (amountMode === 'full' ? clearsStatement : enteredAmount > 0 || outstanding === 0);
-  const hasBankDetails = Boolean(detail?.bankName || detail?.bankAccountNo || detail?.bankAccountHolder);
+  // Vendors only. Bank details are here so whoever makes the transfer can read
+  // off where to send it — on a rider statement the money is coming *in* over
+  // the counter, so the rider's account is not part of the transaction.
+  const hasBankDetails =
+    detail?.payeeType === 'vendor' &&
+    Boolean(detail.bankName || detail.bankAccountNo || detail.bankAccountHolder);
 
   useEffect(() => {
     let active = true;

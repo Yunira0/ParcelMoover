@@ -15,10 +15,29 @@
   margin: 0;
 }
 
-.welcome-text p {
-  font-size: var(--font-size-md);
+/* Role and hub under the greeting, so the header isn't a lone title. */
+.welcome-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.welcome-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2-5);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-full);
+  background: var(--color-background-surface);
   color: var(--color-text-caption);
-  margin: var(--space-2) 0 0 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.welcome-chip svg {
+  color: var(--color-text-caption);
 }
 
 .time-section {

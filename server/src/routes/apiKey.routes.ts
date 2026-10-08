@@ -17,6 +17,7 @@ import {
 // The keys themselves authenticate the separate public /api/v1 surface.
 const apiKeyRouter: Router = Router();
 
+
 const apiKeyReadLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
@@ -24,6 +25,7 @@ const apiKeyReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("apikey-mgmt-read"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });
@@ -35,6 +37,7 @@ const apiKeyWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("apikey-mgmt-write"),
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ""),
 });

@@ -3,15 +3,68 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Users, ListChecks, Download } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
-import StatusChip from '../components/StatusChip';
+import StatusChip, { type StatusChipTone } from '../components/StatusChip';
+import CreditUsageBar from '../components/CreditUsageBar';
 import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '../services/finance.service';
-import { getRiders, searchVendors } from '../services/users.service';
+import { getBillingStatus, type BillingStatus, type VendorBillingState } from '../services/billing.service';
+import { getAllRiders, searchVendors } from '../queries/lookups';
 import { downloadExcel, type CellValue } from '../utils/excel';
+import { formatCurrency } from '../utils/format';
+import { todayNepalAd } from '../utils/nepaliDate';
+import { apiErrorMessage } from '../utils/serverValidation';
+import './vendor/VendorBilling.css';
 import './SettlementCreatePage.css';
+import ReceiverPhones from '../components/ReceiverPhones';
+import { DeliveryChargeCells, DeliveryChargeHeads } from '../components/DeliveryChargeCells';
+import { DELIVERY_CHARGE_VAT_RATE, splitVat, sumVatSplits, vatColumns } from '../utils/vat';
 
 type PayeeType = 'rider' | 'vendor';
 
-const SectionHeader: React.FC<{
+const CREDIT_STATE: Record<VendorBillingState, { tone: StatusChipTone; label: string }> = {
+  ok: { tone: 'success', label: 'Good standing' },
+  warned: { tone: 'warning', label: 'Warned' },
+  blocked: { tone: 'danger', label: 'Blocked' },
+};
+
+// Mirrors stateForBalance on the server: both lines are inclusive.
+const creditStateFor = (balance: number, credit: BillingStatus): VendorBillingState =>
+  balance <= credit.blockThreshold ? 'blocked' : balance <= credit.warnThreshold ? 'warned' : 'ok';
+
+const balanceLabel = (balance: number) =>
+  balance < 0 ? `Owes ${formatCurrency(-balance)}` : `${formatCurrency(balance)} in credit`;
+
+/**
+ * The vendor's running credit account. Unsettled COD is what covers their
+ * delivery charges, so paying it out can leave charges on non-COD orders
+ * (prepaid, returns) exposed - the operator should see that before settling.
+ */
+const VendorCreditPanel: React.FC<{ credit: BillingStatus }> = ({ credit }) => {
+  const state = CREDIT_STATE[credit.state];
+  return (
+    <div className="scp-credit">
+      <div className="scp-credit-head">
+        <span className="scp-credit-title">Credit balance</span>
+        <StatusChip tone={state.tone}>{state.label}</StatusChip>
+      </div>
+      <div className={`scp-credit-balance${credit.balance < 0 ? ' scp-credit-owed' : ''}`}>
+        {balanceLabel(credit.balance)}
+      </div>
+      <CreditUsageBar
+        balance={credit.balance}
+        creditLimit={credit.creditLimit}
+        state={credit.state}
+        id="scp-credit-usage"
+      />
+      {credit.pendingPaymentAmount > 0 && (
+        <p className="scp-subtext">
+          {formatCurrency(credit.pendingPaymentAmount)} in payment claims awaiting verification (not included).
+        </p>
+      )}
+    </div>
+  );
+};
+
+export const SectionHeader: React.FC<{
   icon: React.ReactNode;
   title: string;
   description: string;
@@ -57,23 +110,32 @@ const SettlementCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const payeeType: PayeeType = searchParams.get('type') === 'vendor' ? 'vendor' : 'rider';
+  // Back to the list this was opened from. The old /finance target always
+  // landed on Rider COD, even when adding a vendor settlement.
+  const listPath = `/accounting/transactions/${payeeType}-cod`;
+  const listLabel = payeeType === 'vendor' ? 'Vendor COD' : 'Rider COD';
 
   const [entityOptions, setEntityOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [selectedEntityId, setSelectedEntityId] = useState('');
   const [orders, setOrders] = useState<UnsettledOrderItem[]>([]);
+  const [ordersCapped, setOrdersCapped] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [fetchingOrders, setFetchingOrders] = useState(false);
-  const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
+  const [settlementDate, setSettlementDate] = useState(todayNepalAd);
   const [error, setError] = useState('');
+  const [ordersError, setOrdersError] = useState('');
+  const [credit, setCredit] = useState<BillingStatus | null>(null);
+  // Prepaid delivery charges the server adds to the statement it creates.
+  const [prepaidCredit, setPrepaidCredit] = useState(0);
 
   useEffect(() => {
     if (payeeType !== 'rider') return;
     const fetchRiders = async () => {
       setFetching(true);
       try {
-        const res = await getRiders({ pageSize: 100 });
+        const res = await getAllRiders();
         if (res?.success && Array.isArray(res.data)) {
           setEntityOptions(res.data.map((r: any) => ({
             value: r.id,
@@ -107,26 +169,58 @@ const SettlementCreatePage: React.FC = () => {
   useEffect(() => {
     if (!selectedEntityId) {
       setOrders([]);
+      setOrdersCapped(false);
       setSelected(new Set());
       return;
     }
 
+    // Switching payee mid-fetch must not let the first payee's orders land
+    // under the second one's name.
+    let active = true;
     const fetchOrders = async () => {
       setFetchingOrders(true);
+      setOrdersError('');
       try {
         const res = await getUnsettledOrders(payeeType, selectedEntityId);
+        if (!active) return;
         if (res?.success && res.data?.items) {
           setOrders(res.data.items);
+          setOrdersCapped(!!res.data.capped);
+          setPrepaidCredit(payeeType === 'vendor' ? res.data.availableCredit ?? 0 : 0);
         } else {
           setOrders([]);
+          setOrdersCapped(false);
+          setPrepaidCredit(0);
         }
-      } catch {
+      } catch (err) {
+        if (!active) return;
         setOrders([]);
+        setOrdersCapped(false);
+        setPrepaidCredit(0);
+        setOrdersError(apiErrorMessage(err, 'Failed to load unsettled orders.'));
       } finally {
-        setFetchingOrders(false);
+        if (active) setFetchingOrders(false);
       }
     };
     fetchOrders();
+    return () => {
+      active = false;
+    };
+  }, [selectedEntityId, payeeType]);
+
+  useEffect(() => {
+    setCredit(null);
+    if (payeeType !== 'vendor' || !selectedEntityId) return;
+    let cancelled = false;
+    getBillingStatus(selectedEntityId)
+      .then((status) => {
+        if (!cancelled) setCredit(status);
+      })
+      // Context only - a failure here must not get in the way of settling.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [selectedEntityId, payeeType]);
 
   const toggleOrder = (codCollectionId: string) => {
@@ -150,12 +244,15 @@ const SettlementCreatePage: React.FC = () => {
     () => orders.filter((o) => selected.has(o.codCollectionId)),
     [orders, selected],
   );
-  const totalAmount = selectedOrders.reduce((sum, o) => sum + o.netPayable, 0);
+  const totalAmount = selectedOrders.reduce((sum, o) => sum + o.netPayable, 0) + (selected.size > 0 ? prepaidCredit : 0);
+  // The payout comes off the balance once the statement is paid in full.
+  const balanceAfter = credit ? Math.round((credit.balance - totalAmount) * 100) / 100 : null;
+  const stateAfter = credit && balanceAfter !== null ? creditStateFor(balanceAfter, credit) : null;
 
   // Exports what the operator is looking at: the ticked rows once they've
   // started choosing, otherwise the whole unsettled list. The button label says
   // which, so the file never surprises them.
-  const downloadOrdersExcel = () => {
+  const downloadOrdersExcel = async () => {
     const rowsToExport = selected.size > 0 ? selectedOrders : orders;
     if (rowsToExport.length === 0) return;
 
@@ -165,35 +262,41 @@ const SettlementCreatePage: React.FC = () => {
       'Order ID',
       'Tracking ID',
       'Receiver',
-      'Receiver Phone',
+      'Receiver Phone', 'Alternate Number',
       'Order Type',
       isVendor ? 'Destination' : 'Location',
       'COD',
-      ...(isVendor ? ['Delivery Charge', 'Net Payable'] : []),
+      ...(isVendor ? ['Delivery Charge', `VAT ${DELIVERY_CHARGE_VAT_RATE}%`, 'Net Payable'] : []),
     ];
     const rows: CellValue[][] = rowsToExport.map((order, index) => [
       index + 1,
       `#${order.orderNumber}`,
       order.trackingId,
       order.receiverName,
-      order.receiverPhone,
+      order.receiverPhone || '',
+      order.receiverAlternatePhone || '',
       order.orderType,
       isVendor ? order.destination : order.location || '-',
       order.codAmount,
-      ...(isVendor ? [order.deliveryCharge, order.netPayable] : []),
+      ...(isVendor ? [...vatColumns(splitVat(order.deliveryCharge, DELIVERY_CHARGE_VAT_RATE)), order.netPayable] : []),
     ]);
 
     // Totals under the numeric columns; pad out the leading text columns.
-    const numericColumns = isVendor ? 3 : 1;
+    const numericColumns = isVendor ? 4 : 1;
     const sum = (pick: (o: UnsettledOrderItem) => number) =>
       rowsToExport.reduce((total, order) => total + pick(order), 0);
     rows.push([
       ...new Array(headers.length - numericColumns).fill(''),
       sum((o) => o.codAmount),
-      ...(isVendor ? [sum((o) => o.deliveryCharge), sum((o) => o.netPayable)] : []),
+      ...(isVendor
+        ? [
+            ...vatColumns(sumVatSplits(rowsToExport.map((o) => o.deliveryCharge), DELIVERY_CHARGE_VAT_RATE)),
+            sum((o) => o.netPayable),
+          ]
+        : []),
     ]);
 
-    downloadExcel(
+    await downloadExcel(
       `unsettled-orders-${payeeType}-${settlementDate}.xlsx`,
       'Unsettled Orders',
       headers,
@@ -236,9 +339,9 @@ const SettlementCreatePage: React.FC = () => {
 
   return (
     <div className="scp-page">
-      <button type="button" className="scp-back" onClick={() => navigate('/finance')}>
+      <button type="button" className="scp-back" onClick={() => navigate(listPath)}>
         <ArrowLeft size={15} />
-        COD Management
+        {listLabel}
       </button>
 
       <div className="scp-header">
@@ -295,6 +398,7 @@ const SettlementCreatePage: React.FC = () => {
               />
             </div>
           </div>
+          {payeeType === 'vendor' && credit && <VendorCreditPanel credit={credit} />}
         </section>
 
         {selectedEntityId && (
@@ -319,6 +423,8 @@ const SettlementCreatePage: React.FC = () => {
 
             {fetchingOrders ? (
               <div className="scp-empty">Loading orders...</div>
+            ) : ordersError ? (
+              <div className="scp-error" role="alert">{ordersError}</div>
             ) : orders.length === 0 ? (
               <div className="scp-empty">No unsettled orders found for this {payeeType}.</div>
             ) : (
@@ -333,16 +439,13 @@ const SettlementCreatePage: React.FC = () => {
                           onChange={toggleAll}
                         />
                       </th>
-                      <th style={{ textAlign: 'left' }}>Order ID</th>
-                      <th style={{ textAlign: 'left' }}>Tracking ID</th>
-                      <th style={{ textAlign: 'left' }}>Receiver</th>
-                      <th style={{ textAlign: 'left' }}>Number</th>
-                      <th style={{ textAlign: 'left' }}>Order Type</th>
-                      {/* Vendor destinations are long municipality strings that wrap to
-                          four lines and wreck the row rhythm, and nothing settles on
-                          them - they stay in the Excel export only. A rider's location
-                          is a single place name, so it keeps its column. */}
-                      {payeeType === 'rider' && <th style={{ textAlign: 'left' }}>Location</th>}
+                      <th>Order ID</th>
+                      <th>Tracking ID</th>
+                      <th>Receiver</th>
+                      <th>Number</th>
+                      <th>Order Type</th>
+                      {payeeType === 'vendor' && <th>Destination</th>}
+                      {payeeType === 'rider' && <th>Location</th>}
                       {/* Rider rows have no delivery-charge deduction, so COD and
                           collected are always the same figure - one column, not two.
                           The cell holds a label/value block rather than a bare number,
@@ -351,8 +454,8 @@ const SettlementCreatePage: React.FC = () => {
                       <th className="scp-cod-head">COD</th>
                       {payeeType === 'vendor' && (
                         <>
-                          <th style={{ textAlign: 'right' }}>Delivery Charge</th>
-                          <th style={{ textAlign: 'right' }}>Net Payable</th>
+                          <DeliveryChargeHeads vatRate={DELIVERY_CHARGE_VAT_RATE} className="scp-num" />
+                          <th className="scp-num">Net Payable</th>
                         </>
                       )}
                     </tr>
@@ -380,7 +483,7 @@ const SettlementCreatePage: React.FC = () => {
                             <div className="scp-subtext">{order.receiverAddress}</div>
                           )}
                         </td>
-                        <td className="scp-mono">{order.receiverPhone}</td>
+                        <td className="scp-mono"><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></td>
                         <td>
                           {order.isReturnToVendor ? (
                             <StatusChip tone="info">RTV</StatusChip>
@@ -388,16 +491,20 @@ const SettlementCreatePage: React.FC = () => {
                             <span style={{ textTransform: 'capitalize' }}>{order.orderType}</span>
                           )}
                         </td>
+                        {payeeType === 'vendor' && <td>{order.destination || '-'}</td>}
                         {payeeType === 'rider' && <td>{order.location || '-'}</td>}
                         <td className="scp-cod-head">
                           <CodCell codAmount={order.codAmount} collectedAmount={order.collectedAmount} />
                         </td>
                         {payeeType === 'vendor' && (
                           <>
-                            <td className="scp-num" style={{ textAlign: 'right' }}>
-                              Rs. {order.deliveryCharge.toLocaleString()}
-                            </td>
-                            <td className="scp-num scp-num-strong" style={{ textAlign: 'right' }}>
+                            <DeliveryChargeCells
+                              charge={order.deliveryCharge}
+                              vatRate={DELIVERY_CHARGE_VAT_RATE}
+                              className="scp-num"
+                              format={(value) => `Rs. ${value.toLocaleString()}`}
+                            />
+                            <td className="scp-num scp-num-strong">
                               Rs. {order.netPayable.toLocaleString()}
                             </td>
                           </>
@@ -409,11 +516,35 @@ const SettlementCreatePage: React.FC = () => {
               </div>
             )}
 
+            {ordersCapped && (
+              <p className="scp-hint">
+                Showing the first {orders.length.toLocaleString()} unsettled orders. Settle some of these first to see more.
+              </p>
+            )}
+
             {selected.size > 0 && (
               <div className="scp-summary">
                 <span>{selected.size} order{selected.size > 1 ? 's' : ''} selected</span>
-                <span className="scp-summary-total">Total: Rs. {totalAmount.toLocaleString()}</span>
+                {prepaidCredit > 0 && (
+                  <span>+ Rs. {prepaidCredit.toLocaleString()} delivery charges the vendor prepaid through Billing</span>
+                )}
+                <span className="scp-summary-total">Total: {formatCurrency(totalAmount)}</span>
               </div>
+            )}
+
+            {selected.size > 0 && credit && balanceAfter !== null && stateAfter && (
+              <div className={`scp-credit-after scp-credit-after-${stateAfter}`}>
+                <span>
+                  Credit balance after this payout: <strong>{balanceLabel(balanceAfter)}</strong>
+                </span>
+                <StatusChip tone={CREDIT_STATE[stateAfter].tone}>{CREDIT_STATE[stateAfter].label}</StatusChip>
+              </div>
+            )}
+            {stateAfter && credit && stateAfter !== 'ok' && credit.state === 'ok' && (
+              <p className="scp-credit-note">
+                Paying this out leaves delivery charges uncovered by COD, so the vendor will be{' '}
+                {stateAfter === 'blocked' ? 'blocked from creating orders' : 'warned about charges due'}.
+              </p>
             )}
           </section>
         )}
@@ -425,7 +556,7 @@ const SettlementCreatePage: React.FC = () => {
         )}
 
         <div className="scp-actions">
-          <Button type="button" variant="secondary" onClick={() => navigate('/finance')} disabled={loading}>
+          <Button type="button" variant="secondary" onClick={() => navigate(listPath)} disabled={loading}>
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={loading || fetching || !selectedEntityId}>

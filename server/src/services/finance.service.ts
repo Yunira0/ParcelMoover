@@ -3,7 +3,7 @@ import { order_type, parcel_status, payment_status, settlement_status } from "..
 import prisma from "../lib/prisma";
 import redis, { scanAndDelete } from "../lib/redis";
 import { AppError } from "../utils/AppError";
-import { formatNepalDate } from "../utils/nepalTime";
+import { formatNepalDate, nepalDayRangeUtc } from "../utils/nepalTime";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { resolveOwnVendorId } from "./vendor-scope.service";
 import { createNotification } from "./notification.service";
@@ -11,6 +11,9 @@ import { evaluateVendorBillingAsync } from "./billing.service";
 import { syncSettlementPostings } from "./accounting/sync";
 
 import { getActivePaymentMethodNames } from "./payment-method.service";
+import { adminBranchScopeIds, assertHeadOfficeOnly } from "../lib/branchScope";
+import { isFinanceStaff } from "../utils/financeRoles";
+import { DELIVERY_CHARGE_VAT_RATE } from "./money-rules";
 import {
   AttachSettlementDocumentsInput,
   CodPaymentFilter,
@@ -85,6 +88,9 @@ export async function invalidateRiderFinanceCache(riderId: string): Promise<void
   try {
     await scanAndDelete(`finance:rider:${riderId}:*`);
     await scanAndDelete(`finance:all:rider:*`);
+    // A branch-scoped admin's rider list is cached per branch (see
+    // listSettlements' scopeKey) and holds every rider of that branch.
+    await scanAndDelete(`finance:branch:*`);
   } catch (error) {
     console.error("[Redis] Failed to invalidate finance cache:", error);
   }
@@ -94,7 +100,7 @@ export async function invalidateRiderFinanceCache(riderId: string): Promise<void
 // must explicitly name a vendor - there is no "view everyone's COD" mode here,
 // since this is financial data and an unscoped query would leak across vendors.
 async function resolveVendor(actor: Actor, vendorIdParam?: string) {
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isStaff = isFinanceStaff(actor);
   const isSales = actor.roles.includes("sales") && !isStaff;
 
   // Sales accounts may view finance for one of their own clients only. They must
@@ -143,7 +149,7 @@ async function resolveVendor(actor: Actor, vendorIdParam?: string) {
 // financial-data-leak reason. Sales accounts have no rider visibility at all
 // (matches getUnsettledOrders below).
 async function resolveRider(actor: Actor, riderIdParam?: string) {
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isStaff = isFinanceStaff(actor);
 
   if (actor.roles.includes("rider")) {
     const rider = await prisma.riders.findFirst({
@@ -161,13 +167,61 @@ async function resolveRider(actor: Actor, riderIdParam?: string) {
     throw new AppError(400, "riderId is required");
   }
 
+  // A branch-scoped admin may only settle riders in their branch's coverage;
+  // the filter (not a separate check) keeps "not mine" indistinguishable from
+  // "doesn't exist".
+  const branchIds = await adminBranchScopeIds(actor);
   const rider = await prisma.riders.findFirst({
-    where: { id: riderIdParam, deleted_at: null },
+    where: { id: riderIdParam, deleted_at: null, ...(branchIds ? { location_id: { in: branchIds } } : {}) },
   });
   if (!rider) {
     throw new AppError(404, "Rider not found");
   }
   return rider;
+}
+
+/**
+ * Vendor COD settlement is centralised at Imadol; rider COD settlement is a
+ * branch activity but limited to the branch's own riders. No-op for
+ * super_admin and unrestricted admins.
+ */
+async function assertBranchActorOwnsRider(actor: Actor, riderId: string) {
+  const ids = await adminBranchScopeIds(actor);
+  if (!ids) return;
+  const rider = await prisma.riders.findFirst({
+    where: { id: riderId, location_id: { in: ids } },
+    select: { id: true },
+  });
+  if (!rider) throw new AppError(403, "This rider is not assigned to your branch");
+}
+
+/**
+ * Vendor COD settlement is centralised at the Imadol head office: a branch only
+ * collects COD (from customers via riders, and from those riders) and remits it
+ * to Imadol, which then settles vendors. Rider settlement stays a branch
+ * activity, so this guards the "vendor" payee type only.
+ */
+async function assertHeadOfficeForVendorSettlement(actor: Actor) {
+  await assertHeadOfficeOnly(actor, "Vendor settlements are handled centrally from Imadol, not from a branch");
+}
+
+/**
+ * Actor access to one existing statement, resolved from its payee:
+ * - vendor statement -> Imadol head office only (no branch admin)
+ * - rider statement  -> a branch-scoped admin only for their own branch's rider
+ */
+async function assertHeadOfficeForVendorSettlementById(actor: Actor, settlementId: string) {
+  if (actor.roles.includes("super_admin")) return;
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    select: { payee_type: true, rider_id: true },
+  });
+  if (!settlement) return;
+  if (settlement.payee_type === "vendor") {
+    await assertHeadOfficeForVendorSettlement(actor);
+  } else if (settlement.payee_type === "rider" && settlement.rider_id) {
+    await assertBranchActorOwnsRider(actor, settlement.rider_id);
+  }
 }
 
 function toBillingProfile(vendor: {
@@ -187,28 +241,41 @@ function toBillingProfile(vendor: {
   };
 }
 
-function formatLocation(location?: { name: string; city: string | null; district: string | null } | null) {
-  if (!location) return "";
-  return [location.name, location.city || location.district].filter(Boolean).join(", ");
+function formatLocation(location?: { name: string } | null) {
+  // The location's own name, exactly as it reads in the destination picker at
+  // order creation (see CreateOrderPage's destinationSelectOptions) - hub
+  // names already carry the district or valley grouping where one applies
+  // ("Inaruwa - Sunsari", "Inside Valley - KTM"), so there's nothing to derive.
+  return location?.name ?? "";
+}
+
+function hubNameOnly(value: string): string {
+  // Billing details destination: hub before " - " and without trailing " Branch" (e.g. "Pokhara Branch" -> "Pokhara", "KTM - Inside Valley" -> "KTM")
+  return (value.split(" - ")[0] ?? "").replace(/\s*Branch\s*$/i, "").trim();
 }
 
 export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): Promise<PendingCodBill> {
   const vendor = await resolveVendor(actor, vendorIdParam);
 
-  const cacheKey = `finance:${vendor.id}:pending-cod`;
+  // :v2 - payloads cached before onStatements existed lack it.
+  const cacheKey = `finance:${vendor.id}:pending-cod:v2`;
   const cached = await readFinanceCache<PendingCodBill>(cacheKey);
   if (cached) return cached;
 
   const collections = await prisma.cod_collections.findMany({
-    // Only orders with cash actually collected are billable (excludes
-    // not-yet-delivered orders); amounts are on the collected basis so the bill
-    // matches what will be settled. Orders already bundled into a vendor
-    // statement are excluded - they've moved out of the pending bill and into
-    // that statement, even while it awaits payment.
+    // Keyed on collected_at (set by the delivery / partial-delivery / RTV
+    // transition), not collected_amount > 0: any order that reached the vendor
+    // belongs on the bill even when no cash came in - a 0-COD delivery, or an
+    // RTV/return parcel - because the vendor still owes its delivery charge, so
+    // that row's net payable is negative. Excludes not-yet-delivered orders.
+    // Amounts are on the collected basis so the bill matches what will be
+    // settled, and mirrors getUnsettledOrders' vendor leg. Orders already
+    // bundled into a vendor statement are excluded - they've moved out of the
+    // pending bill and into that statement, even while it awaits payment.
     where: {
       vendor_id: vendor.id,
       payment_status: payment_status.pending,
-      collected_amount: { gt: 0 },
+      collected_at: { not: null },
       settlement_items: { none: { settlements: { payee_type: "vendor" } } },
       // A cancelled order is void - it must never be billed, even if cash was
       // recorded as collected before the cancellation happened.
@@ -220,9 +287,9 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
           order_number: true,
           tracking_id: true,
           delivery_charge: true,
-          parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+          parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true } },
           locations_parcels_destination_location_idTolocations: {
-            select: { name: true, city: true, district: true },
+            select: { name: true },
           },
         },
       },
@@ -235,6 +302,7 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
     trackingId: c.parcels.tracking_id,
     receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
     receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
+    receiverAlternatePhone: c.parcels.parties_parcels_receiver_idToparties.alternate_phone || "",
     destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
     codAmount: Number(c.collected_amount),
     deliveryCharge: Number(c.parcels.delivery_charge),
@@ -243,6 +311,17 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
   const totalCod = items.reduce((sum, item) => sum + item.codAmount, 0);
   const deliveryCharges = items.reduce((sum, item) => sum + item.deliveryCharge, 0);
 
+  const openStatements = await prisma.settlements.findMany({
+    where: { vendor_id: vendor.id, payee_type: "vendor", status: { in: ["pending", "partially_paid"] } },
+    select: { amount: true, payable_amount: true, paid_amount: true },
+  });
+  const onStatementsOutstanding = round2(
+    openStatements.reduce((sum, s) => {
+      const payable = Number(s.payable_amount ?? s.amount);
+      return sum + Math.sign(payable) * (Math.abs(payable) - Number(s.paid_amount));
+    }, 0),
+  );
+
   const result: PendingCodBill = {
     vendor: toBillingProfile(vendor),
     statementDate: new Date().toISOString(),
@@ -250,8 +329,9 @@ export async function getPendingCodBill(actor: Actor, vendorIdParam?: string): P
     totals: {
       totalCod,
       deliveryCharges,
-      payableAmount: totalCod - deliveryCharges,
+      payableAmount: round2(totalCod - deliveryCharges),
     },
+    onStatements: { count: openStatements.length, outstanding: onStatementsOutstanding },
   };
   await writeFinanceCache(cacheKey, result);
   return result;
@@ -309,8 +389,14 @@ export async function listOrderCod(
             delivery_charge: true,
             created_at: true,
             delivered_at: true,
-            parties_parcels_receiver_idToparties: { select: { name: true, phone: true } },
+            parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true } },
           },
+        },
+        // A collection sits in at most one live statement per leg; cancelled ones drop their items.
+        settlement_items: {
+          where: { settlements: { payee_type: "vendor", status: { not: settlement_status.cancelled } } },
+          select: { settlements: { select: { statement_id: true, status: true } } },
+          take: 1,
         },
       },
       orderBy: { created_at: "desc" },
@@ -324,10 +410,14 @@ export async function listOrderCod(
     trackingId: c.parcels.tracking_id,
     receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
     receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
+    receiverAlternatePhone: c.parcels.parties_parcels_receiver_idToparties.alternate_phone || "",
     createdAt: c.parcels.created_at.toISOString(),
     deliveredAt: c.parcels.delivered_at ? c.parcels.delivered_at.toISOString() : null,
     status: c.payment_status === payment_status.paid ? "settled" : "not_settled",
     netPayable: Number(c.collected_amount) - Number(c.parcels.delivery_charge),
+    statement: c.settlement_items[0]
+      ? { statementId: c.settlement_items[0].settlements.statement_id, status: c.settlement_items[0].settlements.status }
+      : null,
   }));
 
   const result: OrderCodListResult = {
@@ -355,8 +445,13 @@ export async function listSettlements(
   toDate?: Date,
   status?: settlement_status,
   search?: string,
+  // Which date fromDate/toDate filter on. "transfer" (default) is the
+  // statement's settlement_date - the vendor page's Transfer date column.
+  // "settled" is when it was paid off and "created" when it was drawn up - the
+  // admin COD & Settlements columns of those names.
+  dateField: "transfer" | "settled" | "created" = "transfer",
 ): Promise<SettlementsListResult> {
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isStaff = isFinanceStaff(actor);
   const isSales = actor.roles.includes("sales") && !isStaff;
 
   let vendorId: string | undefined;
@@ -374,6 +469,8 @@ export async function listSettlements(
     } else if (isStaff) {
       // No targetId means "all vendors" - staff-only, matches the admin
       // COD Management view which lists every statement of a type at once.
+      // A branch-scoped admin has no business in the vendor settlement ledger.
+      await assertHeadOfficeForVendorSettlement(actor);
       vendorId = targetId;
     } else {
       const ownVendorId = await resolveOwnVendorId(actor);
@@ -395,39 +492,92 @@ export async function listSettlements(
     }
   }
 
+  // A branch-scoped admin only sees settlements for riders in their branch's
+  // coverage. undefined for every other actor (super_admin, unrestricted admin,
+  // vendor/rider self, sales).
+  const branchRiderIds = payeeType === "rider" && isStaff ? await adminBranchScopeIds(actor) : undefined;
+  if (riderId && branchRiderIds) {
+    const owned = await prisma.riders.findFirst({
+      where: { id: riderId, location_id: { in: branchRiderIds } },
+      select: { id: true },
+    });
+    if (!owned) throw new AppError(403, "This rider is not assigned to your branch");
+  }
+
   const take = Math.min(MAX_PAGE_SIZE, Math.max(1, pageSize));
   const safePage = Math.max(1, page);
   const skip = (safePage - 1) * take;
 
-  const scopeKey = vendorId ? vendorId : riderId ? `rider:${riderId}` : `all:${payeeType}`;
-  const cacheKey = `finance:${scopeKey}:settlements:${safePage}:${take}:${fromDate?.toISOString() ?? ""}:${toDate?.toISOString() ?? ""}:${status ?? ""}:${search ?? ""}`;
+  const scopeKey = vendorId
+    ? vendorId
+    : riderId
+      ? `rider:${riderId}`
+      : branchRiderIds
+        ? `branch:${[...branchRiderIds].sort().join("-")}`
+        : `all:${payeeType}`;
+  const cacheKey = `finance:${scopeKey}:settlements:${safePage}:${take}:${dateField}:${fromDate?.toISOString() ?? ""}:${toDate?.toISOString() ?? ""}:${status ?? ""}:${search ?? ""}`;
   const cached = await readFinanceCache<SettlementsListResult>(cacheKey);
   if (cached) return cached;
 
-  const where: Prisma.settlementsWhereInput = {
-    payee_type: payeeType,
-    ...(vendorId ? { vendor_id: vendorId } : {}),
-    ...(riderId ? { rider_id: riderId } : {}),
-    ...(fromDate || toDate
+  // riders relation filter - the branch scope and the name search both land on
+  // it, so they are merged into one object (Prisma allows only one `riders` key).
+  const ridersFilter: Prisma.ridersWhereInput = {
+    ...(branchRiderIds ? { location_id: { in: branchRiderIds } } : {}),
+    ...(search && payeeType === "rider" ? { name: { contains: search, mode: "insensitive" } } : {}),
+  };
+
+  // Both dates are timestamps, so the picked days become Nepal-local day
+  // bounds (the whole To day included). Settled date mirrors the column: the
+  // instalment that paid the statement off, or - for statements settled before
+  // instalments were tracked - the row's last update.
+  const dayRange =
+    fromDate || toDate
+      ? nepalDayRangeUtc(fromDate?.toISOString().slice(0, 10), toDate?.toISOString().slice(0, 10))
+      : null;
+  const dateFilter: Prisma.settlementsWhereInput | null = !(fromDate || toDate)
+    ? null
+    : dateField === "transfer"
       ? {
+          // settlement_date is a plain date column - compared as before.
           settlement_date: {
             ...(fromDate ? { gte: fromDate } : {}),
             ...(toDate ? { lte: toDate } : {}),
           },
         }
-      : {}),
+      : dateField === "created"
+      ? { created_at: dayRange! }
+      : {
+          status: "settled",
+          OR: [
+            // The *last* instalment must fall in the range: one inside it, and
+            // none after its end.
+            {
+              settlement_payments: { some: { paid_at: dayRange! } },
+              ...(dayRange!.lt
+                ? { NOT: { settlement_payments: { some: { paid_at: { gte: dayRange!.lt } } } } }
+                : {}),
+            },
+            { settlement_payments: { none: {} }, updated_at: dayRange! },
+          ],
+        };
+
+  const where: Prisma.settlementsWhereInput = {
+    payee_type: payeeType,
+    ...(vendorId ? { vendor_id: vendorId } : {}),
+    ...(riderId ? { rider_id: riderId } : {}),
+    // Under AND so its OR / status can't collide with the vendor search OR or
+    // the status filter below.
+    ...(dateFilter ? { AND: [dateFilter] } : {}),
     ...(status ? { status } : {}),
-    // Payee name filter - riders have a single name field, vendors show
-    // business_name with client_name as fallback, so either can match.
-    ...(search
-      ? payeeType === "rider"
-        ? { riders: { name: { contains: search, mode: "insensitive" } } }
-        : {
-            OR: [
-              { vendors: { business_name: { contains: search, mode: "insensitive" } } },
-              { vendors: { client_name: { contains: search, mode: "insensitive" } } },
-            ],
-          }
+    ...(Object.keys(ridersFilter).length ? { riders: ridersFilter } : {}),
+    // Vendor name filter - business_name with client_name as fallback.
+    ...(search && payeeType === "vendor"
+      ? {
+          OR: [
+            { vendors: { business_name: { contains: search, mode: "insensitive" } } },
+            { vendors: { client_name: { contains: search, mode: "insensitive" } } },
+          ],
+        }
       : {}),
   };
 
@@ -436,7 +586,8 @@ export async function listSettlements(
     prisma.settlements.findMany({
       where,
       include: {
-        settlement_items: { select: { cod_collection_id: true } },
+        _count: { select: { settlement_items: true } },
+        settlement_payments: { select: { paid_at: true }, orderBy: { paid_at: "desc" }, take: 1 },
         riders: { select: { name: true, phone: true, bank_name: true, bank_account_no: true, bank_account_holder: true } },
         vendors: {
           select: {
@@ -449,7 +600,7 @@ export async function listSettlements(
           },
         },
       },
-      orderBy: { created_at: "desc" },
+      orderBy: [{ created_at: "desc" }, { id: "desc" }],
       skip,
       take,
     }),
@@ -471,12 +622,18 @@ export async function listSettlements(
       bankAccountNo,
       bankAccountHolder,
       transferDate: s.settlement_date ? formatNepalDate(s.settlement_date) : null,
+      // When the statement went to settled: the instalment that paid it off.
+      // Statements settled before instalments were tracked have no payment
+      // rows, so they fall back to the row's last update.
+      settledDate:
+        s.status === "settled" ? formatNepalDate(s.settlement_payments[0]?.paid_at ?? s.updated_at) : null,
       // Full timestamp of when the settlement was recorded, so the UI can show time.
       createdAt: s.created_at.toISOString(),
-      orderCount: s.settlement_items.length,
+      orderCount: s._count.settlement_items,
       amount: Number(s.payable_amount ?? s.amount),
       status: s.status,
       paidAmount: Number(s.paid_amount),
+      paymentBreakdown: sumByMethod(s.payments),
       remark: s.remark,
     };
   });
@@ -494,12 +651,34 @@ export async function listSettlements(
   return result;
 }
 
+/**
+ * The parcels whose collected cash a rider statement can take.
+ *
+ * A return leg never carries COD, and a plain RTO never reached a delivery, so
+ * neither has anything for the rider to hand over. A partial delivery whose
+ * remaining items went back to the vendor is different: the cash collected at
+ * the door survives the return, the vendor is paid it on their statement, and
+ * so the rider has to be able to remit it. Excluding every returned_to_vendor
+ * parcel left that cash with the rider while the office paid it out anyway.
+ */
+function riderLegParcelFilter(): Prisma.cod_collectionsWhereInput {
+  return {
+    parcels: { status: { not: parcel_status.cancelled }, order_type: { not: order_type.return } },
+    OR: [
+      { parcels: { status: { not: parcel_status.returned_to_vendor } } },
+      { collected_amount: { gt: 0 } },
+    ],
+  };
+}
+
+const UNSETTLED_ORDERS_CAP = 1000;
+
 export async function getUnsettledOrders(
   actor: Actor,
   type: "rider" | "vendor",
   targetId?: string,
 ): Promise<UnsettledOrdersResult> {
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
+  const isStaff = isFinanceStaff(actor);
   const isSales = actor.roles.includes("sales") && !isStaff;
 
   let riderId: string | undefined;
@@ -512,6 +691,7 @@ export async function getUnsettledOrders(
     }
     if (isStaff) {
       if (!targetId) throw new AppError(400, "riderId is required");
+      await assertBranchActorOwnsRider(actor, targetId);
       riderId = targetId;
     } else {
       const rider = await prisma.riders.findFirst({
@@ -531,6 +711,7 @@ export async function getUnsettledOrders(
       vendorId = owned.id;
     } else if (isStaff) {
       if (!targetId) throw new AppError(400, "vendorId is required");
+      await assertHeadOfficeForVendorSettlement(actor);
       vendorId = targetId;
     } else {
       const vendor = await prisma.vendors.findFirst({
@@ -544,9 +725,9 @@ export async function getUnsettledOrders(
   // Vendor-scoped keys share the `finance:${vendorId}:*` namespace so order
   // creation and settlement creation can invalidate them; rider-scoped ones
   // share `finance:rider:${riderId}:*`, invalidated by createSettlement.
-  // The `:v2` suffix retires payloads cached before orderNumber/receiverPhone
-  // were added to the item shape (both invalidation globs still match it).
-  const cacheKey = vendorId ? `finance:${vendorId}:unsettled:v2` : `finance:rider:${riderId}:unsettled:v2`;
+  // The `:v3` suffix retires payloads cached before the picker limit and
+  // capped flag were added (both invalidation globs still match it).
+  const cacheKey = vendorId ? `finance:${vendorId}:unsettled:v3` : `finance:rider:${riderId}:unsettled:v3`;
   const cached = await readFinanceCache<UnsettledOrdersResult>(cacheKey);
   if (cached) return cached;
 
@@ -561,22 +742,14 @@ export async function getUnsettledOrders(
   // even if cash was recorded as collected before the cancellation happened
   // (e.g. a super_admin force-cancelling an already-delivered parcel).
   const notCancelled: Prisma.cod_collectionsWhereInput = { parcels: { status: { not: parcel_status.cancelled } } };
-  // An RTV/RTO parcel (genuine return order_type, or a plain delivery bounced
-  // back to returned_to_vendor) never had COD collected on the rider's leg -
-  // collected_amount is 0 - so there's nothing for the rider to settle for it.
-  // It still owes the vendor a return delivery charge, so it stays visible on
-  // the vendor leg (see isReturnToVendor below) - only excluded here.
-  const riderNotReturned: Prisma.cod_collectionsWhereInput = {
-    parcels: {
-      status: { notIn: [parcel_status.cancelled, parcel_status.returned_to_vendor] },
-      order_type: { not: order_type.return },
-    },
-  };
+  const riderNotReturned = riderLegParcelFilter();
 
   const where: Prisma.cod_collectionsWhereInput = riderId
     ? {
         rider_id: riderId,
         rider_payment_status: payment_status.pending,
+        // Carrier-delivered COD is settled by a carrier statement instead.
+        carrier_code: null,
         collected_at: { not: null },
         // Not already bundled into a rider statement. The two legs settle the
         // same collection independently, so this is scoped to rider statements
@@ -607,19 +780,20 @@ export async function getUnsettledOrders(
           status: true,
           pickup_rider_id: true,
           delivery_rider_id: true,
-          parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
+          parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true, address: true } },
           locations_parcels_destination_location_idTolocations: {
-            select: { name: true, city: true, district: true },
+            select: { name: true },
           },
           // Only needed for the rider leg - see location resolution below.
           locations_parcels_origin_location_idTolocations: { select: { name: true } },
         },
       },
     },
-    orderBy: { created_at: "desc" },
+    orderBy: [{ created_at: "desc" }, { id: "desc" }],
+    take: UNSETTLED_ORDERS_CAP + 1,
   });
 
-  const items: UnsettledOrderItem[] = collections.map((c) => {
+  const items: UnsettledOrderItem[] = collections.slice(0, UNSETTLED_ORDERS_CAP).map((c) => {
     const collected = Number(c.collected_amount);
     // A parcel returned to the vendor - genuine return leg or a plain RTO
     // bounce-back alike - is billed its delivery_charge same as any other
@@ -651,6 +825,7 @@ export async function getUnsettledOrders(
       trackingId: c.parcels.tracking_id,
       receiverName: c.parcels.parties_parcels_receiver_idToparties.name,
       receiverPhone: c.parcels.parties_parcels_receiver_idToparties.phone,
+      receiverAlternatePhone: c.parcels.parties_parcels_receiver_idToparties.alternate_phone || "",
       receiverAddress: c.parcels.parties_parcels_receiver_idToparties.address,
       destination: formatLocation(c.parcels.locations_parcels_destination_location_idTolocations),
       location,
@@ -666,9 +841,12 @@ export async function getUnsettledOrders(
   const totalCod = items.reduce((sum, item) => sum + item.codAmount, 0);
   const totalDeliveryCharge = items.reduce((sum, item) => sum + item.deliveryCharge, 0);
   const totalNetPayable = items.reduce((sum, item) => sum + item.netPayable, 0);
+  const availableCredit = vendorId ? await availableVendorCredit(prisma, vendorId) : 0;
 
   const result: UnsettledOrdersResult = {
     items,
+    capped: collections.length > UNSETTLED_ORDERS_CAP,
+    availableCredit,
     totalCod,
     totalDeliveryCharge,
     totalNetPayable,
@@ -699,6 +877,7 @@ export async function createSettlement(
   if (Number.isNaN(parsedDate.getTime())) {
     throw new AppError(400, "settlementDate must be a valid date");
   }
+  if (payeeType === "vendor") await assertHeadOfficeForVendorSettlement(actor);
 
   const target =
     payeeType === "rider" ? await resolveRider(actor, targetId) : await resolveVendor(actor, targetId);
@@ -714,19 +893,15 @@ export async function createSettlement(
           id: { in: codCollectionIds },
           rider_id: target.id,
           rider_payment_status: payment_status.pending,
+          // Carrier-delivered COD is settled by a carrier statement instead.
+          carrier_code: null,
           // Only settle orders that reached a delivery attempt - collected_at
           // is the honest signal (see getUnsettledOrders); collected_amount > 0
           // would wrongly reject settling a corrected-to-0 order at 0.
           collected_at: { not: null },
           settlement_items: { none: { settlements: { payee_type: "rider" } } },
-          // Mirrors getUnsettledOrders' riderNotReturned guard - RTV/RTO
-          // parcels (nothing collected on this leg) must not be settleable
-          // into a rider statement even via a direct createSettlement call
-          // bypassing the picker UI.
-          parcels: {
-            status: { not: parcel_status.returned_to_vendor },
-            order_type: { not: order_type.return },
-          },
+          // The picker's rule, enforced here too for a direct API call.
+          ...riderLegParcelFilter(),
         }
       : {
           id: { in: codCollectionIds },
@@ -734,32 +909,50 @@ export async function createSettlement(
           payment_status: payment_status.pending,
           collected_at: { not: null },
           settlement_items: { none: { settlements: { payee_type: "vendor" } } },
+          // Same guard as getUnsettledOrders: a cancelled order is never billed.
+          parcels: { status: { not: parcel_status.cancelled } },
         };
 
-  const collections = await prisma.cod_collections.findMany({
-    where: eligibleWhere,
-    include: { parcels: { select: { delivery_charge: true } } },
-  });
-
-  if (collections.length !== codCollectionIds.length) {
-    throw new AppError(
-      400,
-      "One or more selected orders are not eligible for settlement (already settled or do not belong to this account)",
-    );
-  }
-
-  // Gross is the cash actually collected (not the declared COD, which overstates
-  // partial deliveries). Vendor payout is gross minus the delivery charge -
-  // a parcel returned to the vendor (return leg or plain RTO bounce-back) is
-  // billed its delivery_charge same as any other settled order.
-  const grossAmount = collections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
-  const payableAmount =
-    payeeType === "rider"
-      ? collections.reduce((sum, c) => sum + Number(c.collected_amount), 0)
-      : collections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
   const statementId = generateStatementId(payeeType);
+  const uniqueIds = [...new Set(codCollectionIds)];
 
-  const settlement = await prisma.$transaction(async (tx) => {
+  const { settlement, payableAmount, collections, grossAmount } = await prisma.$transaction(async (tx) => {
+    // settlement_items has no unique key per leg, so two statements created at
+    // the same moment would both pass the membership guard and pay the same
+    // order out twice. Locking the collections serialises them: the second
+    // waits, then re-reads and finds the orders already earmarked.
+    await tx.$queryRaw`SELECT id FROM cod_collections WHERE id = ANY(${uniqueIds}::uuid[]) ORDER BY id FOR UPDATE`;
+    const collections = await tx.cod_collections.findMany({
+      where: eligibleWhere,
+      include: { parcels: { select: { delivery_charge: true } } },
+    });
+
+    if (collections.length !== codCollectionIds.length) {
+      throw new AppError(
+        400,
+        "One or more selected orders are not eligible for settlement (already settled, already on another statement, or do not belong to this account)",
+      );
+    }
+
+    // Gross is the cash actually collected (not the declared COD, which overstates
+    // partial deliveries). Vendor payout is gross minus the delivery charge -
+    // a parcel returned to the vendor (return leg or plain RTO bounce-back) is
+    // billed its delivery_charge same as any other settled order.
+    const grossAmount = round2(collections.reduce((sum, c) => sum + Number(c.collected_amount), 0));
+    const itemsPayable =
+      payeeType === "rider"
+        ? collections.reduce((sum, c) => sum + Number(c.collected_amount), 0)
+        : collections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
+
+    // Charges the vendor already paid through Billing come back on this
+    // statement - see "Vendor credit" above.
+    let creditApplied = 0;
+    if (payeeType === "vendor") {
+      await lockVendorCredit(tx, target.id);
+      creditApplied = await availableVendorCredit(tx, target.id);
+    }
+    const payableAmount = round2(itemsPayable + creditApplied);
+
     const created = await tx.settlements.create({
       data: {
         statement_id: statementId,
@@ -768,6 +961,8 @@ export async function createSettlement(
         vendor_id: payeeType === "vendor" ? target.id : null,
         amount: grossAmount,
         payable_amount: payableAmount,
+        vendor_credit_applied: creditApplied,
+        vat_rate: payeeType === "vendor" ? DELIVERY_CHARGE_VAT_RATE : null,
         settlement_date: parsedDate,
         status: "pending",
         settled_by: actor.id,
@@ -793,12 +988,15 @@ export async function createSettlement(
         entity_type: "settlement",
         entity_id: created.id,
         action: "CREATE_SETTLEMENT",
-        new_data: { statementId, payeeType, targetId: target.id, amount: grossAmount, payableAmount },
+        new_data: { statementId, payeeType, targetId: target.id, amount: grossAmount, payableAmount, creditApplied },
       },
     });
 
-    return created;
-  });
+    // The statement posts the moment it exists (as a debt, until paid).
+    await syncSettlementPostings(tx, [created.id], { actorId: actor.id, reason: "settlement created" });
+
+    return { settlement: created, payableAmount, collections, grossAmount };
+  }, SETTLEMENT_TX_OPTIONS);
 
   if (payeeType === "rider") {
     await invalidateRiderFinanceCache(target.id);
@@ -811,7 +1009,9 @@ export async function createSettlement(
     await createNotification(
       targetUserId,
       `COD Statement ${statementId} created`,
-      `A statement of Rs. ${payableAmount} across ${collections.length} order(s) is pending payment.`,
+      payableAmount < 0
+        ? `Delivery charges on ${collections.length} order(s) exceeded their COD: Rs. ${Math.abs(payableAmount)} is due from you on this statement.`
+        : `A statement of Rs. ${payableAmount} across ${collections.length} order(s) is pending payment.`,
       null,
       "cod_settlement",
       payeeType === "rider" ? "/finance" : "/finance/settlements",
@@ -840,10 +1040,140 @@ export async function createSettlement(
 // would sit at partially_paid forever.
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
+// ── Vendor credit ────────────────────────────────────────────────────────────
+//
+// Delivery charges a vendor pays through Billing (vendor_payments) are the same
+// charges every statement deducts from COD. Without handing them back, each
+// prepaid rupee was deducted twice and only survived as a positive balance.
+// So verified payments become credit, and statements apply it:
+//   - a new statement takes all available credit (added to what we pay out, or
+//     knocked off what the vendor owes), and
+//   - a verified payment immediately pays down open statements the vendor owes.
+
+/** Serialises credit use per vendor, so two statements cannot spend the same credit. */
+async function lockVendorCredit(tx: Prisma.TransactionClient, vendorId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM vendors WHERE id = ${vendorId}::uuid FOR UPDATE`;
+}
+
+/** Verified Billing payments not yet applied to a live vendor statement. Never negative. */
+export async function availableVendorCredit(db: Prisma.TransactionClient | typeof prisma, vendorId: string): Promise<number> {
+  const [row] = await db.$queryRaw<Array<{ paid: string; applied: string }>>`
+    SELECT
+      (SELECT COALESCE(SUM(amount), 0) FROM vendor_payments
+        WHERE vendor_id = ${vendorId}::uuid AND status::text = 'verified' AND counts_toward_statements) AS paid,
+      (SELECT COALESCE(SUM(vendor_credit_applied), 0) FROM settlements
+        WHERE vendor_id = ${vendorId}::uuid AND payee_type = 'vendor' AND status::text <> 'cancelled') AS applied
+  `;
+  return Math.max(0, round2(Number(row?.paid ?? 0) - Number(row?.applied ?? 0)));
+}
+
+/** What payForSettlement does to a vendor statement's collections once it is fully paid. */
+async function markVendorCollectionsPaid(tx: Prisma.TransactionClient, settlementId: string): Promise<void> {
+  const items = await tx.settlement_items.findMany({
+    where: { settlement_id: settlementId },
+    select: { cod_collection_id: true, cod_collections: { select: { collected_amount: true } } },
+  });
+  await Promise.all(
+    items.map((si) =>
+      tx.cod_collections.update({
+        where: { id: si.cod_collection_id },
+        data: { payment_status: payment_status.paid, remitted_amount: si.cod_collections.collected_amount },
+      }),
+    ),
+  );
+}
+
+/**
+ * Pays down the vendor's open statements that they owe on (negative payable),
+ * oldest first, out of their available credit. Called when a Billing payment is
+ * verified, so a vendor who pays by QR sees the matching statement close rather
+ * than sit "pending" while an admin is left to record the same money again.
+ * Returns the statements it touched.
+ */
+export async function applyVendorCreditToOpenStatements(
+  tx: Prisma.TransactionClient,
+  vendorId: string,
+  actorId: string,
+): Promise<string[]> {
+  await lockVendorCredit(tx, vendorId);
+  let credit = await availableVendorCredit(tx, vendorId);
+  if (credit <= 0) return [];
+
+  const open = await tx.settlements.findMany({
+    where: { vendor_id: vendorId, payee_type: "vendor", status: { in: ["pending", "partially_paid"] } },
+    orderBy: [{ settlement_date: "asc" }, { created_at: "asc" }],
+    select: { id: true },
+  });
+
+  const touched: string[] = [];
+  for (const { id } of open) {
+    if (credit <= 0) break;
+    await lockSettlement(tx, id);
+    const s = await tx.settlements.findUnique({ where: { id } });
+    if (!s || (s.status !== "pending" && s.status !== "partially_paid")) continue;
+
+    const payable = Number(s.payable_amount ?? s.amount);
+    const paid = Number(s.paid_amount);
+    const owedLeft = round2(-payable - paid);
+    if (owedLeft <= 0) continue;
+
+    const applied = round2(Math.min(credit, owedLeft));
+    const newPayable = round2(payable + applied);
+    const fullySettled = round2(-newPayable - paid) === 0;
+    await tx.settlements.update({
+      where: { id },
+      data: {
+        payable_amount: newPayable,
+        vendor_credit_applied: round2(Number(s.vendor_credit_applied) + applied),
+        ...(fullySettled ? { status: "settled", settled_by: actorId } : {}),
+      },
+    });
+    if (fullySettled) await markVendorCollectionsPaid(tx, id);
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actorId,
+        entity_type: "settlement",
+        entity_id: id,
+        action: "APPLY_VENDOR_CREDIT",
+        new_data: { statementId: s.statement_id, applied, payableAmount: newPayable, settled: fullySettled },
+      },
+    });
+    credit = round2(credit - applied);
+    touched.push(id);
+  }
+
+  if (touched.length > 0) {
+    await syncSettlementPostings(tx, touched, { actorId, reason: "vendor credit applied" });
+  }
+  return touched;
+}
+
 // `breakdown` / `payments` are Json columns, so anything could be in there -
 // including nulls from rows written before the column existed.
 function toPaymentLines(value: Prisma.JsonValue | null): SettlementPaymentInput[] {
   return Array.isArray(value) ? (value as unknown as SettlementPaymentInput[]) : [];
+}
+
+/**
+ * The payment lines totalled per method, in the order the methods first appear.
+ *
+ * `settlements.payments` accumulates a line per instalment, so a statement
+ * part-paid in cash twice holds two Cash lines. Showing them separately would
+ * read as two different things rather than one running total, so they are
+ * summed - "Cash 2,000", not "Cash 1,000, Cash 1,000".
+ *
+ * Defensive about the shape for the same reason toPaymentLines is: these are
+ * Json columns, and rows predate the current writer.
+ */
+function sumByMethod(value: Prisma.JsonValue | null): Array<{ method: string; amount: number }> {
+  const totals = new Map<string, number>();
+  for (const line of toPaymentLines(value)) {
+    const method = typeof line?.method === "string" && line.method.trim() ? line.method.trim() : "Unspecified";
+    const amount = Number(line?.amount);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+    totals.set(method, round2((totals.get(method) ?? 0) + amount));
+  }
+  return Array.from(totals, ([method, amount]) => ({ method, amount }));
 }
 
 // Serialises the state transitions on one statement. Every writer below reads
@@ -914,6 +1244,7 @@ export async function payForSettlement(
   if (!payments || payments.length === 0) {
     throw new AppError(400, "At least one payment is required");
   }
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
   // Payment methods are configurable (Cash, Online, eSewa, Bank, ...) and
   // managed by super admins, so validate each submitted method against the
   // currently-active set rather than a hardcoded list.
@@ -941,7 +1272,6 @@ export async function payForSettlement(
     expectedTotal,
     newPaidTotal,
     allPayments,
-    fullySettled,
     riderId,
     vendorId,
   } = await prisma.$transaction(async (tx) => {
@@ -1072,17 +1402,7 @@ export async function payForSettlement(
           ),
         );
       } else {
-        await Promise.all(
-          settlement.settlement_items.map((si) =>
-            tx.cod_collections.update({
-              where: { id: si.cod_collection_id },
-              data: {
-                payment_status: payment_status.paid,
-                remitted_amount: si.cod_collections.collected_amount,
-              },
-            }),
-          ),
-        );
+        await markVendorCollectionsPaid(tx, settlementId);
       }
     }
 
@@ -1123,7 +1443,6 @@ export async function payForSettlement(
       expectedTotal,
       newPaidTotal,
       allPayments,
-      fullySettled,
       riderId: settlement.rider_id,
       vendorId: settlement.vendor_id,
     };
@@ -1133,11 +1452,10 @@ export async function payForSettlement(
     await invalidateRiderFinanceCache(riderId);
   } else if (vendorId) {
     await invalidateVendorFinanceCache(vendorId);
-    // A completed payout debits the vendor's running account, so it can push
-    // them across a credit threshold just as a delivery can. A part payment
-    // doesn't - the balance is derived from the collections above, which only
-    // move once the payout clears. Fire-and-forget.
-    if (fullySettled) evaluateVendorBillingAsync(vendorId);
+    // Every instalment debits the vendor's running account (see computeBalance),
+    // so it can push them across a credit threshold just as a delivery can.
+    // Fire-and-forget; also refreshes the cached balance.
+    evaluateVendorBillingAsync(vendorId);
   }
 
   return {
@@ -1184,6 +1502,7 @@ export async function attachSettlementDocuments(
   if (replaceDocumentId && incoming.length > 1) {
     throw new AppError(400, "Only one file can be uploaded when replacing a document");
   }
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
 
   // Under the row lock like the other writers: a revert landing between these
   // checks and the insert deletes the statement's instalments and documents,
@@ -1273,6 +1592,7 @@ export async function deleteSettlementDocument(
   settlementId: string,
   documentId: string,
 ): Promise<{ id: string; documents: SettlementDocumentResult[] }> {
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
   const existing = await prisma.settlement_documents.findFirst({
     where: { id: documentId, settlement_id: settlementId },
     select: { id: true, kind: true, file_path: true, settlement_payment_id: true },
@@ -1320,6 +1640,7 @@ export async function updateSettlement(
   if (!codCollectionIds || codCollectionIds.length === 0) {
     throw new AppError(400, "A settlement must include at least one order");
   }
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
 
   // All of this runs under the row lock: the "still pending" check guards the
   // edit, and the set of orders being added or removed is derived from the
@@ -1363,8 +1684,24 @@ export async function updateSettlement(
     // settlement - the same eligibility rule createSettlement enforces.
     const eligibleAddWhere: Prisma.cod_collectionsWhereInput =
       payeeType === "rider"
-        ? { id: { in: toAddIds }, rider_id: targetId, rider_payment_status: payment_status.pending, collected_at: { not: null } }
-        : { id: { in: toAddIds }, vendor_id: targetId, payment_status: payment_status.pending, collected_at: { not: null } };
+        ? {
+            id: { in: toAddIds },
+            rider_id: targetId,
+            rider_payment_status: payment_status.pending,
+            // Carrier-delivered COD is settled by a carrier statement instead.
+            carrier_code: null,
+            collected_at: { not: null },
+            settlement_items: { none: { settlements: { payee_type: "rider" } } },
+            ...riderLegParcelFilter(),
+          }
+        : {
+            id: { in: toAddIds },
+            vendor_id: targetId,
+            payment_status: payment_status.pending,
+            collected_at: { not: null },
+            settlement_items: { none: { settlements: { payee_type: "vendor" } } },
+            parcels: { status: { not: parcel_status.cancelled } },
+          };
 
     // Read through `tx`, not `prisma`: these run under the statement's row lock
     // (see lockSettlement), so they must be part of the same transaction.
@@ -1392,10 +1729,14 @@ export async function updateSettlement(
 
     const allCollections = [...keptCollections, ...toAddCollections];
     const grossAmount = allCollections.reduce((sum, c) => sum + Number(c.collected_amount), 0);
+    // The vendor credit applied at creation stays with the statement.
     const payableAmount =
       payeeType === "rider"
         ? grossAmount
-        : allCollections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0);
+        : round2(
+            allCollections.reduce((sum, c) => sum + Number(c.collected_amount) - Number(c.parcels.delivery_charge), 0) +
+              Number(settlement.vendor_credit_applied),
+          );
 
     if (toRemove.length > 0) {
       const removedIds = toRemove.map((i) => i.cod_collection_id);
@@ -1423,25 +1764,8 @@ export async function updateSettlement(
           amount: payeeType === "rider" ? Number(c.collected_amount) : Number(c.collected_amount) - Number(c.parcels.delivery_charge),
         })),
       });
-      if (payeeType === "rider") {
-        await Promise.all(
-          toAddCollections.map((c) =>
-            tx.cod_collections.update({
-              where: { id: c.id },
-              data: { rider_payment_status: payment_status.paid, rider_remitted_amount: c.collected_amount, rider_settled_at: new Date() },
-            }),
-          ),
-        );
-      } else {
-        await Promise.all(
-          toAddCollections.map((c) =>
-            tx.cod_collections.update({
-              where: { id: c.id },
-              data: { payment_status: payment_status.paid, remitted_amount: c.collected_amount },
-            }),
-          ),
-        );
-      }
+      // Not marked paid: only a pending statement is editable, and its orders
+      // become paid when payForSettlement clears it, same as createSettlement's.
     }
 
     const result = await tx.settlements.update({
@@ -1511,10 +1835,11 @@ export async function revertSettlement(
   settlementId: string,
   remark: string,
 ): Promise<CreateSettlementResult> {
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
   // Read under the row lock: `wasSettled` decides whether the bundled
   // collections get unwound, so reading it before an instalment commits would
   // leave them marked paid against a statement that is pending again.
-  const { settlement: updated, wasSettled, riderId, vendorId } = await prisma.$transaction(async (tx) => {
+  const { settlement: updated, riderId, vendorId } = await prisma.$transaction(async (tx) => {
     await lockSettlement(tx, settlementId);
 
     const settlement = await tx.settlements.findUnique({
@@ -1613,18 +1938,27 @@ export async function revertSettlement(
       },
     });
 
-    return { settlement: result, wasSettled, riderId: settlement.rider_id, vendorId: settlement.vendor_id };
+    // Reverting does not un-create the statement, so its entry stands and this
+    // is a no-op in the ordinary case. It is here anyway: this function was the
+    // one settlement mutator that never spoke to the ledger at all, and a
+    // reverted statement is usually on its way to being edited or cancelled.
+    // Restating from the authority beats assuming nothing moved.
+    await syncSettlementPostings(tx, [settlementId], {
+      actorId: actor.id,
+      reason: "settlement reverted",
+    });
+
+    return { settlement: result, riderId: settlement.rider_id, vendorId: settlement.vendor_id };
   }, SETTLEMENT_TX_OPTIONS);
 
   if (riderId) {
     await invalidateRiderFinanceCache(riderId);
   } else if (vendorId) {
     await invalidateVendorFinanceCache(vendorId);
-    // Undoing a completed payout credits the vendor's running account back, so
-    // it can pull them back under a credit threshold just as a payout can push
-    // them over it. Undoing a part payment doesn't move the balance, since it
-    // never moved the collections. Fire-and-forget.
-    if (wasSettled) evaluateVendorBillingAsync(vendorId);
+    // Undoing a payout - full or part - credits the vendor's running account
+    // back, so it can pull them back under a credit threshold just as a payout
+    // can push them over it. Fire-and-forget.
+    evaluateVendorBillingAsync(vendorId);
   }
 
   return {
@@ -1657,8 +1991,17 @@ async function assertSettlementAccess(
     vendors?: { sales_user_id: string | null } | null;
   },
 ): Promise<void> {
-  const isStaff = actor.roles.some((r) => ["super_admin", "admin"].includes(r));
-  if (isStaff) return;
+  const isStaff = isFinanceStaff(actor);
+  if (isStaff) {
+    // A branch-scoped admin only reaches its own branch's rider statements;
+    // vendor statements are head-office (Imadol) only.
+    if (settlement.payee_type === "vendor") {
+      await assertHeadOfficeForVendorSettlement(actor);
+    } else if (settlement.payee_type === "rider" && settlement.rider_id) {
+      await assertBranchActorOwnsRider(actor, settlement.rider_id);
+    }
+    return;
+  }
 
   const isSales = actor.roles.includes("sales");
 
@@ -1753,6 +2096,7 @@ export async function cancelSettlement(
   settlementId: string,
   remark: string,
 ): Promise<CreateSettlementResult> {
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
   // Under the row lock: "still pending" has to be true at the moment the items
   // are deleted, not a moment earlier, or a statement that just took its first
   // instalment loses the orders backing it.
@@ -1788,6 +2132,17 @@ export async function cancelSettlement(
         old_data: { status: settlement.status, codCollectionIds: collectionIds, remark: settlement.remark },
         new_data: { status: "cancelled", remark: remark.trim() },
       },
+    });
+
+    // A cancelled statement moved no money, so its entry has to come back out.
+    // This is the one settlement path where the ledger genuinely changes -
+    // every other status posts - and it was missing here for the same reason
+    // it was missing from revertSettlement: nothing forced the call. The sweep
+    // in sync.ts now catches an omission here, but posting in the same
+    // transaction that cancelled it is still the honest place to do it.
+    await syncSettlementPostings(tx, [settlementId], {
+      actorId: actor.id,
+      reason: "settlement cancelled",
     });
 
     return { settlement: result, riderId: settlement.rider_id, vendorId: settlement.vendor_id };
@@ -1848,7 +2203,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
                   weight_kg: true,
                   pickup_rider_id: true,
                   delivery_rider_id: true,
-                  parties_parcels_receiver_idToparties: { select: { name: true, phone: true, address: true } },
+                  parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true, address: true } },
                   vendors: { select: { business_name: true, client_name: true, phone: true } },
                   // Only meaningful for rider statements - which one applies
                   // depends on whether this rider handled the pickup or the
@@ -1928,7 +2283,9 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
       reference: null,
       receiverName: parcel.parties_parcels_receiver_idToparties.name,
       receiverPhone: parcel.parties_parcels_receiver_idToparties.phone,
+      receiverAlternatePhone: parcel.parties_parcels_receiver_idToparties.alternate_phone || "",
       receiverAddress: parcel.parties_parcels_receiver_idToparties.address,
+      destination: hubNameOnly(formatLocation(parcel.locations_parcels_destination_location_idTolocations)),
       // Same business_name-then-client_name fallback used for payeeName above.
       vendorName: parcel.vendors?.business_name || parcel.vendors?.client_name || null,
       vendorPhone: parcel.vendors?.phone ?? null,
@@ -1978,6 +2335,10 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     createdAt: settlement.created_at.toISOString(),
     amount: Number(settlement.amount),
     payableAmount,
+    vendorCreditApplied: Number(settlement.vendor_credit_applied),
+    // Staff screens only: left off entirely for a vendor, so the vendor portal
+    // and the Partner API (which shares this result) are unchanged.
+    ...(isFinanceStaff(actor) && settlement.vat_rate !== null ? { vatRate: Number(settlement.vat_rate) } : {}),
     paidAmount,
     remainingAmount: round2(Math.abs(payableAmount) - paidAmount),
     status: settlement.status,

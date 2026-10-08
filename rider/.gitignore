@@ -1,0 +1,34 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# The Capacitor Android project IS committed (CI builds the signed APK from
+# it). android/.gitignore excludes its build outputs and generated files.
+android/.idea/
+android/**/.DS_Store
+
+# Release signing material must never be committed
+*.jks
+*.keystore
+keystore.properties

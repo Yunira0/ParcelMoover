@@ -3,7 +3,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  background: var(--color-bg, #f5f5f7);
+  background: var(--color-background-canvas);
   padding: 40px 24px;
 }
 
@@ -18,7 +18,9 @@
 }
 
 .kyc-logo {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--color-primary, #4f46e5);
@@ -27,10 +29,16 @@
   letter-spacing: -0.3px;
 }
 
+.kyc-logo-mark {
+  height: 28px;
+  width: auto;
+  object-fit: contain;
+}
+
 .kyc-header h1 {
   font-size: 1.6rem;
   font-weight: 700;
-  color: var(--color-text, #111);
+  color: var(--color-text-default);
   margin: 0 0 8px;
 }
 
@@ -61,8 +69,8 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  border: 2px solid var(--color-border, #d1d5db);
-  background: #fff;
+  border: 2px solid var(--color-border-default);
+  background: var(--color-background-surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -75,13 +83,13 @@
 .kyc-step.active .kyc-step-circle {
   border-color: var(--color-primary, #4f46e5);
   background: var(--color-primary, #4f46e5);
-  color: #fff;
+  color: var(--color-text-base);
 }
 
 .kyc-step.done .kyc-step-circle {
   border-color: #10b981;
   background: #10b981;
-  color: #fff;
+  color: var(--color-text-base);
 }
 
 .kyc-step-label {
@@ -103,7 +111,7 @@
 .kyc-step-line {
   width: 60px;
   height: 2px;
-  background: var(--color-border, #d1d5db);
+  background: var(--color-border-default);
   margin-bottom: 18px;
   flex-shrink: 0;
   transition: background 0.2s;
@@ -115,7 +123,7 @@
 
 /* Form card */
 .kyc-form {
-  background: #fff;
+  background: var(--color-background-surface);
   border-radius: 12px;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
   padding: 32px;
@@ -124,10 +132,10 @@
 .kyc-section h3 {
   font-size: 1.05rem;
   font-weight: 700;
-  color: var(--color-text, #111);
+  color: var(--color-text-default);
   margin: 0 0 20px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .kyc-grid {
@@ -146,7 +154,7 @@
 
 .kyc-review-group {
   background: var(--color-background-surface, #f9fafb);
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
   padding: 16px;
 }
@@ -164,7 +172,7 @@
   display: flex;
   gap: 12px;
   padding: 6px 0;
-  border-bottom: 1px solid var(--color-border, #f3f4f6);
+  border-bottom: 1px solid var(--color-border-default);
   font-size: 0.875rem;
 }
 
@@ -179,7 +187,7 @@
 }
 
 .review-value {
-  color: var(--color-text, #111);
+  color: var(--color-text-default);
   font-weight: 500;
   word-break: break-word;
 }
@@ -252,12 +260,12 @@
   gap: 12px;
   margin-top: 24px;
   padding-top: 20px;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border-default);
 }
 
 /* Success state */
 .kyc-success {
-  background: #fff;
+  background: var(--color-background-surface);
   border-radius: 12px;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
   padding: 48px 40px;
@@ -274,7 +282,7 @@
 .kyc-success h2 {
   font-size: 1.4rem;
   font-weight: 700;
-  color: var(--color-text, #111);
+  color: var(--color-text-default);
   margin: 0 0 12px;
 }
 

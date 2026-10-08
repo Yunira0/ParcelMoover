@@ -1,0 +1,14 @@
+[out:json][timeout:180];
+(
+  way[highway](27.684,85.277,27.755,85.381);
+  way[building](27.684,85.277,27.755,85.381);
+  way[waterway](27.684,85.277,27.755,85.381);
+  way[natural~"water|wood|scrub|grassland"](27.684,85.277,27.755,85.381);
+  way[landuse~"forest|grass|meadow|farmland|recreation_ground|cemetery"](27.684,85.277,27.755,85.381);
+  way[leisure~"park|garden|pitch|golf_course"](27.684,85.277,27.755,85.381);
+  way[aeroway](27.684,85.277,27.755,85.381);
+  node[place~"suburb|neighbourhood"](27.684,85.277,27.755,85.381);
+  nwr[tourism~"attraction|museum"][name](27.684,85.277,27.755,85.381);
+  nwr[historic~"monument|palace"][name](27.684,85.277,27.755,85.381);
+);
+out geom;

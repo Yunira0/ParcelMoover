@@ -10,6 +10,13 @@ export const upsertDeliveryRateSchema = z.object({
     .number()
     .min(0, "baseCharge cannot be negative"),
   branchBaseCharge: z.coerce.number().min(0, "branchBaseCharge cannot be negative").optional().nullable(),
+  returnPercent: z.coerce.number().min(0).max(100, "returnPercent must be between 0 and 100").optional(),
+  branchReturnPercent: z.coerce
+    .number()
+    .min(0)
+    .max(100, "branchReturnPercent must be between 0 and 100")
+    .optional()
+    .nullable(),
   extraWeightPercent: z.coerce
     .number()
     .min(0)
@@ -31,6 +38,14 @@ export const bulkImportDeliveryRatesSchema = z.object({
         origin: z.string().trim().min(1, "origin is required").max(100),
         destination: z.string().trim().min(1, "destination is required").max(100),
         baseCharge: z.coerce.number().min(0, "baseCharge cannot be negative"),
+        branchBaseCharge: z.coerce.number().min(0, "branchBaseCharge cannot be negative").optional().nullable(),
+        returnPercent: z.coerce.number().min(0).max(100, "returnPercent must be between 0 and 100").optional(),
+        branchReturnPercent: z.coerce
+          .number()
+          .min(0)
+          .max(100, "branchReturnPercent must be between 0 and 100")
+          .optional()
+          .nullable(),
         extraWeightPercent: z.coerce
           .number()
           .min(0)
@@ -45,6 +60,16 @@ export const bulkImportDeliveryRatesSchema = z.object({
 
 export type BulkImportDeliveryRatesInput = z.infer<typeof bulkImportDeliveryRatesSchema>;
 
+// ── List delivery rates (query params) ───────────────────────────────────────
+// The rates page shows one origin at a time. A branch-scoped admin's own scope
+// still wins over whatever is asked for here - see listDeliveryRates.
+
+export const listDeliveryRatesQuerySchema = z.object({
+  originLocationId: uuidSchema.optional(),
+});
+
+export type ListDeliveryRatesQuery = z.infer<typeof listDeliveryRatesQuerySchema>;
+
 // ── Get delivery quote (query params) ────────────────────────────────────────
 
 export const deliveryQuoteQuerySchema = z.object({
@@ -54,6 +79,8 @@ export const deliveryQuoteQuerySchema = z.object({
     .number()
     .positive("weightKg must be a positive number")
     .optional(),
+  serviceType: z.enum(["home_delivery", "branch_delivery"]).optional(),
+  isReturn: z.enum(["true", "false"]).optional(),
 });
 
 export type DeliveryQuoteQuery = z.infer<typeof deliveryQuoteQuerySchema>;

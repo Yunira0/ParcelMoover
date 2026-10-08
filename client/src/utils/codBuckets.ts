@@ -4,8 +4,8 @@ import type { CodDetailBucket } from '../services/orders.service';
 // drill-down page both read labels from here, so a row can never be titled one
 // thing on the dashboard and another on the page it links to.
 //
-// `carrier: true` marks the buckets nested under the "COD to collect from
-// riders" heading. Adding a future 3PL is a three-line change: a slug in
+// `carrier: true` marks the buckets nested under the "COD still to collect"
+// heading (riders, carriers and branches). Adding a future 3PL is a three-line change: a slug in
 // COD_DETAIL_BUCKETS (client and server), an entry here with carrier: true,
 // and a matching FILTER clause in the server's COD queries.
 export interface CodBucketMeta {
@@ -17,7 +17,7 @@ export interface CodBucketMeta {
   amountHeader: string;
   /** One line under the page heading explaining what the figure counts. */
   description: string;
-  /** Nested under the "COD to collect from riders" heading on the card. */
+  /** Nested under the "COD still to collect" heading on the card. */
   carrier?: boolean;
 }
 
@@ -35,16 +35,18 @@ export const COD_BUCKET_META: Record<CodDetailBucket, CodBucketMeta> = {
     description: 'Collected cash that has already been remitted onward.',
   },
   pending: {
-    label: 'Pending',
-    title: 'Pending COD',
+    label: 'Pending (gross)',
+    title: 'Pending COD (gross)',
     amountHeader: 'OUTSTANDING',
-    description: 'Collected cash not yet remitted onward.',
+    description:
+      'Collected cash not yet remitted onward, before delivery charges and including orders already on an unpaid statement.',
   },
   'pm-rider': {
     label: 'PM-Rider',
     title: 'COD to collect from PM-Riders',
     amountHeader: 'OUTSTANDING',
-    description: 'Cash our own riders are holding and have not remitted to the office.',
+    description:
+      "Cash our own riders are holding and have not remitted to the office. Branch riders' cash is counted under Branches.",
     carrier: true,
   },
   ncm: {
@@ -61,6 +63,14 @@ export const COD_BUCKET_META: Record<CodDetailBucket, CodBucketMeta> = {
     amountHeader: 'OUTSTANDING',
     description:
       "Cash Upaya collected on our behalf and has not remitted to the office. Upaya isn't API-connected yet, so parcels are tracked through a placeholder rider until that integration lands.",
+    carrier: true,
+  },
+  branches: {
+    label: 'Branches',
+    title: 'COD to collect from branches',
+    amountHeader: 'OWED BY BRANCH',
+    description:
+      'COD on branch-delivered orders that the branches, all together, have not yet paid to Imadol - whether it is still with a branch rider or already at the branch.',
     carrier: true,
   },
   'delivery-charge': {

@@ -8,6 +8,8 @@ export interface DeliveryRate {
   destinationLocationName: string;
   baseCharge: number;
   branchBaseCharge: number | null;
+  returnPercent: number;
+  branchReturnPercent: number | null;
   extraWeightPercent: number;
   freeWeightKg: number;
   isActive: boolean;
@@ -19,6 +21,8 @@ export interface UpsertDeliveryRateInput {
   destinationLocationId: string;
   baseCharge: number;
   branchBaseCharge?: number | null;
+  returnPercent?: number;
+  branchReturnPercent?: number | null;
   extraWeightPercent?: number;
   freeWeightKg?: number;
 }
@@ -31,8 +35,15 @@ export interface DeliveryQuote {
   extraWeightPercent: number;
 }
 
-export const listDeliveryRates = async (): Promise<{ success: boolean; data: DeliveryRate[] }> => {
-  const response = await api.get('/delivery-rates');
+/** `originLocationId` narrows to one origin's routes. A branch-scoped admin is
+ *  already confined to their own hub server-side, and asking for another one
+ *  is a 403 rather than a silent substitution. */
+export const listDeliveryRates = async (
+  originLocationId?: string,
+): Promise<{ success: boolean; data: DeliveryRate[] }> => {
+  const response = await api.get('/delivery-rates', {
+    params: originLocationId ? { originLocationId } : undefined,
+  });
   return response.data;
 };
 
@@ -54,6 +65,10 @@ export interface VendorSelfRates {
   rateType: VendorRateType;
   freeWeightKg: number;
   extraWeightPercent: number;
+  flatRates: Record<'insideValley' | 'outsideRingRoad' | 'outsideValley', {
+    homeRate: number | null;
+    branchRate: number | null;
+  }> | null;
   rates: VendorSelfRate[];
 }
 
@@ -73,6 +88,11 @@ export const setDeliveryRateActive = async (id: string, isActive: boolean) => {
   return response.data;
 };
 
+export const deleteDeliveryRate = async (id: string): Promise<{ success: boolean; message: string }> => {
+  const response = await api.delete(`/delivery-rates/${id}`);
+  return response.data;
+};
+
 // ── Bulk import (Excel/CSV upload) ───────────────────────────────────────────
 // Rows reference locations by name; the server resolves them to hub ids.
 
@@ -80,6 +100,9 @@ export interface BulkImportRateRow {
   origin: string;
   destination: string;
   baseCharge: number;
+  branchBaseCharge?: number | null;
+  returnPercent?: number;
+  branchReturnPercent?: number | null;
   extraWeightPercent?: number;
   freeWeightKg?: number;
 }
@@ -102,9 +125,16 @@ export const getDeliveryQuote = async (
   originLocationId: string,
   destinationLocationId: string,
   weightKg: number,
+  opts?: { serviceType?: 'home_delivery' | 'branch_delivery'; isReturn?: boolean },
 ): Promise<{ success: boolean; data: DeliveryQuote }> => {
   const response = await api.get('/delivery-rates/quote', {
-    params: { originLocationId, destinationLocationId, weightKg },
+    params: {
+      originLocationId,
+      destinationLocationId,
+      weightKg,
+      ...(opts?.serviceType ? { serviceType: opts.serviceType } : {}),
+      ...(opts?.isReturn ? { isReturn: 'true' } : {}),
+    },
   });
   return response.data;
 };

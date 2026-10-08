@@ -18,9 +18,12 @@ import {
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
 import { useCursorPagination } from '../hooks/useCursorPagination';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
+import { isBranchWorkspaceUser } from '../utils/auth';
 import './HoldOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -54,6 +57,10 @@ const HoldOperations: React.FC = () => {
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [actionError, setActionError] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
+  // Loss & damage is a head-office classification (insurance/claim
+  // implications) — a branch workspace admin may only release holds back
+  // into the active flow, not write parcels off.
+  const canMarkLossAndDamage = !isBranchWorkspaceUser();
 
   // Debounce search input so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -175,7 +182,7 @@ const HoldOperations: React.FC = () => {
   const downloadCsv = async () => {
     let rows: Order[] = visibleOrders;
     try {
-      const res = await getOrders({ status: ['hold'], search: debouncedSearch || undefined });
+      const res = await getOrders({ status: ['hold'], search: debouncedSearch || undefined, withArrival: true });
       if (res?.success && Array.isArray(res.data)) {
         rows = res.data;
       }
@@ -185,10 +192,10 @@ const HoldOperations: React.FC = () => {
 
     // Same columns, in the same order, as the table on screen. COD stays a
     // number so the column totals in the sheet.
-    const headers = ['Order ID', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Age', 'Previous Status', 'Last Updated By', 'Last Updated', 'Last Remarks'];
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Sender', 'Receiver', 'Weight', 'COD', 'Age', 'Previous Status', 'Last Updated By', 'Last Updated', 'Last Remarks', ...STATUS_TIMELINE_HEADERS];
     const csvRows = rows.map((order) => [
       `#${order.orderNumber}`,
-      toBsDate(order.createdAt),
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt),
       order.trackingId,
       order.senderName,
       order.receiverName,
@@ -197,10 +204,11 @@ const HoldOperations: React.FC = () => {
       ageInDays(order.createdAt),
       REVERT_STATUS_LABEL,
       order.lastUpdatedBy || '',
-      toBsDateTime(order.lastUpdatedAt) || '',
+      toBsDateTimeCell(order.lastUpdatedAt) || '',
       order.remarks || '',
+      ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('hold-orders.xlsx', 'Hold Orders', headers, csvRows);
+    await downloadExcel('hold-orders.xlsx', 'Hold Orders', headers, csvRows);
   };
 
   const selectedOrders = orders.filter((order) => selectedIds.has(order.id));
@@ -241,7 +249,7 @@ const HoldOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="hold-party-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
       width: '172px',
@@ -279,7 +287,7 @@ const HoldOperations: React.FC = () => {
 
   return (
     <div className="hold-operations-container">
-      <PageHeader title="Hold" subtitle="Keep an eye on your dispatch orders across the whole hub network." />
+      <PageHeader title="Hold" />
 
       <div className="hold-toolbar">
         <div />
@@ -293,14 +301,16 @@ const HoldOperations: React.FC = () => {
               ? 'Updating...'
               : `Change to previous status${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
           </Button>
-          <Button
-            variant="danger"
-            onClick={markLossAndDamage}
-            disabled={selectedIds.size === 0 || statusUpdating}
-          >
-            <AlertTriangle size={14} />
-            {`Mark Loss & Damage${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
-          </Button>
+          {canMarkLossAndDamage && (
+            <Button
+              variant="danger"
+              onClick={markLossAndDamage}
+              disabled={selectedIds.size === 0 || statusUpdating}
+            >
+              <AlertTriangle size={14} />
+              {`Mark Loss & Damage${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+            </Button>
+          )}
           <Button variant="secondary" onClick={downloadCsv}>
             <Download size={14} /> Download
           </Button>

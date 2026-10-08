@@ -42,6 +42,7 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open (skip limiting), not 500, if Redis is unreachable mid-request.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("login"),
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown")
 });
@@ -58,6 +59,7 @@ const authReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("auth-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -70,6 +72,7 @@ const authWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("auth-write"),
   keyGenerator: actorOrIpKey,
 });
@@ -129,7 +132,8 @@ authRouter.get(
 authRouter.get(
   "/users/vendors/dropdown",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "sales", "vendor", "vendor_staff"),
+  // accountant: vendor picker for vendor COD settlements (Finance).
+  authorizeRoles("super_admin", "admin", "accountant", "sales", "vendor", "vendor_staff"),
   authReadLimiter,
   getVendorsDropdownController,
 );
@@ -143,7 +147,8 @@ authRouter.get(
 authRouter.get(
   "/users/riders",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  // accountant: rider picker for rider COD settlements (Finance).
+  authorizeRoles("super_admin", "admin", "accountant"),
   authReadLimiter,
   getRidersController,
 );

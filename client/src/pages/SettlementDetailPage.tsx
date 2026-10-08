@@ -14,7 +14,8 @@ import {
   type SettlementDetail,
   type SettlementDocument,
 } from '../services/finance.service';
-import { hasAnyRole, hasAdminPermission } from '../utils/auth';
+import { hasAnyRole, hasAdminPermission, isSalesUser, isVendorSide } from '../utils/auth';
+import { useBackOr } from '../hooks/useBackOr';
 import {
   hasSettlementPayments,
   isSettlementPayable,
@@ -25,8 +26,13 @@ import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
 import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
+import ReceiverPhones from '../components/ReceiverPhones';
+import { receiverPhonesHtml } from '../utils/format';
+import { DeliveryChargeCells, DeliveryChargeHeads, DeliveryChargeTotalRows } from '../components/DeliveryChargeCells';
+import { splitVat, sumVatSplits, vatColumns } from '../utils/vat';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
+const hubNameOnly = (value: string) => ((value || '').split(' - ')[0] ?? '').replace(/\s*Branch\s*$/i, '').trim();
 
 function initials(name: string): string {
   return name
@@ -225,6 +231,17 @@ function buildStatementHtml(detail: SettlementDetail): string {
   // per-row column would repeat the same name on every line.
   const showVendor = detail.payeeType === 'rider';
 
+  // The same split DeliveryChargeCells draws on screen, as print markup.
+  const { vatRate } = detail;
+  const chargeHeads = vatRate
+    ? `<th class="r">Delivery Charges</th><th class="r">VAT ${vatRate}%</th>`
+    : '<th class="r">Delivery Charges</th>';
+  const chargeCells = (charge: number) =>
+    vatRate
+      ? vatColumns(splitVat(charge, vatRate)).map((value) => `<td class="r">${money(value)}</td>`).join('')
+      : `<td class="r">${money(charge)}</td>`;
+  const vatTotals = vatRate ? sumVatSplits(detail.items.map((item) => item.deliveryCharge), vatRate) : null;
+
   const rows = detail.items
     .map(
       (item, index) => `
@@ -244,11 +261,12 @@ function buildStatementHtml(detail: SettlementDetail): string {
               : ''
           }
           <td>${item.receiverName}${item.receiverAddress ? `<div class="sub">${item.receiverAddress}</div>` : ''}</td>
-          <td>${item.receiverPhone}</td>
+          <td>${item.destination ? hubNameOnly(item.destination) : '-'}</td>
+          <td>${receiverPhonesHtml(item.receiverPhone, item.receiverAlternatePhone)}</td>
           <td class="r">${item.weightKg === null ? '-' : item.weightKg.toFixed(2)}</td>
           <td class="r">${money(item.codAmount)}</td>
           <td class="r">${money(item.collectedAmount)}</td>
-          <td class="r">${money(item.deliveryCharge)}</td>
+          ${chargeCells(item.deliveryCharge)}
           <td class="r">${money(item.settledAmount)}</td>
         </tr>`,
     )
@@ -304,9 +322,9 @@ function buildStatementHtml(detail: SettlementDetail): string {
     </div>
     <table>
       <thead><tr>
-        <th>SN</th><th>Order ID</th><th>Transaction ID</th>${showVendor ? '<th>Vendor</th>' : ''}<th>Receiver</th><th>Number</th>
+        <th>SN</th><th>Order ID</th><th>Transaction ID</th>${showVendor ? '<th>Vendor</th>' : ''}<th>Receiver</th><th>Destination</th><th>Number</th>
         <th class="r">Weight</th><th class="r">COD</th>
-        <th class="r">Collected COD</th><th class="r">Delivery Charges</th>
+        <th class="r">Collected COD</th>${chargeHeads}
         <th class="r">Net Payable</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -314,9 +332,26 @@ function buildStatementHtml(detail: SettlementDetail): string {
     <div class="totals">
       <div><span>Total COD</span><span>${money(totals.cod)}</span></div>
       <div><span>Collected COD</span><span>${money(totals.collected)}</span></div>
-      <div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>
+      ${
+        vatTotals
+          ? `<div><span>Delivery Charges (excl. VAT)</span><span>${money(vatTotals.net)}</span></div>
+      <div><span>VAT ${vatRate}%</span><span>${money(vatTotals.vat)}</span></div>`
+          : `<div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>`
+      }
+      ${detail.vendorCreditApplied ? `<div><span>Prepaid charges returned</span><span>+${money(detail.vendorCreditApplied)}</span></div>` : ''}
       <div class="payable"><span>${detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span><span>${money(detail.payableAmount)}</span></div>
     </div>
+    <script>
+      // Printing from document.close() in the opener races the new window's
+      // layout - it can fire before the statement has actually rendered, so
+      // the print dialog shows a blank/default page instead. Wait for this
+      // window's own load event first, same as printLabels.ts/printRunSheet.ts.
+      window.addEventListener('load', function() {
+        window.focus();
+        window.print();
+        window.addEventListener('afterprint', function() { window.close(); });
+      });
+    <\/script>
   </body></html>`;
 }
 
@@ -333,6 +368,14 @@ const SettlementDetailPage: React.FC = () => {
   const [showEdit, setShowEdit] = useState(false);
   const [showRevert, setShowRevert] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
+  // Each audience's own list, for when this statement was opened from a link.
+  const goBack = useBackOr(
+    isVendorSide()
+      ? '/finance/settlements'
+      : isSalesUser()
+        ? '/dashboard'
+        : `/accounting/transactions/${detail?.payeeType === 'vendor' ? 'vendor' : 'rider'}-cod`,
+  );
   const [tab, setTab] = useState<DetailTab>('billing');
   // Acknowledges a money-moving action that just completed - either handed in
   // via router state (a redirect from the pay flow) or set locally once a
@@ -356,7 +399,7 @@ const SettlementDetailPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [banner]);
 
-  const canPay = hasAnyRole(['super_admin', 'admin']);
+  const canPay = hasAnyRole(['super_admin', 'admin', 'accountant']);
   // Correcting a mistake — gated by the delegable EDIT_SETTLEMENTS permission,
   // same pattern as MANAGE_USERS/SETTINGS_ACCESS. Also covers reverting a
   // settled statement back to pending, since it's the same "fix a mistake"
@@ -421,49 +464,55 @@ const SettlementDetailPage: React.FC = () => {
     if (!win) return;
     win.document.write(buildStatementHtml(detail));
     win.document.close();
-    win.focus();
-    win.print();
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!detail) return;
+    const { vatRate } = detail;
     const headers = [
       'SN',
       'Order ID',
       'Transaction ID',
       ...(showVendor ? ['Vendor', 'Vendor Phone'] : []),
       'Receiver',
-      'Receiver Phone',
+      'Destination',
+      'Receiver Phone', 'Alternate Number',
       'Receiver Address',
       'Weight',
       'COD',
       'Collected COD',
-      'Delivery Charge',
+      ...(vatRate ? ['Delivery Charge', `VAT ${vatRate}%`] : ['Delivery Charge']),
     ];
+    const chargeColumns = (charge: number) => (vatRate ? vatColumns(splitVat(charge, vatRate)) : [charge]);
     const rows = detail.items.map((item, index) => [
       index + 1,
       `#${item.orderNumber}`,
       item.trackingId,
       ...(showVendor ? [item.vendorName ?? '', item.vendorPhone ?? ''] : []),
       item.receiverName,
-      item.receiverPhone,
+      hubNameOnly(item.destination || ''),
+      item.receiverPhone || '',
+      item.receiverAlternatePhone || '',
       item.receiverAddress ?? '',
       item.weightKg === null ? '' : item.weightKg,
       item.codAmount,
       item.collectedAmount,
-      item.deliveryCharge,
+      ...chargeColumns(item.deliveryCharge),
     ]);
-    // Totals sit under the last three columns, so pad out however many
-    // leading columns this variant of the sheet happens to have.
-    const leadingBlanks = new Array(headers.length - 3).fill('');
-    rows.push([...leadingBlanks, totals.cod, totals.collected, totals.deliveryCharge]);
-    downloadExcel(`${detail.statementId}.xlsx`, 'Statement', headers, rows);
+    // Totals sit under the money columns, so pad out however many leading
+    // columns this variant of the sheet happens to have.
+    const chargeTotals = vatRate
+      ? vatColumns(sumVatSplits(detail.items.map((item) => item.deliveryCharge), vatRate))
+      : [totals.deliveryCharge];
+    const leadingBlanks = new Array(headers.length - 2 - chargeTotals.length).fill('');
+    rows.push([...leadingBlanks, totals.cod, totals.collected, ...chargeTotals]);
+    await downloadExcel(`${detail.statementId}.xlsx`, 'Statement', headers, rows);
   };
 
   return (
     <div className="settlement-detail-page">
       <div className="settlement-detail-toolbar">
-        <Button variant="ghost" onClick={() => navigate(-1)}>
+        <Button variant="ghost" onClick={goBack}>
           <ArrowLeft size={16} /> Back
         </Button>
         <div className="settlement-detail-actions">
@@ -683,12 +732,13 @@ const SettlementDetailPage: React.FC = () => {
                         <th>Order Type</th>
                         {showVendor && <th>Vendor</th>}
                         <th>Receiver</th>
+                        <th>Destination</th>
                         <th>Number</th>
-                        <th style={{ textAlign: 'right' }}>Weight</th>
-                        <th style={{ textAlign: 'right' }}>COD</th>
-                        <th style={{ textAlign: 'right' }}>Collected COD</th>
-                        <th style={{ textAlign: 'right' }}>Delivery Charges</th>
-                        <th style={{ textAlign: 'right' }}>Net Payable</th>
+                        <th className="sdp-num">Weight</th>
+                        <th className="sdp-num">COD</th>
+                        <th className="sdp-num">Collected COD</th>
+                        <DeliveryChargeHeads vatRate={detail.vatRate} className="sdp-num" label="Delivery Charges" />
+                        <th className="sdp-num">Net Payable</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -723,14 +773,15 @@ const SettlementDetailPage: React.FC = () => {
                               <div className="sdp-subtext">{item.receiverAddress}</div>
                             )}
                           </td>
-                          <td>{item.receiverPhone}</td>
-                          <td style={{ textAlign: 'right' }}>
+                          <td title={item.destination || '-'}>{hubNameOnly(item.destination || '') || '-'}</td>
+                          <td><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></td>
+                          <td className="sdp-num">
                             {item.weightKg === null ? '-' : item.weightKg.toFixed(2)}
                           </td>
-                          <td style={{ textAlign: 'right' }}>{money(item.codAmount)}</td>
-                          <td style={{ textAlign: 'right' }}>{money(item.collectedAmount)}</td>
-                          <td style={{ textAlign: 'right' }}>{money(item.deliveryCharge)}</td>
-                          <td className="sdp-cell-strong" style={{ textAlign: 'right' }}>{money(item.settledAmount)}</td>
+                          <td className="sdp-num">{money(item.codAmount)}</td>
+                          <td className="sdp-num">{money(item.collectedAmount)}</td>
+                          <DeliveryChargeCells charge={item.deliveryCharge} vatRate={detail.vatRate} className="sdp-num" format={money} />
+                          <td className="sdp-cell-strong sdp-num">{money(item.settledAmount)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -747,10 +798,19 @@ const SettlementDetailPage: React.FC = () => {
                   <span>Collected COD</span>
                   <span>{money(totals.collected)}</span>
                 </div>
-                <div>
-                  <span>Delivery Charges</span>
-                  <span>{money(totals.deliveryCharge)}</span>
-                </div>
+                <DeliveryChargeTotalRows
+                  charges={detail.items.map((item) => item.deliveryCharge)}
+                  vatRate={detail.vatRate}
+                  format={money}
+                />
+                {/* Charges the vendor already paid through Billing, handed back
+                    so they are not deducted twice. Included in the payable. */}
+                {detail.vendorCreditApplied ? (
+                  <div>
+                    <span>Prepaid charges returned</span>
+                    <span>+{money(detail.vendorCreditApplied)}</span>
+                  </div>
+                ) : null}
                 <div className="sdp-totals-payable">
                   <span>{detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span>
                   <span>{money(detail.payableAmount)}</span>

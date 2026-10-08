@@ -28,6 +28,9 @@
    specificity of the base `.home > section` rule above plus a class, so it
    reliably wins the cascade instead of losing to it on padding/margin/max-width. */
 .home > .home-hero {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--color-text-default);
   width: auto;
   max-width: var(--lp-container);
   /* Horizontal inset never drops below --lp-inline; grows to auto-center once
@@ -44,6 +47,23 @@
   background-repeat: no-repeat;
   display: flex;
   align-items: flex-end;
+}
+
+.home-hero-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: -2;
+}
+
+.home-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(3 7 18 / 62%);
+  z-index: -1;
 }
 
 .home-hero-content {

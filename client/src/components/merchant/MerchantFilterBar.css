@@ -1,0 +1,137 @@
+/* Merchant filter — minimal, matches Order page .order-filter-panel */
+
+.merchant-filter-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.merchant-filter-group {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.merchant-filter-wide,
+.merchant-filter-daterange {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.merchant-filter-wide > span,
+.merchant-filter-daterange > span {
+  color: var(--color-text-caption);
+  font-family: var(--typography-font-family-default);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-xxs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.merchant-filter-wide {
+  min-width: 300px;
+  flex: 0 1 340px;
+}
+
+.merchant-filter-daterange {
+  min-width: 320px;
+  flex: 0 1 420px;
+  max-width: 520px;
+}
+
+.merchant-vendor-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 280px;
+  max-width: 100%;
+}
+
+.merchant-vendor-filter .searchable-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.merchant-filter-range {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  width: 100%;
+}
+
+.merchant-filter-range .ndp-root {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.merchant-filter-range .ndp-trigger {
+  height: 38px;
+}
+
+.merchant-filter-range-sep {
+  flex: none;
+  color: var(--color-text-placeholder);
+  user-select: none;
+}
+
+.merchant-filter-clear {
+  align-self: flex-end;
+}
+
+/* Primary on hover/focus — minimal border stays neutral, interactive states go primary */
+.merchant-filter-toolbar .ndp-trigger:hover,
+.merchant-filter-toolbar .searchable-select__trigger:hover {
+  border-color: var(--color-primary);
+}
+
+.merchant-filter-toolbar .ndp-trigger:focus-visible,
+.merchant-filter-toolbar .searchable-select__trigger:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.merchant-filter-toolbar .merchant-filter-clear:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+@media (max-width: 760px) {
+  .merchant-filter-toolbar {
+    align-items: stretch;
+  }
+
+  .merchant-filter-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .merchant-filter-wide,
+  .merchant-filter-daterange {
+    min-width: 0;
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: none;
+  }
+
+  .merchant-vendor-filter {
+    width: 100%;
+  }
+
+  .merchant-filter-clear {
+    align-self: flex-start;
+  }
+}

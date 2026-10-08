@@ -183,7 +183,7 @@
 
 .sfp-perm-card--selected .sfp-perm-card__check {
   background: var(--color-background-primary-default);
-  color: #fff;
+  color: var(--color-text-base);
 }
 
 .sfp-perm-card__icon {
@@ -249,7 +249,7 @@
 }
 
 .sfp-status-knob {
-  background: #fff;
+  background: var(--color-background-surface);
   border-radius: 50%;
   height: 18px;
   left: 3px;

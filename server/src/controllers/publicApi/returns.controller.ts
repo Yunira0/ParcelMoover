@@ -5,7 +5,7 @@ import { withIdempotency } from "../../services/idempotency.service";
 import { isValidTrackingId } from "../../utils/trackingId";
 import { PublicReturnRequestInput } from "../../validators/publicApi.schema";
 import { AppError } from "../../utils/AppError";
-import { actorFrom, sendError, UUID_REGEX } from "./shared";
+import { actorFrom, partnerIdempotencyKey, sendError, UUID_REGEX } from "./shared";
 
 // Orders already fully returned, or cancelled before ever reaching the
 // customer, have nothing left for the RTO workflow to act on.
@@ -44,7 +44,7 @@ export async function publicCreateReturnRequestController(req: Request, res: Res
     const actor = actorFrom(req);
     const { reason, notes } = req.body as PublicReturnRequestInput;
 
-    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(partnerIdempotencyKey(req, "order-return-request", idempotencyKey, trackingId), req.body, async () => {
       const order = await getOrderByTrackingId(actor, trackingId);
       if (NOT_RETURNABLE_STATUSES.has(order.status)) {
         throw new AppError(409, `Order is already "${order.status}" and cannot be returned`);
@@ -67,7 +67,7 @@ export async function publicCreateReturnRequestController(req: Request, res: Res
         result: body,
         response: { statusCode: 201, body, resourceID: ticket.id },
       };
-    });
+    }, { legacyKey: idempotencyKey });
 
     return res.status(201).json(responseBody);
   } catch (error: any) {

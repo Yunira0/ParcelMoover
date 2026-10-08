@@ -6,11 +6,16 @@ import { parcel_status } from "../generated/prisma/client";
 // singleton keys (remarks aren't a parcel status; 'return' covers the whole
 // return workflow with one threshold).
 export const SLA_GROUPS = {
-  pickup: ["pickup_ordered", "rider_assigned", "picked_up", "arrived"],
-  delivery: ["ready_to_deliver", "sent_for_delivery"],
+  pickup: ["pickup_ordered", "rider_assigned", "picked_up", "arrived", "failed_pickup"],
+  delivery: ["ready_to_deliver", "sent_for_delivery", "failed_delivery"],
   transit: ["oov", "dispatched", "arrived_at_branch"],
   return: ["follow_up", "ready_to_return", "sent_to_vendor"],
 } as const satisfies Record<string, parcel_status[]>;
+
+// Singleton key: how long a branch has, after a parcel destined to it is
+// delivered, to submit the collected COD before it counts as overdue. Read by
+// branch-billing.service to flag overdue COD on the branch balance.
+export const BRANCH_COD_SLA_KEY = "branch_cod_submission";
 
 // Every configurable key, in a stable order.
 export const SLA_STATUS_KEYS: string[] = [
@@ -19,6 +24,7 @@ export const SLA_STATUS_KEYS: string[] = [
   ...SLA_GROUPS.transit,
   ...SLA_GROUPS.return,
   "remarks",
+  BRANCH_COD_SLA_KEY,
 ];
 
 // Defaults used to backfill any key missing from the table on first read.
@@ -27,8 +33,10 @@ const DEFAULT_HOURS: Record<string, number> = {
   rider_assigned: 24,
   picked_up: 24,
   arrived: 24,
+  failed_pickup: 24,
   ready_to_deliver: 24,
   sent_for_delivery: 24,
+  failed_delivery: 24,
   oov: 48,
   dispatched: 48,
   arrived_at_branch: 48,
@@ -36,6 +44,7 @@ const DEFAULT_HOURS: Record<string, number> = {
   ready_to_return: 72,
   sent_to_vendor: 72,
   remarks: 24,
+  [BRANCH_COD_SLA_KEY]: 24,
 };
 
 export type SlaSettings = Record<string, number | null>;

@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
@@ -15,22 +16,24 @@ import Button from '../components/Button';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
-import TicketCategoryButton from '../components/TicketCategoryButton';
 import Pagination from '../components/Pagination';
 import {
   getOrders,
   getStatusCounts,
-  subscribeToOrderStatusChanged,
   bulkUpdateOrderStatus,
   type Order,
   type ParcelStatus,
 } from '../services/orders.service';
-import { getRiders } from '../services/users.service';
+import { getAllRiders } from '../queries/lookups';
+import { queryKeys } from '../queries/keys';
 import { printLabels } from '../utils/printLabels';
-import { toBsDate, toNptTime } from '../utils/nepaliDate';
+import { toBsDate, toBsDateTimeCell, toNptTime } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
+import { downloadExcel } from '../utils/excel';
 import { formatCurrency } from '../utils/format';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './PickupOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
 
@@ -40,8 +43,8 @@ type ValleyFilter = 'all' | 'inside' | 'outside';
 
 const VALLEY_FILTER_OPTIONS: { value: ValleyFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'inside', label: 'Inside Valley' },
-  { value: 'outside', label: 'Outside Valley' },
+  { value: 'inside', label: 'Our Coverage' },
+  { value: 'outside', label: 'Outside Coverage' },
 ];
 
 // Groups (pickups) per page in the outer table.
@@ -51,6 +54,8 @@ const PAGE_SIZE = 10;
 // counts must cover the full pickup, which parcel-level server paging broke.
 const SERVER_FETCH_PAGE_SIZE = 100;
 const MAX_FETCH_PAGES = 30; // safety cap: 3000 parcels per tab
+const NO_ORDERS: Order[] = [];
+const NO_COUNTS: Record<string, number> = {};
 const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_LABELS: Record<PickupTab, string> = {
@@ -66,7 +71,9 @@ const TAB_STATUSES: Record<PickupTab, ParcelStatus[]> = {
   pickup_ordered: ['pickup_ordered'],
   rider_assigned: ['rider_assigned'],
   picked_up: ['picked_up'],
-  arrived: ['arrived', 'arrived_at_branch'],
+  // 'arrived' only. arrived_at_branch is a destination-hub arrival near the end
+  // of delivery, not a pickup-stage one, and belongs to Dispatch Operations.
+  arrived: ['arrived'],
   failed: ['failed_pickup'],
   cancelled: ['cancelled'],
 };
@@ -122,9 +129,11 @@ const STATUS_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
 const DIRECT_DELIVERY_FRINGE_AREAS = ['kavresthali', 'thali', 'chapagaun', 'budhanilkantha', 'thankot'];
 
 // From "Arrived at Origin", whether a parcel should skip Transit and go
-// straight to Ready to Deliver (inside valley + fringe areas) or must go
-// through Transit/OOV first (everywhere else).
+// straight to Ready to Deliver (destination in the arrival branch's coverage)
+// or must go through Transit/OOV first. The server decides (skipsTransit);
+// the valley rule is only a fallback for rows without it.
 const destinationSkipsTransit = (order: Order): boolean => {
+  if (order.skipsTransit !== undefined) return order.skipsTransit;
   if (order.destinationValley === 'inside') return true;
   const name = (order.destinationName || '').toLowerCase();
   return DIRECT_DELIVERY_FRINGE_AREAS.some(area => name.includes(area));
@@ -276,7 +285,7 @@ const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) =>
       <div className="pickup-group-cell">
         <span>{order.receiverName}</span>
         {order.receiverAddress && <small>{order.receiverAddress}</small>}
-        <small>{order.receiverPhone}</small>
+        <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
       </div>
     ),
     width: '200px',
@@ -359,8 +368,6 @@ const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 
 
 const PickupOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [capped, setCapped] = useState(false);
   const [activeTab, setActiveTab] = useState<PickupTab>(() => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as PickupTab) : 'pickup_ordered';
@@ -377,8 +384,6 @@ const PickupOperations: React.FC = () => {
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<PickupTab, Set<string | number>>>(createEmptyTabSelections);
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
@@ -389,34 +394,24 @@ const PickupOperations: React.FC = () => {
   const [reasonRemarks, setReasonRemarks] = useState('');
   const [expandedGroupId, setExpandedGroupId] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
-  const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
   const [valleyFilter, setValleyFilter] = useState<ValleyFilter>('all');
 
   // Badge counts follow the search, so a scanned parcel shows "1" on its tab
-  // instead of the unfiltered total. Guarded like loadPickups so a slow earlier
-  // request can't overwrite a newer search's counts.
-  const countsSeqRef = useRef(0);
-  const loadTabCounts = useCallback(async () => {
-    const seq = ++countsSeqRef.current;
-    try {
-      const counts = await getStatusCounts(
-        TAB_STATUSES,
-        debouncedSearch ? { search: debouncedSearch } : undefined,
-      );
-      if (seq === countsSeqRef.current) setTabCounts(counts);
-    } catch {
-      // non-fatal; tabs just won't show counts
-    }
-  }, [debouncedSearch]);
-
-  useEffect(() => { void loadTabCounts(); }, [loadTabCounts]);
-  // Refresh tab counts whenever an order status changes anywhere in the app.
-  useEffect(() => subscribeToOrderStatusChanged(loadTabCounts), [loadTabCounts]);
+  // instead of the unfiltered total. Keyed by the search, so a slow earlier
+  // request can't overwrite a newer search's counts, and refreshed whenever an
+  // order status changes anywhere in the app (queryClient.ts). A failure is
+  // non-fatal; the tabs just won't show counts.
+  const countFilters = debouncedSearch ? { search: debouncedSearch } : undefined;
+  const tabCountsQuery = useQuery({
+    queryKey: queryKeys.orders.statusCounts(TAB_STATUSES, countFilters),
+    queryFn: () => getStatusCounts(TAB_STATUSES, countFilters),
+  });
+  const tabCounts: Record<string, number> = tabCountsQuery.data ?? NO_COUNTS;
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await getRiders({ pageSize: 100 });
+        const res = await getAllRiders();
         if (res?.success && Array.isArray(res.data)) {
           setRiders(res.data.filter((r: { status: string }) => r.status === 'active'));
         }
@@ -432,14 +427,14 @@ const PickupOperations: React.FC = () => {
     return () => clearTimeout(handle);
   }, [combinedSearch]);
 
-  // Guards against a slow multi-page fetch landing after the user has already
-  // switched tab or typed a new search - only the latest request may setState.
-  const fetchSeqRef = useRef(0);
-
-  const loadPickups = useCallback(async () => {
-    const seq = ++fetchSeqRef.current;
-    setLoading(true);
-    try {
+  // Every parcel of the tab, walked page by page (selection spans group pages).
+  // Cached per tab + search: flipping back to a tab or returning to this page
+  // shows its last rows at once while they refetch, and a slow fetch for a tab
+  // the user already left can never land on the current one. A tab with no
+  // cached rows yet shows the skeleton rather than another tab's parcels.
+  const pickupsQuery = useQuery({
+    queryKey: queryKeys.orders.list({ view: 'pickup', status: TAB_STATUSES[activeTab], search: debouncedSearch }),
+    queryFn: async ({ signal }) => {
       const all: Order[] = [];
       let cursor: string | undefined;
       let hasMore = false;
@@ -447,11 +442,11 @@ const PickupOperations: React.FC = () => {
         const res = await getOrders({
           status: TAB_STATUSES[activeTab],
           search: debouncedSearch || undefined,
+          withArrival: true,
           pageSize: SERVER_FETCH_PAGE_SIZE,
           cursor,
           dir: 'next',
-        });
-        if (seq !== fetchSeqRef.current) return;
+        }, signal);
         if (!res?.success || !Array.isArray(res.data)) {
           throw new Error('Unexpected orders response');
         }
@@ -460,19 +455,13 @@ const PickupOperations: React.FC = () => {
         if (!hasMore) break;
         cursor = res.meta!.nextCursor!;
       }
-      setOrders(all);
-      setCapped(hasMore);
-      setLoadError('');
-    } catch {
-      if (seq !== fetchSeqRef.current) return;
-      setLoadError('Failed to load pickup orders. Showing the last loaded data, if any.');
-    } finally {
-      if (seq === fetchSeqRef.current) setLoading(false);
-    }
-  }, [activeTab, debouncedSearch]);
-
-  useEffect(() => { loadPickups(); }, [loadPickups]);
-  useEffect(() => subscribeToOrderStatusChanged(loadPickups), [loadPickups]);
+      return { orders: all, capped: hasMore };
+    },
+  });
+  const orders = pickupsQuery.data?.orders ?? NO_ORDERS;
+  const capped = pickupsQuery.data?.capped ?? false;
+  const loading = pickupsQuery.isPending;
+  const loadError = pickupsQuery.isError ? 'Failed to load pickup orders. Showing the last loaded data, if any.' : '';
 
   useEffect(() => {
     setPage(1);
@@ -504,7 +493,7 @@ const PickupOperations: React.FC = () => {
 
   const visibleOrders = useMemo(() => {
     if (activeTab !== 'arrived' || valleyFilter === 'all') return orders;
-    return orders.filter(order => order.destinationValley === valleyFilter);
+    return orders.filter(order => destinationSkipsTransit(order) === (valleyFilter === 'inside'));
   }, [orders, activeTab, valleyFilter]);
   const selectedIds = selectedIdsByTab[activeTab];
   const groups = useMemo(() => groupOrdersByVendor(visibleOrders), [visibleOrders]);
@@ -646,7 +635,8 @@ const PickupOperations: React.FC = () => {
           riderId: isRiderAssignAction ? riderId : undefined,
         },
       );
-      await loadPickups();
+      // The bulk update already announced itself and started the refetch.
+      await pickupsQuery.refetch({ cancelRefetch: false });
 
       setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
       setIsActionOpen(false);
@@ -663,6 +653,43 @@ const PickupOperations: React.FC = () => {
   const handlePrintLabels = () => {
     const labelOrders = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
     void printLabels(labelOrders);
+  };
+
+  // Same rows Print All uses - the selection when there is one, the visible tab
+  // otherwise - so the sheet always matches what the button beside it prints.
+  const downloadCsv = async () => {
+    const rows = selectedOrders.length > 0 ? selectedOrders : visibleOrders;
+
+    // Same columns, in the same order, as the group detail table on screen.
+    // COD and delivery charge stay numbers so the columns total in the sheet.
+    const headers = [
+      'Order ID', 'Date & Time', 'Sender', 'Sender Phone', 'Receiver', 'Receiver Phone', 'Alternate Number',
+      'Receiver Address', 'Pickup Rider', 'Tracking Code', 'Weight (kg)', 'Origin',
+      'Destination', 'Delivery Charge', 'COD Amount', 'Last Handle By', 'Order Type', 'Remarks',
+      ...STATUS_TIMELINE_HEADERS,
+    ];
+    const csvRows = rows.map(order => [
+      `#${order.orderNumber}`,
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt) || '',
+      order.senderName,
+      order.senderPhone || '',
+      order.receiverName,
+      order.receiverPhone || '',
+      order.receiverAlternatePhone || '',
+      order.receiverAddress || '',
+      order.riderName || '',
+      order.trackingId,
+      order.weightKg ?? '',
+      order.origin || '',
+      order.destination || '',
+      order.deliveryCharge,
+      order.codAmount,
+      order.lastUpdatedBy || '',
+      ORDER_TYPE_LABELS[order.orderType],
+      order.remarks || '',
+      ...statusTimelineCells(order.statusTimestamps),
+    ]);
+    await downloadExcel('pickup-orders.xlsx', 'Pickup Orders', headers, csvRows);
   };
 
   const moveSelectedStatus = (direction: 1 | -1) => {
@@ -780,9 +807,7 @@ const PickupOperations: React.FC = () => {
 
   return (
     <div className="pickup-operations-container">
-      <PageHeader title="Pickup Operations" subtitle="Manage and track your pickup orders across the hub network.">
-        <TicketCategoryButton category="pickup" notificationType="pickup" />
-      </PageHeader>
+      <PageHeader title="Pickup Operations" />
 
       <SegmentedTabs
         ariaLabel="Pickup operation filters"
@@ -893,7 +918,12 @@ const PickupOperations: React.FC = () => {
               </div>
             )}
           </div>
-          <Button variant="secondary" className="pickup-outline-btn">
+          <Button
+            variant="secondary"
+            className="pickup-outline-btn"
+            onClick={downloadCsv}
+            disabled={visibleOrders.length === 0}
+          >
             <Download size={14} /> Download
           </Button>
           <Button variant="secondary" className="pickup-outline-btn" onClick={handlePrintLabels} disabled={visibleOrders.length === 0}>

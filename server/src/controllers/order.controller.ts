@@ -8,20 +8,30 @@ import {
   createOrder,
   getCodSettlementDetail,
   getDashboardSummary,
+  getMerchantOverview,
+  getSalesOverview,
+  getRiderOverview,
   getOrderByTrackingId,
   getOrderFilterOptions,
+  getOrderCountsByStatus,
+  moveOrderToTrash,
+  restoreOrderFromTrash,
+  deleteOrderPermanently,
   getPublicOrderTracking,
   getRiderRunSheet,
   getSenderProfile,
   getStatusCounts,
   listOrders,
   redirectOrder,
+  forwardOrder,
   updateOrderDetails,
   updateParcelStatus,
 } from "../services/order.service";
+import { OrderCountsByStatusQuery } from "../validators/order.schema";
 import { syncRemarkToNcm } from "../services/ncm.service";
+import { staffHasPermission } from "../middlewares/staffPermission.middleware";
 import { withIdempotency } from "../services/idempotency.service";
-import { ORDER_SORT_FIELDS, OrderSortField, OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
+import { ListOrdersQuery, ORDER_SORT_FIELDS, OrderSortField, OrderType, ParcelStatus, STATUS_TRANSITIONS } from "../types/order.type";
 import { isValidTrackingId } from "../utils/trackingId";
 
 // General UUID shape (8-4-4-4-12 hex). Intentionally not strict about the
@@ -34,6 +44,13 @@ const UUID_REGEX =
 const VALID_STATUSES = new Set(Object.keys(STATUS_TRANSITIONS));
 const VALID_ORDER_TYPES: OrderType[] = ["delivery", "exchange", "return"];
 const MAX_BULK_IDS = 200;
+
+// Dashboard idempotency shares Redis with Partner API calls. Include the
+// authenticated user so one vendor or staff member cannot replay another
+// actor's cached result before the order service checks ownership.
+function dashboardIdempotencyKey(req: Request, operation: string, clientKey: string, resourceId?: string) {
+  return `dashboard:${req.user!.id}:${operation}:${resourceId ?? "-"}:${clientKey}`;
+}
 
 // Multi-select vendor filter: repeated `?vendorId=` params or one
 // comma-separated list. Capped so a hand-crafted URL can't build an
@@ -92,7 +109,7 @@ export async function createOrderController(req: Request, res: Response) {
     // result and response.body must be the same object so a replayed retry
     // (which returns response.body) gets back exactly what the original
     // caller received, instead of a differently-shaped payload.
-    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(dashboardIdempotencyKey(req, "order-create", idempotencyKey), req.body, async () => {
       const order = await createOrder(
         {
           id: req.user!.id,
@@ -110,6 +127,14 @@ export async function createOrderController(req: Request, res: Response) {
           trackingId: order.tracking_id,
           status: order.status,
           createdAt: order.created_at,
+          // The priced fee breakdown, so the client can show delivery fee,
+          // voucher discount and final charge without a second fetch.
+          deliveryCharge: Number(order.delivery_charge),
+          grossDeliveryCharge: Number(order.gross_delivery_charge),
+          discountAmount: Number(order.discount_amount),
+          ...((order as { voucherCode?: string }).voucherCode
+            ? { voucherCode: (order as { voucherCode?: string }).voucherCode }
+            : {}),
         },
       };
 
@@ -121,7 +146,7 @@ export async function createOrderController(req: Request, res: Response) {
           resourceID: order.id,
         },
       };
-    });
+    }, { legacyKey: idempotencyKey });
 
     return res.status(201).json(responseBody);
   } catch (error: any) {
@@ -165,7 +190,7 @@ export async function bulkCreateOrdersController(req: Request, res: Response) {
       if (!res.writableEnded) abortController.abort();
     });
 
-    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(dashboardIdempotencyKey(req, "order-bulk-create", idempotencyKey), req.body, async () => {
       const data = await bulkCreateOrders({ id: req.user!.id, roles: req.user!.roles }, req.body, abortController.signal);
       const body = {
         success: true,
@@ -180,13 +205,14 @@ export async function bulkCreateOrdersController(req: Request, res: Response) {
           resourceID: `bulk-${idempotencyKey}`,
         },
       };
-    });
+    }, { legacyKey: idempotencyKey, lockTtlSeconds: 600 });
 
     return res.status(207).json(responseBody);
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Bulk order creation failed",
+      ...(error.code ? { code: error.code } : {}),
     });
   }
 }
@@ -200,89 +226,132 @@ export async function listOrdersController(req: Request, res: Response) {
       });
     }
 
+    // GET /orders reads filters off the query string; POST /orders/search
+    // (used once a scan batch's `search` term list gets too long for a URL)
+    // reads the identical shape off the body instead - see order.routes.ts.
+    // Both are validated by the same listOrdersQuerySchema before this runs.
+    const source: Record<string, unknown> = req.method === "POST" ? req.body : req.query;
+
     let status: ParcelStatus[] | undefined;
     try {
-      status = parseStatusQuery(req.query.status);
+      status = parseStatusQuery(source.status);
     } catch (e: any) {
       return res.status(400).json({ success: false, message: e.message });
     }
 
     let vendorIdFilter: string[] | undefined;
     try {
-      vendorIdFilter = parseVendorIdQuery(req.query.vendorId);
+      vendorIdFilter = parseVendorIdQuery(source.vendorId);
     } catch (e: any) {
       return res.status(400).json({ success: false, message: e.message });
     }
 
-    const search = typeof req.query.search === "string" ? req.query.search : undefined;
+    const search = typeof source.search === "string" ? source.search : undefined;
 
     let orderType: OrderType | undefined;
-    if (req.query.orderType !== undefined) {
-      if (typeof req.query.orderType !== "string" || !VALID_ORDER_TYPES.includes(req.query.orderType as OrderType)) {
+    if (source.orderType !== undefined) {
+      if (typeof source.orderType !== "string" || !VALID_ORDER_TYPES.includes(source.orderType as OrderType)) {
         return res.status(400).json({
           success: false,
           message: `orderType must be one of: ${VALID_ORDER_TYPES.join(", ")}`,
         });
       }
-      orderType = req.query.orderType as OrderType;
+      orderType = source.orderType as OrderType;
     }
 
     let deliveryRiderId: string | undefined;
-    if (req.query.deliveryRiderId !== undefined) {
-      if (typeof req.query.deliveryRiderId !== "string" || !UUID_REGEX.test(req.query.deliveryRiderId)) {
+    if (source.deliveryRiderId !== undefined) {
+      if (typeof source.deliveryRiderId !== "string" || !UUID_REGEX.test(source.deliveryRiderId)) {
         return res.status(400).json({ success: false, message: "deliveryRiderId must be a valid uuid" });
       }
-      deliveryRiderId = req.query.deliveryRiderId;
+      deliveryRiderId = source.deliveryRiderId;
+    }
+
+    let salesUserId: string | undefined;
+    if (source.salesUserId !== undefined) {
+      if (typeof source.salesUserId !== "string" || !UUID_REGEX.test(source.salesUserId)) {
+        return res.status(400).json({ success: false, message: "salesUserId must be a valid uuid" });
+      }
+      salesUserId = source.salesUserId;
+    }
+
+    // Rider Overview's filter: parcels this rider has ever handled, pickup or
+    // delivery leg — broader than deliveryRiderId, above.
+    let riderId: string | undefined;
+    if (source.riderId !== undefined) {
+      if (typeof source.riderId !== "string" || !UUID_REGEX.test(source.riderId)) {
+        return res.status(400).json({ success: false, message: "riderId must be a valid uuid" });
+      }
+      riderId = source.riderId;
+    }
+
+    // Orders list page's Origin/Destination Hub filters. Single ids from the
+    // client, fed into the service's existing multi-value fields below so a
+    // second AND-condition branch doesn't need to exist just for this.
+    let originLocationId: string | undefined;
+    if (source.originLocationId !== undefined) {
+      if (typeof source.originLocationId !== "string" || !UUID_REGEX.test(source.originLocationId)) {
+        return res.status(400).json({ success: false, message: "originLocationId must be a valid uuid" });
+      }
+      originLocationId = source.originLocationId;
+    }
+
+    let destinationLocationId: string | undefined;
+    if (source.destinationLocationId !== undefined) {
+      if (typeof source.destinationLocationId !== "string" || !UUID_REGEX.test(source.destinationLocationId)) {
+        return res.status(400).json({ success: false, message: "destinationLocationId must be a valid uuid" });
+      }
+      destinationLocationId = source.destinationLocationId;
     }
 
     let page: number | undefined;
     let pageSize: number | undefined;
-    if (req.query.page !== undefined) {
-      page = Number(req.query.page);
+    if (source.page !== undefined) {
+      page = Number(source.page);
       if (!Number.isInteger(page) || page < 1) {
         return res.status(400).json({ success: false, message: "page must be a positive integer" });
       }
     }
-    if (req.query.pageSize !== undefined) {
-      pageSize = Number(req.query.pageSize);
+    if (source.pageSize !== undefined) {
+      pageSize = Number(source.pageSize);
       if (!Number.isInteger(pageSize) || pageSize < 1) {
         return res.status(400).json({ success: false, message: "pageSize must be a positive integer" });
       }
     }
 
     let cursor: string | undefined;
-    if (req.query.cursor !== undefined) {
-      if (typeof req.query.cursor !== "string" || req.query.cursor.length > 400) {
+    if (source.cursor !== undefined) {
+      if (typeof source.cursor !== "string" || source.cursor.length > 400) {
         return res.status(400).json({ success: false, message: "cursor must be a string of at most 400 characters" });
       }
-      cursor = req.query.cursor;
+      cursor = source.cursor;
     }
 
     let dir: "next" | "prev" | undefined;
-    if (req.query.dir !== undefined) {
-      if (req.query.dir !== "next" && req.query.dir !== "prev") {
+    if (source.dir !== undefined) {
+      if (source.dir !== "next" && source.dir !== "prev") {
         return res.status(400).json({ success: false, message: "dir must be 'next' or 'prev'" });
       }
-      dir = req.query.dir;
+      dir = source.dir as "next" | "prev";
     }
 
     let sortBy: OrderSortField | undefined;
-    if (req.query.sortBy !== undefined) {
-      if (typeof req.query.sortBy !== "string" || !ORDER_SORT_FIELDS.includes(req.query.sortBy as OrderSortField)) {
+    if (source.sortBy !== undefined) {
+      if (typeof source.sortBy !== "string" || !ORDER_SORT_FIELDS.includes(source.sortBy as OrderSortField)) {
         return res.status(400).json({
           success: false,
           message: `sortBy must be one of: ${ORDER_SORT_FIELDS.join(", ")}`,
         });
       }
-      sortBy = req.query.sortBy as OrderSortField;
+      sortBy = source.sortBy as OrderSortField;
     }
 
     let sortDir: "asc" | "desc" | undefined;
-    if (req.query.sortDir !== undefined) {
-      if (req.query.sortDir !== "asc" && req.query.sortDir !== "desc") {
+    if (source.sortDir !== undefined) {
+      if (source.sortDir !== "asc" && source.sortDir !== "desc") {
         return res.status(400).json({ success: false, message: "sortDir must be 'asc' or 'desc'" });
       }
-      sortDir = req.query.sortDir;
+      sortDir = source.sortDir as "asc" | "desc";
     }
 
     const result = await listOrders(
@@ -291,8 +360,12 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(status ? { status } : {}),
         ...(orderType ? { orderType } : {}),
         ...(vendorIdFilter ? { vendorId: vendorIdFilter } : {}),
+        ...(salesUserId ? { salesUserId } : {}),
         ...(search ? { search } : {}),
         ...(deliveryRiderId ? { deliveryRiderId } : {}),
+        ...(riderId ? { riderId } : {}),
+        ...(originLocationId ? { originLocationIds: [originLocationId] } : {}),
+        ...(destinationLocationId ? { destinationLocationIds: [destinationLocationId] } : {}),
         ...(page !== undefined ? { page } : {}),
         ...(pageSize !== undefined ? { pageSize } : {}),
         ...(cursor !== undefined ? { cursor } : {}),
@@ -300,14 +373,19 @@ export async function listOrdersController(req: Request, res: Response) {
         ...(sortBy ? { sortBy } : {}),
         ...(sortDir ? { sortDir } : {}),
         // Both already coerced to real booleans by listOrdersQuerySchema.
-        ...(req.query.withArrival ? { withArrival: true } : {}),
-        ...(req.query.deliveredToday ? { deliveredToday: true } : {}),
+        ...(source.withArrival ? { withArrival: true } : {}),
+        ...(source.deliveredToday ? { deliveredToday: true } : {}),
+        ...(source.viaTransit ? { viaTransit: true } : {}),
         // Shape already checked by listOrdersQuerySchema (enum + YYYY-MM-DD).
-        ...(req.query.dateField
-          ? { dateField: req.query.dateField as "createdAt" | "lastUpdatedAt" }
+        ...(source.dateField
+          ? { dateField: source.dateField as "createdAt" | "lastUpdatedAt" }
           : {}),
-        ...(req.query.dateFrom ? { dateFrom: String(req.query.dateFrom) } : {}),
-        ...(req.query.dateTo ? { dateTo: String(req.query.dateTo) } : {}),
+        ...(source.dateFrom ? { dateFrom: String(source.dateFrom) } : {}),
+        ...(source.dateTo ? { dateTo: String(source.dateTo) } : {}),
+        ...(source.settlement
+          ? { settlement: source.settlement as "settled" | "pending" }
+          : {}),
+        ...(source.settlementPayee === "rider" ? { settlementPayee: "rider" as const } : {}),
       },
     );
 
@@ -351,6 +429,116 @@ export async function getOrderFilterOptionsController(req: Request, res: Respons
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load filter options",
+    });
+  }
+}
+
+// GET /orders/status-counts — per-status totals for the orders list page's tab
+// badges. Separate from listOrdersController because that endpoint returns one
+// keyset page (10 rows) and its meta.total only ever describes the active tab,
+// so the other tabs' numbers can't be derived from it.
+export async function getOrderCountsByStatusController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    // The list's Origin/Destination Hub filters arrive as single ids (the
+    // dropdowns are single-select) but buildOrdersWhere only reads the
+    // service's multi-value fields - same conversion listOrdersController
+    // does, so the badges narrow in step with the table.
+    const { originLocationId, destinationLocationId, ...rest } = req.query as OrderCountsByStatusQuery;
+    const data = await getOrderCountsByStatus(
+      { id: req.user.id, roles: req.user.roles },
+      {
+        ...rest,
+        ...(originLocationId ? { originLocationIds: [originLocationId] } : {}),
+        ...(destinationLocationId ? { destinationLocationIds: [destinationLocationId] } : {}),
+      },
+    );
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load order counts",
+    });
+  }
+}
+
+// ── Trash ────────────────────────────────────────────────────────────────────
+// All four are admin-only at the route layer. They pass the already-validated
+// query straight through rather than re-parsing it by hand like
+// listOrdersController does, since `validate(..., "query")` has replaced
+// req.query with the parsed object by the time they run.
+
+// GET /orders/trash — soft-deleted orders, same shape as the live list.
+export async function listTrashedOrdersController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    // `trashed` is forced here, never read from the client.
+    const result = await listOrders(
+      { id: req.user.id, roles: req.user.roles },
+      { ...(req.query as ListOrdersQuery), trashed: true },
+    );
+    return res.status(200).json({ success: true, data: result.data, meta: result.meta });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load trash",
+    });
+  }
+}
+
+// POST /orders/:id/trash — soft-delete one order.
+export async function trashOrderController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const data = await moveOrderToTrash({ id: req.user.id, roles: req.user.roles }, req.params.id as string);
+    return res.status(200).json({ success: true, message: "Order moved to trash", data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to move order to trash",
+    });
+  }
+}
+
+// POST /orders/:id/restore — put a trashed order back into the live lists.
+export async function restoreOrderController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const data = await restoreOrderFromTrash(
+      { id: req.user.id, roles: req.user.roles },
+      req.params.id as string,
+      req.body.restoreTo,
+    );
+    return res.status(200).json({ success: true, message: "Order restored", data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to restore order",
+    });
+  }
+}
+
+// DELETE /orders/:id/permanent — unrecoverable. Refused with 409 for any order
+// carrying accounting or COD records (see getPermanentDeleteBlocker).
+export async function deleteOrderPermanentlyController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+    const data = await deleteOrderPermanently({ id: req.user.id, roles: req.user.roles }, req.params.id as string);
+    return res.status(200).json({ success: true, message: "Order permanently deleted", data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to delete order",
     });
   }
 }
@@ -507,7 +695,7 @@ export async function bulkUpdateOrderStatusController(req: Request, res: Respons
     // Namespaced so a client reusing the same key across different endpoints
     // (e.g. create-order vs bulk-status) can't collide on the shared idempotency store.
     const body = await withIdempotency(
-      `order-bulk-status:${idempotencyKey}`,
+      dashboardIdempotencyKey(req, "order-bulk-status", idempotencyKey),
       req.body,
       async () => {
         const result = await bulkUpdateParcelStatus(
@@ -530,6 +718,7 @@ export async function bulkUpdateOrderStatusController(req: Request, res: Respons
           },
         };
       },
+      { legacyKey: `order-bulk-status:${idempotencyKey}` },
     );
 
     return res.status(200).json(body);
@@ -576,10 +765,13 @@ export async function riderRunSheetController(req: Request, res: Response) {
     const date =
       typeof req.query.date === "string" && req.query.date ? req.query.date : undefined;
 
-    const data = await getRiderRunSheet({
-      ...(riderId ? { riderId } : {}),
-      ...(date ? { date } : {}),
-    });
+    const data = await getRiderRunSheet(
+      { id: req.user.id, roles: req.user.roles },
+      {
+        ...(riderId ? { riderId } : {}),
+        ...(date ? { date } : {}),
+      },
+    );
     return res.status(200).json({ success: true, data });
   } catch (error: any) {
     return res.status(error.statusCode || 500).json({
@@ -607,6 +799,35 @@ export async function dashboardSummaryController(req: Request, res: Response) {
       trendDays,
     );
 
+    // COD settlement and order values are finance data; staff without
+    // FINANCE_ACCESS get zeros.
+    if (
+      req.user.roles.includes("vendor_staff") &&
+      !(await staffHasPermission(req.user.id, "FINANCE_ACCESS"))
+    ) {
+      for (const key of Object.keys(summary.overview)) {
+        if (key.endsWith("Amount")) (summary.overview as Record<string, unknown>)[key] = 0;
+      }
+      summary.today.deliveredAmount = 0;
+      summary.sla.overdueBranchCodAmount = 0;
+      summary.codSettlement = {
+        ...summary.codSettlement,
+        totalCod: 0,
+        settledCod: 0,
+        pendingCod: 0,
+        codFromRiders: 0,
+        codFromPmRider: 0,
+        codFromNcm: 0,
+        codFromUpaya: 0,
+        codFromBranches: 0,
+        pendingDeliveryCharge: 0,
+        deliveryCharge: 0,
+        progressPercent: 0,
+        lastAmount: 0,
+        lastSettledAt: null,
+      };
+    }
+
     return res.status(200).json({
       success: true,
       data: summary,
@@ -615,6 +836,24 @@ export async function dashboardSummaryController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load dashboard summary",
+    });
+  }
+}
+
+// GET /orders/cod-settlement-summary — only the COD Settlement card's figures,
+// for the finance-only accountant, who has no business with the rest of the
+// dashboard (order counts, trends). Same computation and cache as the summary.
+export async function codSettlementSummaryController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const summary = await getDashboardSummary({ id: req.user.id, roles: req.user.roles });
+    return res.status(200).json({ success: true, data: summary.codSettlement });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load COD settlement summary",
     });
   }
 }
@@ -667,7 +906,7 @@ export async function updateOrderDetailsController(req: Request, res: Response) 
 
     // Namespaced per order id + endpoint, same convention as the status route.
     const body = await withIdempotency(
-      `order-details:${rawId}:${idempotencyKey}`,
+      dashboardIdempotencyKey(req, "order-details", idempotencyKey, rawId),
       req.body,
       async () => {
         const parcel = await updateOrderDetails(
@@ -696,6 +935,7 @@ export async function updateOrderDetailsController(req: Request, res: Response) 
           },
         };
       },
+      { legacyKey: `order-details:${rawId}:${idempotencyKey}` },
     );
 
     return res.status(200).json(body);
@@ -724,7 +964,7 @@ export async function redirectOrderController(req: Request, res: Response) {
     }
 
     const body = await withIdempotency(
-      `order-redirect:${rawId}:${idempotencyKey}`,
+      dashboardIdempotencyKey(req, "order-redirect", idempotencyKey, rawId),
       req.body,
       async () => {
         const result = await redirectOrder(
@@ -748,6 +988,7 @@ export async function redirectOrderController(req: Request, res: Response) {
           },
         };
       },
+      { legacyKey: `order-redirect:${rawId}:${idempotencyKey}` },
     );
 
     return res.status(200).json(body);
@@ -755,6 +996,58 @@ export async function redirectOrderController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to redirect order",
+    });
+  }
+}
+
+export async function forwardOrderController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const rawId = req.params.id;
+    if (typeof rawId !== "string" || !rawId) {
+      return res.status(400).json({ success: false, message: "Invalid order id" });
+    }
+
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (!idempotencyKey || !UUID_REGEX.test(idempotencyKey)) {
+      return res.status(400).json({ success: false, message: "Valid Idempotency-Key header is required" });
+    }
+
+    const body = await withIdempotency(
+      `order-forward:${rawId}:${idempotencyKey}`,
+      req.body,
+      async () => {
+        const result = await forwardOrder(
+          { id: req.user!.id, roles: req.user!.roles },
+          rawId,
+          req.body,
+        );
+
+        const responseBody = {
+          success: true,
+          message: `Forwarding charge added; order forwarded to ${result.destination}`,
+          data: result,
+        };
+
+        return {
+          result: responseBody,
+          response: {
+            statusCode: 200,
+            body: responseBody,
+            resourceID: result.id,
+          },
+        };
+      },
+    );
+
+    return res.status(200).json(body);
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to add forwarding charge",
     });
   }
 }
@@ -813,7 +1106,7 @@ export async function updateOrderStatusController(req: Request, res: Response) {
     // Namespaced per order id + endpoint so the same key can't be replayed
     // against a different order or collide with other idempotent endpoints.
     const body = await withIdempotency(
-      `order-status:${rawId}:${idempotencyKey}`,
+      dashboardIdempotencyKey(req, "order-status", idempotencyKey, rawId),
       req.body,
       async () => {
         const parcel = await updateParcelStatus(
@@ -844,6 +1137,7 @@ export async function updateOrderStatusController(req: Request, res: Response) {
           },
         };
       },
+      { legacyKey: `order-status:${rawId}:${idempotencyKey}` },
     );
 
     return res.status(200).json(body);
@@ -866,9 +1160,14 @@ export async function getStatusCountsController(req: Request, res: Response) {
   try {
     if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
 
-    const groupsRaw = req.query.groups;
+    // GET /orders/status-counts?groups={…}, or POST /orders/status-counts with
+    // the same fields in the body once a scan batch's `search` gets too long
+    // for a URL - see order.routes.ts.
+    const source: Record<string, unknown> = req.method === "POST" ? req.body : req.query;
+
+    const groupsRaw = source.groups;
     if (typeof groupsRaw !== "string") {
-      return res.status(400).json({ success: false, message: "groups query param is required" });
+      return res.status(400).json({ success: false, message: "groups param is required" });
     }
     const groups = JSON.parse(groupsRaw) as Record<string, string[]>;
     if (typeof groups !== "object" || groups === null || Array.isArray(groups)) {
@@ -876,19 +1175,19 @@ export async function getStatusCountsController(req: Request, res: Response) {
     }
 
     let deliveryRiderId: string | undefined;
-    if (req.query.deliveryRiderId !== undefined) {
-      if (typeof req.query.deliveryRiderId !== "string" || !UUID_REGEX.test(req.query.deliveryRiderId)) {
+    if (source.deliveryRiderId !== undefined) {
+      if (typeof source.deliveryRiderId !== "string" || !UUID_REGEX.test(source.deliveryRiderId)) {
         return res.status(400).json({ success: false, message: "deliveryRiderId must be a valid uuid" });
       }
-      deliveryRiderId = req.query.deliveryRiderId;
+      deliveryRiderId = source.deliveryRiderId;
     }
 
     // Comma-separated (or repeated) vendor ids, matching the list endpoint's
     // vendorId filter so the tab badges agree with the table beneath them.
     // Capped at 100 like listOrdersSchema, for the same reason.
     let vendorId: string[] | undefined;
-    if (req.query.vendorId !== undefined) {
-      const raw = Array.isArray(req.query.vendorId) ? req.query.vendorId : String(req.query.vendorId).split(",");
+    if (source.vendorId !== undefined) {
+      const raw = Array.isArray(source.vendorId) ? source.vendorId : String(source.vendorId).split(",");
       const ids = raw.map((s) => String(s).trim()).filter(Boolean);
       if (ids.length > 100) {
         return res.status(400).json({ success: false, message: "vendorId accepts at most 100 ids" });
@@ -899,14 +1198,15 @@ export async function getStatusCountsController(req: Request, res: Response) {
       if (ids.length) vendorId = ids;
     }
 
-    // Same 3000-char ceiling the list endpoint's schema applies, since a
-    // scanner batches comma-separated tracking ids into this too.
+    // Same ceiling the list endpoint's schema applies (order.schema.ts
+    // listOrdersQuerySchema.search), since a scanner batches comma-separated
+    // tracking ids into this too.
     let search: string | undefined;
-    if (req.query.search !== undefined) {
-      if (typeof req.query.search !== "string" || req.query.search.length > 3000) {
-        return res.status(400).json({ success: false, message: "search must be a string of at most 3000 characters" });
+    if (source.search !== undefined) {
+      if (typeof source.search !== "string" || source.search.length > 15000) {
+        return res.status(400).json({ success: false, message: "search must be a string of at most 15000 characters" });
       }
-      search = req.query.search;
+      search = source.search;
     }
 
     const counts = await getStatusCounts(
@@ -923,6 +1223,105 @@ export async function getStatusCountsController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load status counts",
+    });
+  }
+}
+
+// Shared query parsing for the overview endpoints: an optional uuid and an
+// optional YYYY-MM-DD window. Returns an error message for a malformed value.
+function parseOverviewQuery(query: Request["query"], idKey: string) {
+  const str = (key: string) => (typeof query[key] === "string" && query[key] !== "" ? (query[key] as string) : undefined);
+  const id = str(idKey);
+  const dateFrom = str("dateFrom");
+  const dateTo = str("dateTo");
+  const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+  if (id && !UUID_REGEX.test(id)) return { error: `${idKey} must be a valid uuid` } as const;
+  if ((dateFrom && !isDay(dateFrom)) || (dateTo && !isDay(dateTo))) {
+    return { error: "dateFrom and dateTo must be YYYY-MM-DD" } as const;
+  }
+  return { id, dateFrom, dateTo } as const;
+}
+
+// GET /orders/merchant-overview — server-side aggregated stats for the Merchant
+// Overview page. Accepts optional vendorId, dateFrom, dateTo query params.
+export async function merchantOverviewController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const parsed = parseOverviewQuery(req.query, "vendorId");
+    if ("error" in parsed) return res.status(400).json({ success: false, message: parsed.error });
+    const { id: vendorId, dateFrom, dateTo } = parsed;
+
+    const summary = await getMerchantOverview(
+      { id: req.user.id, roles: req.user.roles },
+      vendorId,
+      dateFrom,
+      dateTo,
+    );
+
+    return res.status(200).json({ success: true, data: summary });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load merchant overview",
+    });
+  }
+}
+
+// GET /orders/sales-overview — server-side aggregated stats for the Sales
+// Overview page. Accepts optional salesUserId, dateFrom, dateTo query params.
+export async function salesOverviewController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const parsed = parseOverviewQuery(req.query, "salesUserId");
+    if ("error" in parsed) return res.status(400).json({ success: false, message: parsed.error });
+    const { id: salesUserId, dateFrom, dateTo } = parsed;
+
+    const summary = await getSalesOverview(
+      { id: req.user.id, roles: req.user.roles },
+      salesUserId,
+      dateFrom,
+      dateTo,
+    );
+
+    return res.status(200).json({ success: true, data: summary });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load sales overview",
+    });
+  }
+}
+
+// GET /orders/rider-overview — server-side aggregated stats for the Rider
+// Overview page. Accepts optional riderId, dateFrom, dateTo query params.
+export async function riderOverviewController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const parsed = parseOverviewQuery(req.query, "riderId");
+    if ("error" in parsed) return res.status(400).json({ success: false, message: parsed.error });
+    const { id: riderId, dateFrom, dateTo } = parsed;
+
+    const summary = await getRiderOverview(
+      { id: req.user.id, roles: req.user.roles },
+      riderId,
+      dateFrom,
+      dateTo,
+    );
+
+    return res.status(200).json({ success: true, data: summary });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load rider overview",
     });
   }
 }

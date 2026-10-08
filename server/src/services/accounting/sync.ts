@@ -18,25 +18,38 @@
 //
 // Together those mean: try hard, never throw at the caller, always leave a
 // trail.
-import type { Prisma } from "../../generated/prisma/client";
+import { Prisma } from "../../generated/prisma/client";
 import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import {
-  describeCodCollected,
-  describeDeliveryChargeEarned,
+  allocateInstalments,
+  describeBranchInstalment,
+  describeBranchSettlement,
+  describeBranchStatement,
+  describeCarrierInstalment,
+  describeCarrierSettlement,
+  describeCarrierStatement,
   describeExpense,
+  describeRiderInstalment,
   describeRiderRemittance,
+  describeRiderStatement,
+  describeVendorInstalment,
   describeVendorPaymentVerified,
   describeVendorSettlement,
+  describeVendorStatement,
   EVENT_KEY,
+  instalmentEventKey,
+  instalmentKeyPrefix,
   isSkip,
   SOURCE,
   type Described,
   type PostingDescriptor,
 } from "./events";
 import { loadMethodAccounts } from "./accounts";
-import { syncPosting, type SyncResult } from "./posting.service";
-import { BALANCE_AFFECTING_STATUSES } from "../billing.service";
+import { isPostingCurrent, syncPosting, type SyncResult } from "./posting.service";
+import { isReturnLeg } from "../money-rules";
+
+const { Decimal } = Prisma;
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -115,92 +128,135 @@ async function run(
   });
 }
 
-// ── Parcels ─────────────────────────────────────────────────────────────────
+// ── Statements ──────────────────────────────────────────────────────────────
 
-const PARCEL_POSTING_SELECT = {
-  id: true,
-  vendor_id: true,
-  tracking_id: true,
-  delivery_charge: true,
-  status: true,
-  order_type: true,
-  delivered_at: true,
-  updated_at: true,
-  deleted_at: true,
-  destination_location_id: true,
-  vendors: { select: { client_name: true, business_name: true } },
-  // Names the customer on a parcel booked without a vendor.
-  parties_parcels_sender_idToparties: { select: { name: true } },
-  cod_collections: {
-    select: {
-      id: true,
-      parcel_id: true,
-      vendor_id: true,
-      rider_id: true,
-      collected_amount: true,
-      collected_at: true,
-      created_at: true,
-      // Joined so the entry memo can name the rider instead of saying
-      // "on delivery" over and over.
-      riders: { select: { name: true } },
-    },
-  },
-} as const;
+interface StatementPostings {
+  label: string;
+  anchor: { sourceType: string; sourceId: string };
+  /** The older one-entry posting: its key, and what it would say now. */
+  legacyKey: string;
+  legacy: () => PostingDescriptor | null | undefined;
+  /** The statement entry's key; instalment keys are derived from it. */
+  statementKey: string;
+  /** The statement entry and one entry per instalment. Empty when nothing should post. */
+  postings: () => Array<{ key: string; desired: PostingDescriptor | null | undefined }>;
+}
+
+const baseKeyOf = (eventKey: string) => eventKey.split("#")[0]!;
 
 /**
- * Brings a parcel's two postings - the COD it collected and the charge it
- * earned - into line with what the parcel row now says.
- *
- * This is the function that makes the ledger survive the messy parts of
- * operations. Every one of these is handled by the same call, with no special
- * case at the call site:
- *
- *   - delivered                    both postings appear
- *   - un-delivered back to transit both are reversed
- *   - partial COD amount corrected the COD posting is restated at the new figure
- *   - parcel soft-deleted          both are reversed, matching billing.service,
- *                                  which scopes a vendor's balance to live parcels
- *   - status changed with no money nothing is written at all
- *
- * Callers just say "this parcel changed".
+ * One entry per instalment (the default), or `LEDGER_PER_PAYMENT_POSTINGS=off`
+ * for the older one entry per statement. Read on every sync, so flipping it and
+ * running resync-postings moves existing statements across in either direction.
  */
-export async function syncParcelPostings(
-  db: Db,
-  parcelIds: string[],
-  options: SyncOptions = {},
-): Promise<SyncSummary> {
-  const summary = noChange();
-  const ids = Array.from(new Set(parcelIds.filter(Boolean)));
-  if (ids.length === 0) return summary;
+export const perPaymentPostings = () => process.env.LEDGER_PER_PAYMENT_POSTINGS?.trim().toLowerCase() !== "off";
 
-  const parcels = await db.parcels.findMany({ where: { id: { in: ids } }, select: PARCEL_POSTING_SELECT });
+/**
+ * Brings a statement's postings into line: one entry for the statement, one per
+ * instalment against it (see "Statements and their instalments" in events.ts).
+ *
+ * A statement still carrying the older one-entry posting is left exactly as it
+ * is for as long as that entry is right. It moves to the split form the first
+ * time it changes - the one moment the old form would have reversed it anyway -
+ * so the switch costs that statement a single reversal and nothing more.
+ */
+async function runStatement(db: Db, plan: StatementPostings, options: SyncOptions): Promise<SyncResult | "unresolved"> {
+  const live = await db.journal_entries.findMany({
+    where: { source_type: plan.anchor.sourceType, source_id: plan.anchor.sourceId, status: "posted" },
+    select: { event_key: true },
+  });
+  const liveKeys = new Set(live.map((entry) => baseKeyOf(entry.event_key)));
+  const sync = (baseEventKey: string, desired: PostingDescriptor | null) =>
+    syncPosting(db, {
+      ...plan.anchor,
+      baseEventKey,
+      desired,
+      reason: options.reason ?? "source record changed",
+      postedBy: options.actorId,
+      redateIfClosed: true,
+    });
+  const prefix = instalmentKeyPrefix(plan.statementKey);
 
-  for (const parcel of parcels) {
-    // A soft-deleted parcel is out of the books entirely, because it is out of
-    // the vendor balance the books have to agree with.
-    const live = parcel.deleted_at === null;
-    const collection = parcel.cod_collections;
-
-    if (collection) {
-      const desired = live
-        ? resolve(() => describeCodCollected(collection), `COD on ${parcel.tracking_id}`)
-        : null;
-      record(summary, await run(db, "cod", SOURCE.codCollected(collection.id), EVENT_KEY.codCollected, desired, options));
-    }
-
-    const chargeDesired = live
-      ? resolve(() => describeDeliveryChargeEarned(parcel), `delivery charge on ${parcel.tracking_id}`)
-      : null;
-    record(
-      summary,
-      await run(db, "charge", SOURCE.deliveryCharge(parcel.id), EVENT_KEY.deliveryCharge, chargeDesired, options),
-    );
+  // The way back. Switched off, a statement returns to the one-entry posting,
+  // unwinding any per-payment entries first - so backing this change out is a
+  // setting and a resync, not a code revert that would post both forms at once.
+  if (!perPaymentPostings()) {
+    const legacy = plan.legacy();
+    if (legacy === undefined) return "unresolved";
+    const split = [...liveKeys].filter((key) => key === plan.statementKey || key.startsWith(prefix));
+    for (const key of split) await sync(key, null);
+    const result = await sync(plan.legacyKey, legacy);
+    return split.length > 0 && result === "unchanged" ? "reposted" : result;
   }
 
-  return summary;
+  let converted = false;
+  if (liveKeys.has(plan.legacyKey)) {
+    const legacy = plan.legacy();
+    if (legacy === undefined) return "unresolved";
+    const legacyInput = {
+      ...plan.anchor,
+      baseEventKey: plan.legacyKey,
+      desired: legacy,
+      reason: options.reason ?? "source record changed",
+      postedBy: options.actorId,
+      redateIfClosed: true,
+    };
+    if (await isPostingCurrent(db, legacyInput)) return "unchanged";
+
+    // Only switch when every new posting can be described. Otherwise restate
+    // the old way, which at least keeps the books true.
+    if (plan.postings().some((posting) => posting.desired === undefined)) return syncPosting(db, legacyInput);
+    await sync(plan.legacyKey, null);
+    converted = true;
+  }
+
+  const postings = plan.postings();
+  const wanted = new Set(postings.map((posting) => posting.key));
+  const results: Array<SyncResult | "unresolved"> = [];
+
+  for (const posting of postings) {
+    if (posting.desired === undefined) {
+      results.push("unresolved");
+      continue;
+    }
+    results.push(await sync(posting.key, posting.desired));
+  }
+
+  // Instalments that no longer exist - a reverted payment - come back out.
+  for (const key of liveKeys) {
+    if (key.startsWith(prefix) && !wanted.has(key)) results.push(await sync(key, null));
+  }
+  // Nothing wanted at all (a cancelled statement) still has to clear the statement entry.
+  if (!wanted.has(plan.statementKey) && liveKeys.has(plan.statementKey)) {
+    results.push(await sync(plan.statementKey, null));
+  }
+
+  if (results.includes("unresolved")) return "unresolved";
+  return results.find((result) => result !== "unchanged" && result !== "skipped") ?? (converted ? "reposted" : "unchanged");
+}
+
+/** The statement entry, then each instalment's, as runStatement expects them. */
+function statementPostings<A extends { id: string }>(
+  label: string,
+  statementKey: string,
+  statement: () => Described,
+  shares: () => A[],
+  instalment: (share: A) => Described,
+): Array<{ key: string; desired: PostingDescriptor | null | undefined }> {
+  return [
+    { key: statementKey, desired: resolve(statement, label) },
+    ...shares().map((share) => ({
+      key: instalmentEventKey(statementKey, share.id),
+      desired: resolve(() => instalment(share), `${label} instalment ${share.id}`),
+    })),
+  ];
 }
 
 // ── Settlements ─────────────────────────────────────────────────────────────
+
+const INSTALMENT_SELECT = {
+  select: { id: true, amount: true, method: true, breakdown: true, paid_at: true },
+} as const;
 
 const SETTLEMENT_POSTING_SELECT = {
   id: true,
@@ -212,20 +268,44 @@ const SETTLEMENT_POSTING_SELECT = {
   payable_amount: true,
   payment_method: true,
   payments: true,
+  paid_amount: true,
+  vendor_credit_applied: true,
   settlement_date: true,
   updated_at: true,
   status: true,
+  settlement_payments: INSTALMENT_SELECT,
   riders: { select: { name: true } },
   vendors: { select: { client_name: true, business_name: true } },
+  // The statement's parcels, purely to split the office's cut between delivery
+  // and return revenue. The *total* cut is taken from the statement itself
+  // (gross minus payable), so a missing or stale item here shifts which revenue
+  // account a rupee lands in - never whether the entry balances.
+  // Also which vendor each item's COD belongs to, so a rider remittance can
+  // credit 2005 per vendor.
+  settlement_items: {
+    select: {
+      amount: true,
+      cod_collections: {
+        select: {
+          vendor_id: true,
+          parcels: { select: { status: true, order_type: true, delivery_charge: true } },
+        },
+      },
+    },
+  },
 } as const;
 
 /**
- * Brings a settlement's posting into line.
+ * Brings a settlement's postings into line.
  *
- * Only a `settled` statement posts anything. A pending statement has earmarked
- * some orders but moved no money, so posting it would claim a payment that has
- * not happened - and a statement edited back out of `settled`, or edited while
- * pending, reverses cleanly for the same reason.
+ * A statement is the money event in this ledger - the only one on the COD side.
+ * Creating it posts the statement: COD comes off the float the rider
+ * remittances built up, the office's cut becomes revenue, the rest is owed to
+ * the vendor. Each instalment then posts its own entry. Nothing was posted while
+ * the parcels were being delivered, so there is nothing here to net against.
+ *
+ * Every status except `cancelled` posts. A cancelled statement moved no money
+ * and reverses cleanly, as does one deleted outright.
  */
 export async function syncSettlementPostings(
   db: Db,
@@ -244,20 +324,228 @@ export async function syncSettlementPostings(
   ]);
 
   for (const row of settlements) {
-    const settlement = { ...row, methodAccounts };
+    const settlement = { ...row, methodAccounts, return_charges: returnChargesOn(row), vendor_shares: vendorSharesOn(row) };
     const isRider = settlement.payee_type === "rider";
-    const eventKey = isRider ? EVENT_KEY.riderRemittance : EVENT_KEY.vendorSettlement;
     const label = `settlement ${settlement.statement_id}`;
+    const live = settlement.status !== "cancelled";
+    const statementKey = isRider ? EVENT_KEY.riderStatement : EVENT_KEY.vendorStatement;
+    const payable = new Decimal(settlement.payable_amount ?? settlement.amount);
 
-    const desired =
-      settlement.status === "settled"
-        ? resolve(
-            () => (isRider ? describeRiderRemittance(settlement) : describeVendorSettlement(settlement)),
-            label,
-          )
-        : null;
+    record(
+      summary,
+      await runStatement(
+        db,
+        {
+          label,
+          anchor: SOURCE.settlement(settlement.id),
+          legacyKey: isRider ? EVENT_KEY.riderRemittance : EVENT_KEY.vendorSettlement,
+          legacy: () =>
+            live
+              ? resolve(() => (isRider ? describeRiderRemittance(settlement) : describeVendorSettlement(settlement)), label)
+              : null,
+          statementKey,
+          postings: () =>
+            live
+              ? statementPostings(
+                  label,
+                  statementKey,
+                  () => (isRider ? describeRiderStatement(settlement) : describeVendorStatement(settlement)),
+                  () =>
+                    allocateInstalments(
+                      settlement,
+                      settlement.settlement_payments,
+                      isRider ? payable : payable.abs(),
+                      settlement.settlement_date ?? settlement.updated_at,
+                    ),
+                  (share) => (isRider ? describeRiderInstalment(settlement, share) : describeVendorInstalment(settlement, share)),
+                )
+              : [],
+        },
+        options,
+      ),
+    );
+  }
 
-    record(summary, await run(db, label, SOURCE.settlement(settlement.id), eventKey, desired, options));
+  return summary;
+}
+
+/** How much of a statement's withheld charges came from return legs. */
+function returnChargesOn(settlement: {
+  settlement_items: Array<{
+    cod_collections: { parcels: { status: string; order_type: string; delivery_charge: Prisma.Decimal } | null } | null;
+  }>;
+}): Prisma.Decimal {
+  return settlement.settlement_items.reduce((total, item) => {
+    const parcel = item.cod_collections?.parcels;
+    if (!parcel || !isReturnLeg(parcel)) return total;
+    return total.plus(parcel.delivery_charge ?? 0);
+  }, new Decimal(0));
+}
+
+/** A statement's COD summed per vendor, so 2005 can be credited to each one. */
+function sharesByVendor(items: Array<{ vendorId: string | null | undefined; amount: Prisma.Decimal }>) {
+  const byVendor = new Map<string, Prisma.Decimal>();
+  for (const { vendorId, amount } of items) {
+    if (!vendorId) continue;
+    byVendor.set(vendorId, (byVendor.get(vendorId) ?? new Decimal(0)).plus(amount));
+  }
+  return Array.from(byVendor, ([vendorId, amount]) => ({ vendorId, amount }));
+}
+
+const vendorSharesOn = (settlement: {
+  settlement_items: Array<{ amount: Prisma.Decimal; cod_collections: { vendor_id: string | null } | null }>;
+}) => sharesByVendor(settlement.settlement_items.map((item) => ({ vendorId: item.cod_collections?.vendor_id, amount: item.amount })));
+
+// ── Branch settlements ──────────────────────────────────────────────────────
+
+/**
+ * Brings a branch COD statement's postings into line.
+ *
+ * Posts the statement on creation and one entry per instalment, mirroring vendor
+ * statements. A cancelled statement moved no money and reverses.
+ */
+export async function syncBranchSettlementPostings(
+  db: Db,
+  settlementIds: string[],
+  options: SyncOptions = {},
+): Promise<SyncSummary> {
+  const summary = noChange();
+  const ids = Array.from(new Set(settlementIds.filter(Boolean)));
+  if (ids.length === 0) return summary;
+
+  const [rows, methodAccounts] = await Promise.all([
+    db.branch_settlements.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        statement_no: true,
+        from_branch_id: true,
+        to_branch_id: true,
+        gross_cod: true,
+        commission_amount: true,
+        net_payable: true,
+        paid_amount: true,
+        payment_method: true,
+        payments: true,
+        settlement_date: true,
+        status: true,
+        payment_records: INSTALMENT_SELECT,
+        from_branch: { select: { name: true } },
+      },
+    }),
+    loadMethodAccounts(db),
+  ]);
+
+  for (const row of rows) {
+    const settlement = { ...row, methodAccounts };
+    const label = `branch settlement ${settlement.statement_no}`;
+    const live = settlement.status !== "cancelled";
+    record(
+      summary,
+      await runStatement(
+        db,
+        {
+          label,
+          anchor: SOURCE.branchSettlement(settlement.id),
+          legacyKey: EVENT_KEY.branchSettlement,
+          legacy: () => (live ? resolve(() => describeBranchSettlement(settlement), label) : null),
+          statementKey: EVENT_KEY.branchStatement,
+          postings: () =>
+            live
+              ? statementPostings(
+                  label,
+                  EVENT_KEY.branchStatement,
+                  () => describeBranchStatement(settlement),
+                  () =>
+                    allocateInstalments(
+                      settlement,
+                      settlement.payment_records,
+                      new Decimal(settlement.net_payable),
+                      settlement.settlement_date,
+                    ),
+                  (share) => describeBranchInstalment(settlement, share),
+                )
+              : [],
+        },
+        options,
+      ),
+    );
+  }
+
+  return summary;
+}
+
+// ── 3PL carrier settlements ─────────────────────────────────────────────────
+
+/** Same lifecycle as branch statements: the statement on creation, an entry per instalment, a cancelled one reverses. */
+export async function syncCarrierSettlementPostings(
+  db: Db,
+  settlementIds: string[],
+  options: SyncOptions = {},
+): Promise<SyncSummary> {
+  const summary = noChange();
+  const ids = Array.from(new Set(settlementIds.filter(Boolean)));
+  if (ids.length === 0) return summary;
+
+  const [rows, methodAccounts] = await Promise.all([
+    db.carrier_settlements.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        statement_no: true,
+        carrier_code: true,
+        gross_cod: true,
+        carrier_charges: true,
+        net_receivable: true,
+        paid_amount: true,
+        payment_method: true,
+        payments: true,
+        settlement_date: true,
+        status: true,
+        payment_records: INSTALMENT_SELECT,
+        items: { select: { collected_amount: true, cod_collection: { select: { vendor_id: true } } } },
+      },
+    }),
+    loadMethodAccounts(db),
+  ]);
+
+  for (const row of rows) {
+    const vendor_shares = sharesByVendor(
+      row.items.map((item) => ({ vendorId: item.cod_collection.vendor_id, amount: item.collected_amount })),
+    );
+    const settlement = { ...row, methodAccounts, vendor_shares };
+    const label = `carrier settlement ${settlement.statement_no}`;
+    const live = settlement.status !== "cancelled";
+    record(
+      summary,
+      await runStatement(
+        db,
+        {
+          label,
+          anchor: SOURCE.carrierSettlement(settlement.id),
+          legacyKey: EVENT_KEY.carrierSettlement,
+          legacy: () => (live ? resolve(() => describeCarrierSettlement(settlement), label) : null),
+          statementKey: EVENT_KEY.carrierStatement,
+          postings: () =>
+            live
+              ? statementPostings(
+                  label,
+                  EVENT_KEY.carrierStatement,
+                  () => describeCarrierStatement(settlement),
+                  () =>
+                    allocateInstalments(
+                      settlement,
+                      settlement.payment_records,
+                      new Decimal(settlement.net_receivable),
+                      settlement.settlement_date,
+                    ),
+                  (share) => describeCarrierInstalment(settlement, share),
+                )
+              : [],
+        },
+        options,
+      ),
+    );
   }
 
   return summary;
@@ -381,80 +669,94 @@ export function syncInBackground(work: () => Promise<unknown>, label: string): v
   });
 }
 
-export function syncParcelPostingsAsync(parcelIds: string[], options: SyncOptions = {}): void {
-  if (parcelIds.length === 0) return;
-  syncInBackground(() => syncParcelPostings(prisma, parcelIds, options), `${parcelIds.length} parcel(s)`);
-}
 
 // ── The sweep that closes the window ────────────────────────────────────────
 
-/** Parcels per syncParcelPostings call. Small enough that one bad row costs little. */
+/** Statements per sync call. Small enough that one bad row costs little. */
 const SWEEP_CHUNK = 25;
 
 export interface SweepResult {
   considered: number;
   /** Entries written, reversed or restated - i.e. gaps the live path left. */
   repaired: number;
-  /** Parcels the sweep could not settle: an unreadable row, or a chunk that threw. */
+  /** Statements the sweep could not settle: an unreadable row, or a chunk that threw. */
   failed: number;
 }
 
 /**
- * Re-syncs recently-touched money parcels, catching anything the fire-and-forget
- * path dropped.
+ * Re-syncs recently-touched statements, catching anything a live path dropped.
  *
- * This is the other half of syncParcelPostingsAsync. That function is allowed to
- * fail because an operational write must never be held hostage to a journal
- * entry; what makes that acceptable rather than reckless is something coming
- * along afterwards to notice. Without this, a bulk scan whose posting threw is
- * lost until someone runs a script by hand - which is to say, lost.
+ * The failure this exists for is not a crashed transaction - it is a mutator
+ * that forgets to call syncSettlementPostings at all. revertSettlement did
+ * exactly that, and because the old sweep only looked at parcels, nothing ever
+ * noticed. So the candidates come from `updated_at` on the settlements table
+ * rather than from any list of call sites: a statement that changed gets
+ * re-synced whether or not the code that changed it remembered to ask.
  *
- * Deliberately not a drift *detector*. Working out in SQL which parcels ought to
- * have an entry would mean restating the rules that already live in events.ts,
- * and two copies of a money rule is how a ledger starts lying. Instead it simply
- * re-runs the authority over a bounded window: syncPosting compares what is
- * posted against what should be and answers "unchanged" for everything already
- * correct, so a sweep over healthy data writes nothing.
+ * Deliberately not a drift *detector*. Working out in SQL which statements
+ * ought to have an entry would mean restating the rules that already live in
+ * events.ts, and two copies of a money rule is how a ledger starts lying.
+ * Instead it re-runs the authority over a bounded window: syncPosting compares
+ * what is posted against what should be and answers "unchanged" for everything
+ * already correct, so a sweep over healthy data writes nothing.
+ *
+ * No status filter, deliberately. A statement moving *out* of settled needs its
+ * entry reversed, which means the sweep has to see it.
  *
  * Bounded twice over - by the window and by `limit` - because this runs on a
  * timer and an unbounded sweep is a self-inflicted outage waiting for a busy day.
  */
-export async function sweepParcelPostings(
+export async function sweepSettlementPostings(
   options: { since: Date; limit: number } = { since: new Date(Date.now() - 60 * 60 * 1000), limit: 500 },
 ): Promise<SweepResult> {
-  // Candidates are parcels whose money could have moved: one at a
-  // balance-affecting status, or one carrying collected COD (which covers a
-  // parcel just moved *out* of delivered, where the entry needs reversing).
-  const candidates = await prisma.parcels.findMany({
-    where: {
-      updated_at: { gte: options.since },
-      OR: [
-        { status: { in: [...BALANCE_AFFECTING_STATUSES] } },
-        { cod_collections: { collected_amount: { gt: 0 } } },
-      ],
-    },
-    select: { id: true },
-    orderBy: { updated_at: "asc" },
-    take: options.limit,
-  });
+  const window = { where: { updated_at: { gte: options.since } }, select: { id: true }, orderBy: { updated_at: "asc" as const }, take: options.limit };
+  const [statements, branchStatements, carrierStatements] = await Promise.all([
+    prisma.settlements.findMany(window),
+    prisma.branch_settlements.findMany(window),
+    prisma.carrier_settlements.findMany(window),
+  ]);
 
+  const vendorAndRider = await sweepChunks(statements.map((row) => row.id), syncSettlementPostings, "statement");
+  const branch = await sweepChunks(branchStatements.map((row) => row.id), syncBranchSettlementPostings, "branch statement");
+  const carrier = await sweepChunks(carrierStatements.map((row) => row.id), syncCarrierSettlementPostings, "carrier statement");
+  return {
+    considered: statements.length + branchStatements.length + carrierStatements.length,
+    repaired: vendorAndRider.repaired + branch.repaired + carrier.repaired,
+    failed: vendorAndRider.failed + branch.failed + carrier.failed,
+  };
+}
+
+async function sweepChunks(
+  ids: string[],
+  sync: (db: Db, ids: string[], options: SyncOptions) => Promise<SyncSummary>,
+  noun: string,
+): Promise<Omit<SweepResult, "considered">> {
   let repaired = 0;
   let failed = 0;
 
-  for (let index = 0; index < candidates.length; index += SWEEP_CHUNK) {
-    const chunk = candidates.slice(index, index + SWEEP_CHUNK).map((parcel) => parcel.id);
+  for (let index = 0; index < ids.length; index += SWEEP_CHUNK) {
+    const chunk = ids.slice(index, index + SWEEP_CHUNK);
     try {
+      // In a transaction, and this is not optional. The balance trigger is
+      // DEFERRABLE INITIALLY DEFERRED, which defers it to the end of the
+      // enclosing transaction - and with no enclosing transaction that means
+      // the end of the INSERT's own implicit one, before a single line has been
+      // written. Every posting would fail with "0 lines".
+      //
       // The sync already knows what it changed, so the sweep asks it rather
       // than counting entries either side of the call - two queries per chunk
       // to rediscover a number that was in hand.
-      const summary = await syncParcelPostings(prisma, chunk, { reason: "ledger sweep" });
+      const summary = await prisma.$transaction(
+        (tx) => sync(tx, chunk, { reason: "ledger sweep" }),
+        { timeout: 120_000, maxWait: 30_000 },
+      );
       repaired += summary.changed;
       failed += summary.unresolved;
     } catch (error) {
       failed += chunk.length;
-      console.error(`[Ledger] Sweep chunk failed (${chunk.length} parcel(s)):`, error);
+      console.error(`[Ledger] Sweep chunk failed (${chunk.length} ${noun}(s)):`, error);
     }
   }
 
-  return { considered: candidates.length, repaired, failed };
+  return { repaired, failed };
 }

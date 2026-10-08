@@ -72,6 +72,15 @@ typings/
 .env
 .env.test
 .env.production
+.env.*
+!.env.example
+!**/.env.example
+!**/.env.*.example
+*.local
+
+# Local scratch output
+/tmp/
+/temp/
 
 # Uploaded KYC/registration documents — sensitive PII, never belongs in git
 # history (see server/src/lib/documentEncryption.ts for how these are
@@ -139,9 +148,7 @@ QUICK_FIXES.md
 REDIS_TIMEOUT_FIX.md
 SESSION_SUMMARY.md
 
-# Internal-only docs and AI agent tooling — kept locally, not published
-# to the (currently private, going-beta) GitHub remote.
-CLAUDE.md
+# Other internal-only docs and AI agent tooling remain local.
 client/PRODUCT.md
 client/DESIGN.md
 docs/TEST_PLAN.md
@@ -154,6 +161,5 @@ skills-lock.json
 .claude/settings.local.json
 .claude/launch.json
 .codex/
-
-# Rider PWA / Capacitor app — built and maintained locally, not on the server
-rider/
+.kilo/
+pm-rider-native/

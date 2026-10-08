@@ -17,7 +17,7 @@ interface OrderRedirectLogProps {
  */
 const OrderRedirectLog: React.FC<OrderRedirectLogProps> = ({ entries }) => {
   if (entries.length === 0) {
-    return <div className="od-pricelog-empty">This order has never been redirected.</div>;
+    return <div className="od-pricelog-empty">This order has never been redirected or forwarded.</div>;
   }
 
   return (
@@ -27,7 +27,7 @@ const OrderRedirectLog: React.FC<OrderRedirectLogProps> = ({ entries }) => {
           <tr>
             <th>Destination</th>
             <th>Address</th>
-            <th>Reason</th>
+            <th>Type / Reason</th>
             <th>Charge</th>
             <th>By</th>
             <th>Date (B.S.)</th>
@@ -44,7 +44,10 @@ const OrderRedirectLog: React.FC<OrderRedirectLogProps> = ({ entries }) => {
                 </span>
               </td>
               <td>{entry.toAddress || '—'}</td>
-              <td>{entry.reason}</td>
+              <td>
+                {entry.kind === 'forward' ? <strong>Forwarded</strong> : 'Redirected'}
+                {entry.reason ? ` — ${entry.reason}` : ''}
+              </td>
               <td>
                 <span className="od-pricelog-change">
                   <span className="od-pricelog-old">{money(entry.oldDeliveryCharge)}</span>

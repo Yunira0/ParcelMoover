@@ -57,7 +57,7 @@
 }
 
 .runsheet-date-input:focus {
-  border-color: var(--color-border-focus);
+  border-color: var(--color-border-primary);
   outline: none;
 }
 

@@ -9,6 +9,14 @@ import { StaffPermission } from "../types/staff.type";
  * via StaffFormPage become a real authorization boundary instead of just
  * hiding sidebar links on the client.
  */
+export async function staffHasPermission(userId: string, permission: StaffPermission): Promise<boolean> {
+  const staffRecord = await prisma.vendor_staff.findFirst({
+    where: { user_id: userId, deleted_at: null, enabled: true },
+    select: { permissions: true },
+  });
+  return !!staffRecord && (staffRecord.permissions as string[]).includes(permission);
+}
+
 export function requireStaffPermission(permission: StaffPermission) {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {

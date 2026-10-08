@@ -14,6 +14,7 @@ import {
   getCodSettlementRequestController,
   getRegisteredBankDetailsController,
   listCodSettlementRequestsController,
+  listSettleableStatementsController,
   updateCodSettlementRequestStatusController,
 } from "../controllers/codSettlementRequest.controller";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
@@ -29,6 +30,7 @@ const readLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("cod-settlement-requests-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -43,6 +45,7 @@ const createLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("cod-settlement-requests-create"),
   keyGenerator: actorOrIpKey,
 });
@@ -54,14 +57,16 @@ const writeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("cod-settlement-requests-write"),
   keyGenerator: actorOrIpKey,
 });
 
-// Vendors raise and track their own; staff see and action every one.
-const READ_ROLES = ["super_admin", "admin", "vendor", "vendor_staff"] as const;
+// Vendors raise and track their own; sales read their own vendors'; staff see
+// and action every one.
+const READ_ROLES = ["super_admin", "accountant", "admin", "sales", "vendor", "vendor_staff"] as const;
 const CREATE_ROLES = ["vendor", "vendor_staff"] as const;
-const ACTION_ROLES = ["super_admin", "admin"] as const;
+const ACTION_ROLES = ["super_admin", "accountant", "admin"] as const;
 
 // GET /api/cod-settlement-requests — list (vendor-scoped in the service)
 codSettlementRequestRouter.get(
@@ -91,6 +96,16 @@ codSettlementRequestRouter.get(
   authorizeRoles(...READ_ROLES),
   readLimiter,
   getCodSettlementRequestController,
+);
+
+// GET /api/cod-settlement-requests/:id/statements — statements that can settle
+// it: the vendor's, not cancelled, not already linked to another request
+codSettlementRequestRouter.get(
+  "/:id/statements",
+  authMiddleware,
+  authorizeRoles(...ACTION_ROLES),
+  readLimiter,
+  listSettleableStatementsController,
 );
 
 // POST /api/cod-settlement-requests — raise one (refused while one is live)

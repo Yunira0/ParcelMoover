@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
+  ChevronDown,
   Download,
   Printer,
   Search,
@@ -8,11 +9,13 @@ import {
 } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
-import SearchableSelect from '../components/SearchableSelect';
+import StatusChip from '../components/StatusChip';
 import SegmentedTabs from '../components/SegmentedTabs';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
+import TransitManifestPanel from '../components/TransitManifestPanel';
+import SearchableSelect from '../components/SearchableSelect';
 import {
   bulkUpdateOrderStatus,
   getOrders,
@@ -24,19 +27,28 @@ import {
   type ParcelStatus,
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
-import { getLocations, getRiders } from '../services/users.service';
 import { handoffToNcm } from '../services/ncm.service';
 import { handoffParcelsToUpaya } from '../services/upaya.service';
-import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
+import { addOrdersToBranchManifest } from '../services/transitManifests.service';
+import type { Branch } from '../services/branchTracking.service';
+import { listBranches } from '../queries/lookups';
+import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
+import { STATUS_TIMELINE_HEADERS, getOrderStatusTone, statusTimelineCells } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OOVOperations.css';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 type OOVTab = 'oov' | 'dispatched';
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
+// NCM and Upaya deliberately accept no more than 100 creates per request.
+// Keep every transport request below that boundary, but let ops select far
+// more rows: batches are submitted one after another so a large handoff cannot
+// swamp a partner API or leave the browser waiting on one very long request.
+const STATUS_UPDATE_BATCH_SIZE = 100;
 
 const TAB_LABELS: Record<OOVTab, string> = {
   oov: 'Transit',
@@ -104,6 +116,21 @@ const formatMoney = (value: number) => value.toLocaleString(undefined, { maximum
 // Cancelling or failing an order requires a reason remark.
 const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 'failed_delivery'];
 
+const matchesSearchTerm = (order: Order, term: string) => {
+  const t = term.toLowerCase();
+  return order.trackingId.toLowerCase() === t || `#${order.orderNumber}` === t || String(order.orderNumber) === t;
+};
+
+const tabForStatus = (status: ParcelStatus): OOVTab | undefined =>
+  (Object.keys(TAB_STATUSES) as OOVTab[]).find(tab => TAB_STATUSES[tab].includes(status));
+
+// A searched id that isn't in the current tab: `order` is where it actually
+// sits, or undefined when it doesn't exist at all.
+interface OutsideTabMatch {
+  term: string;
+  order?: Order;
+}
+
 const OOVOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -112,6 +139,15 @@ const OOVOperations: React.FC = () => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as OOVTab) : 'oov';
   });
+  // The tab bar carries two extra views for transit manifests, sitting between
+  // the two parcel tabs. Only 'oov'/'dispatched' drive the parcel table below.
+  const [view, setView] = useState<'oov' | 'open_manifest' | 'received' | 'dispatched'>(() => {
+    const fromUrl = searchParams.get('tab');
+    return fromUrl === 'open_manifest' || fromUrl === 'received' || fromUrl === 'dispatched'
+      ? fromUrl
+      : 'oov';
+  });
+  const isManifestView = view === 'open_manifest' || view === 'received';
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
@@ -130,15 +166,26 @@ const OOVOperations: React.FC = () => {
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
   const [statusUpdating, setStatusUpdating] = useState(false);
+  // setStatusUpdating only disables the button on the next render, so two
+  // clicks in the same frame both get through and dispatch the batch twice.
+  const submitting = useRef(false);
+  const [statusUpdateProgress, setStatusUpdateProgress] = useState<{ completed: number; total: number } | null>(null);
   const [actionError, setActionError] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [dispatchMethod, setDispatchMethod] = useState<'manifest' | 'tpl' | 'upaya'>('manifest');
-  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
-  const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
-  const [toLocationId, setToLocationId] = useState('');
-  const [riderId, setRiderId] = useState('');
   const [reasonRemarks, setReasonRemarks] = useState('');
+  // "Via Manifest" doesn't change status at all - it stages the selection onto
+  // whichever manifest heads for this branch (opening one if needed) instead
+  // of calling the status API. Parcels stay `oov` until that manifest is
+  // dispatched from the Open Manifest tab.
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [manifestBranchId, setManifestBranchId] = useState('');
+  const [manifestNotice, setManifestNotice] = useState('');
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+  const [outsideTab, setOutsideTab] = useState<OutsideTabMatch[]>([]);
+  const [outsideTabOpen, setOutsideTabOpen] = useState(false);
+
+  useEffect(() => { listBranches().then(setBranches).catch(() => {}); }, []);
 
   // Badge counts follow the search, so a scanned parcel shows "1" on its tab
   // instead of the unfiltered total. Guarded so a slow earlier request can't
@@ -181,22 +228,6 @@ const OOVOperations: React.FC = () => {
     setSearchParams(next, { replace: true });
   }, [activeTab, debouncedSearch, setSearchParams]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [locRes, riderRes] = await Promise.all([getLocations(), getRiders({ pageSize: 100 })]);
-        if (locRes?.success && Array.isArray(locRes.data)) {
-          setLocations(locRes.data.filter((loc: any) => loc.is_hub));
-        }
-        if (riderRes?.success && Array.isArray(riderRes.data)) {
-          setRiders(riderRes.data.filter((r: { status: string }) => r.status === 'active'));
-        }
-      } catch {
-        // dropdowns will just be empty; not fatal
-      }
-    })();
-  }, []);
-
   // Scanning several parcels in a row fires one debounced search per scan -
   // without this, a slower-to-resolve earlier request can land after a later
   // one and stomp its results, making an already-scanned parcel vanish again.
@@ -224,6 +255,33 @@ const OOVOperations: React.FC = () => {
         setOrders(res.data);
         setMeta(res.meta ?? null);
         setLoadError('');
+
+        // Scanned ids that aren't in this tab would otherwise just be absent
+        // from the table - look them up across every status to say where they
+        // are. Only when the whole result fits on this page, else a match
+        // could simply be on a later page.
+        const terms = debouncedSearch.split(',').map(t => t.trim()).filter(Boolean);
+        const missing = [...new Map(terms.map(t => [t.toLowerCase(), t])).values()]
+          .filter(term => !res.data.some(order => matchesSearchTerm(order, term)));
+        const allOnPage = res.data.length >= (res.meta?.total ?? res.data.length);
+        const singleTermWithHits = terms.length === 1 && res.data.length > 0;
+        if (missing.length === 0 || !allOnPage || singleTermWithHits) {
+          setOutsideTab([]);
+        } else {
+          const lookup = await getOrders({
+            search: missing.join(', '),
+            pageSize: Math.min(MAX_ORDER_PAGE_SIZE, Math.max(missing.length, PAGE_SIZE)),
+          }).catch(() => null);
+          if (requestId !== loadRequestIdRef.current) return;
+          const found = lookup?.success && Array.isArray(lookup.data) ? lookup.data : [];
+          setOutsideTab(
+            missing
+              .map(term => ({ term, order: found.find(order => matchesSearchTerm(order, term)) }))
+              // A lone free-text term ("Ram") never exact-matches; only a scan
+              // batch is known to be ids, so only there is "not found" meaningful.
+              .filter(match => match.order || terms.length > 1),
+          );
+        }
       }
     } catch {
       if (requestId !== loadRequestIdRef.current) return;
@@ -329,63 +387,95 @@ const OOVOperations: React.FC = () => {
       return;
     }
 
-    if (isDispatchAction && dispatchMethod === 'manifest' && !toLocationId) {
-      setActionError('Select a destination hub to dispatch this manifest.');
-      return;
-    }
-
     if (isReasonRequiredAction && !reasonRemarks.trim()) {
       setActionError('A reason remark is required to cancel or fail an order.');
       return;
     }
 
-    setStatusUpdating(true);
-    try {
-      const ids = selectedOrders.map(order => String(order.id));
+    if (isDispatchAction && dispatchMethod === 'manifest' && !manifestBranchId) {
+      setActionError('Pick the destination branch.');
+      return;
+    }
 
-      if (isDispatchAction && dispatchMethod === 'tpl') {
-        // Hand off to the courier partner: creates their orders; parcels stay
-        // in Transit until the partner's pickup webhook moves them to In Transit.
-        const res = await handoffToNcm(ids);
-        const failed = (res.data ?? []).filter(item => !item.success);
-        if (failed.length > 0) {
-          setActionError(
-            failed.map(item => `${item.trackingId}: ${item.error || 'failed'}`).join(' · '),
-          );
+    if (submitting.current) return;
+    submitting.current = true;
+
+    const ids = selectedOrders.map(order => String(order.id));
+    setStatusUpdating(true);
+    setStatusUpdateProgress({ completed: 0, total: ids.length });
+    try {
+      const batches = Array.from(
+        { length: Math.ceil(ids.length / STATUS_UPDATE_BATCH_SIZE) },
+        (_, index) => ids.slice(index * STATUS_UPDATE_BATCH_SIZE, (index + 1) * STATUS_UPDATE_BATCH_SIZE),
+      );
+      const failed: Array<{ trackingId: string; error?: string }> = [];
+      let completed = 0;
+
+      // Via Manifest never calls the status API - it stages the selection onto
+      // whichever manifest heads for the chosen branch. Status only changes
+      // once that manifest is dispatched from the Open Manifest tab.
+      if (isDispatchAction && dispatchMethod === 'manifest') {
+        const res = await addOrdersToBranchManifest(ids, manifestBranchId);
+        if (res.data.rejected.length > 0) {
+          setActionError(res.data.rejected.map(r => `${r.trackingId}: ${r.reason}`).join(' · '));
           await loadOovOrders();
           return;
+        }
+        setManifestNotice(res.message);
+      } else if (isDispatchAction && dispatchMethod === 'tpl') {
+        // Hand off to NCM: creates their orders; parcels stay
+        // in Transit until the partner's pickup webhook moves them to In Transit.
+        for (const batch of batches) {
+          const res = await handoffToNcm(batch);
+          failed.push(...(res.data ?? []).filter(item => !item.success));
+          completed += batch.length;
+          setStatusUpdateProgress({ completed, total: ids.length });
         }
       } else if (isDispatchAction && dispatchMethod === 'upaya') {
         // Hand off to Upaya: creates the Upaya orders (area + service type
         // both auto-derived server-side per parcel) and moves the parcel
         // straight to dispatched (same as NCM/manifest), then Upaya's
         // webhooks/reconciliation carry it the rest of the way.
-        const res = await handoffParcelsToUpaya(ids);
-        const failed = (res.data ?? []).filter(item => !item.success);
-        if (failed.length > 0) {
-          setActionError(
-            failed.map(item => `${item.trackingId}: ${item.error || 'failed'}`).join(' · '),
-          );
-          await loadOovOrders();
-          return;
+        for (const batch of batches) {
+          const res = await handoffParcelsToUpaya(batch);
+          failed.push(...(res.data ?? []).filter(item => !item.success));
+          completed += batch.length;
+          setStatusUpdateProgress({ completed, total: ids.length });
         }
       } else {
-        await bulkUpdateOrderStatus(ids, effectiveNextStatus, {
-          toLocationId: isDispatchAction && dispatchMethod === 'manifest' ? toLocationId : undefined,
-          riderId: isDispatchAction && dispatchMethod === 'manifest' ? riderId || undefined : undefined,
-          remarks: isReasonRequiredAction ? reasonRemarks.trim() : undefined,
-        });
+        // The regular bulk-status endpoint also remains bounded. Splitting it
+        // makes this path safe for selections across multiple 500-row pages,
+        // and produces a clear partial-progress state if a later batch fails.
+        for (const batch of batches) {
+          await bulkUpdateOrderStatus(batch, effectiveNextStatus, {
+            remarks: isReasonRequiredAction ? reasonRemarks.trim() : undefined,
+          });
+          completed += batch.length;
+          setStatusUpdateProgress({ completed, total: ids.length });
+        }
       }
       await loadOovOrders();
+
+      if (failed.length > 0) {
+        const preview = failed
+          .slice(0, 5)
+          .map(item => `${item.trackingId}: ${item.error || 'failed'}`)
+          .join(' · ');
+        const remainder = failed.length > 5 ? ` · +${failed.length - 5} more` : '';
+        setActionError(`${ids.length - failed.length} processed; ${failed.length} could not be handed off. ${preview}${remainder}`);
+        return;
+      }
 
       setSelectionByTab(prev => ({ ...prev, [activeTab]: new Map() }));
       setIsActionOpen(false);
       setSelectedNextStatus('');
-      setToLocationId('');
-      setRiderId('');
       setDispatchMethod('manifest');
+      setManifestBranchId('');
       setReasonRemarks('');
     } catch (err: unknown) {
+      // Earlier batches are committed independently. Refresh before showing a
+      // later-batch failure so the table never keeps showing stale Transit rows.
+      await loadOovOrders();
       const message =
         typeof err === 'object' &&
         err !== null &&
@@ -395,7 +485,9 @@ const OOVOperations: React.FC = () => {
           : 'Failed to change order status.';
       setActionError(message);
     } finally {
+      submitting.current = false;
       setStatusUpdating(false);
+      setStatusUpdateProgress(null);
     }
   };
 
@@ -435,21 +527,23 @@ const OOVOperations: React.FC = () => {
   const buildExportRows = (rows: Order[]) => {
     // Mirrors the table on screen, where the Last Updated cell shows who and
     // when - two things, so two columns here rather than one.
-    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Weight', 'COD', 'Last Updated By', 'Last Updated', 'Remarks'];
+    const headers = ['Order ID', 'Date', 'Tracking ID', 'Order Type', 'Sender', 'Receiver', 'Location', 'Address', 'Carrier', 'Weight', 'COD', 'Last Updated By', 'Last Updated', 'Remarks', ...STATUS_TIMELINE_HEADERS];
     const dataRows = rows.map(order => [
       `#${order.orderNumber}`,
-      toBsDate(order.createdAt),
+      toBsDateTimeCell(order.createdAtRaw || order.createdAt),
       order.trackingId,
       order.orderType,
       order.senderName,
       order.receiverName,
       order.destination,
       order.receiverAddress || '',
+      order.carrierLabel || '',
       order.weightKg ? `${order.weightKg} Kg` : '',
       order.codAmount,
       order.lastUpdatedBy || '',
-      toBsDateTime(order.lastUpdatedAt) || '',
+      toBsDateTimeCell(order.lastUpdatedAt) || '',
       order.remarks || '',
+      ...statusTimelineCells(order.statusTimestamps),
     ]);
     return { headers, rows: dataRows };
   };
@@ -458,7 +552,7 @@ const OOVOperations: React.FC = () => {
     let rows: Order[] = visibleOrders;
 
     try {
-      const res = await getOrders({ status: TAB_STATUSES[activeTab], search: debouncedSearch || undefined });
+      const res = await getOrders({ status: TAB_STATUSES[activeTab], search: debouncedSearch || undefined, withArrival: true });
       if (res?.success && Array.isArray(res.data)) {
         rows = res.data;
       }
@@ -467,7 +561,7 @@ const OOVOperations: React.FC = () => {
     }
 
     const { headers, rows: exportRows } = buildExportRows(rows);
-    downloadExcel('oov-orders.xlsx', 'OOV Orders', headers, exportRows);
+    await downloadExcel('oov-orders.xlsx', 'OOV Orders', headers, exportRows);
   };
 
   const handlePrintLabels = () => {
@@ -511,7 +605,7 @@ const OOVOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="oov-party-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
       width: '238px',
@@ -528,6 +622,12 @@ const OOVOperations: React.FC = () => {
       ),
       width: '180px',
     },
+    {
+      header: 'CARRIER',
+      accessor: (order: Order) =>
+        order.carrierLabel ? <StatusChip tone="info">{order.carrierLabel}</StatusChip> : '-',
+      width: '96px',
+    },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '80px' },
     { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '113px' },
     {
@@ -535,7 +635,7 @@ const OOVOperations: React.FC = () => {
       accessor: (order: Order) => (
         <div className="oov-updated-cell">
           <span>{order.lastUpdatedBy || '-'}</span>
-          <span>{toBsDateTime(order.lastUpdatedAt) || '-'}</span>
+          <span>{toBsDateTimeCell(order.lastUpdatedAt) || '-'}</span>
         </div>
       ),
       width: '155px',
@@ -554,16 +654,29 @@ const OOVOperations: React.FC = () => {
 
   return (
     <div className="oov-operations-container">
-      <PageHeader title="Transit Operations" subtitle="Keep track of your parcel orders across the entire hub network." />
+      <PageHeader title="Transit Operations" />
 
       <SegmentedTabs
         ariaLabel="Order operation filters"
-        value={activeTab}
-        onChange={setActiveTab}
-        options={(Object.keys(TAB_LABELS) as OOVTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
+        value={view}
+        onChange={(v) => {
+          setView(v);
+          if (v === 'oov' || v === 'dispatched') setActiveTab(v);
+        }}
+        options={[
+          { value: 'oov', label: TAB_LABELS.oov, count: tabCounts['oov'] },
+          { value: 'open_manifest', label: 'Open Manifest' },
+          { value: 'dispatched', label: TAB_LABELS.dispatched, count: tabCounts['dispatched'] },
+          { value: 'received', label: 'Receive Manifest' },
+        ]}
       />
 
+      {isManifestView ? (
+        <TransitManifestPanel statusFilter={view === 'received' ? 'received' : 'active'} />
+      ) : (
+      <>
       {loadError && <p className="oov-action-error">{loadError}</p>}
+      {manifestNotice && <p className="oov-action-notice">{manifestNotice}</p>}
 
       <div className="oov-toolbar">
         <div />
@@ -574,7 +687,7 @@ const OOVOperations: React.FC = () => {
             </span>
           )}
           <div className="oov-action-anchor">
-            <Button variant="secondary" className="oov-outline-btn" onClick={openStatusAction}>
+            <Button variant="secondary" className="oov-outline-btn" onClick={openStatusAction} disabled={statusUpdating}>
               Action{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
             </Button>
             {isActionOpen && (
@@ -629,7 +742,7 @@ const OOVOperations: React.FC = () => {
                         onChange={() => setDispatchMethod('tpl')}
                         disabled={statusUpdating}
                       />
-                      <span>Via Courier Partner</span>
+                      <span>Via 3PL (NCM)</span>
                     </label>
                     <label className="oov-dispatch-radio">
                       <input
@@ -644,12 +757,30 @@ const OOVOperations: React.FC = () => {
                     </label>
                   </div>
                 )}
+                {isDispatchAction && dispatchMethod === 'manifest' && (
+                  <div className="oov-manifest-fields">
+                    <label className="oov-reason-label">Destination Branch</label>
+                    <SearchableSelect
+                      options={branches.map(b => ({ id: b.id, label: b.name, description: b.district ?? undefined }))}
+                      value={manifestBranchId}
+                      onChange={setManifestBranchId}
+                      placeholder="Where are these leaving for?"
+                      searchPlaceholder="Search branches…"
+                      disabled={statusUpdating}
+                    />
+                    <p className="oov-status-empty">
+                      Orders not covered by this branch are skipped. The rest are staged onto that
+                      branch's manifest (a free open one, or a new one) and stay in Transit -
+                      nothing dispatches until that manifest is sent from the Open Manifest tab.
+                    </p>
+                  </div>
+                )}
                 {isDispatchAction && dispatchMethod === 'tpl' && (
                   <div className="oov-manifest-fields">
                     <p className="oov-status-empty">
-                      The courier partner's destination branch is matched automatically from each order's destination
+                      NCM's destination branch is matched automatically from each order's destination
                       hub. Orders whose destination has no matching branch are skipped, and orders stay in Transit
-                      until the partner confirms pickup, then follow their tracking automatically.
+                      until NCM confirms pickup, then follow their tracking automatically.
                     </p>
                   </div>
                 )}
@@ -660,37 +791,6 @@ const OOVOperations: React.FC = () => {
                       destination hub. Orders whose destination has no confident match are skipped, and orders move
                       straight to dispatched, then follow Upaya's tracking automatically.
                     </p>
-                  </div>
-                )}
-                {isDispatchAction && dispatchMethod === 'manifest' && (
-                  <div className="oov-manifest-fields">
-                    <div className="oov-manifest-field">
-                      <span>Destination hub</span>
-                      <SearchableSelect
-                        options={locations.map(loc => ({ id: loc.id, label: loc.name }))}
-                        value={toLocationId}
-                        onChange={setToLocationId}
-                        placeholder="Select destination hub"
-                        searchPlaceholder="Search hub..."
-                        emptyMessage="No hubs found."
-                        disabled={statusUpdating}
-                      />
-                    </div>
-                    <div className="oov-manifest-field">
-                      <span>Rider / vehicle (optional)</span>
-                      <SearchableSelect
-                        options={[
-                          { id: '', label: 'Unassigned' },
-                          ...riders.map(rider => ({ id: rider.id, label: rider.name })),
-                        ]}
-                        value={riderId}
-                        onChange={setRiderId}
-                        placeholder="Unassigned"
-                        searchPlaceholder="Search rider by name..."
-                        emptyMessage="No active riders found."
-                        disabled={statusUpdating}
-                      />
-                    </div>
                   </div>
                 )}
                 {isReasonRequiredAction && (
@@ -709,6 +809,11 @@ const OOVOperations: React.FC = () => {
                   </div>
                 )}
                 {actionError && <p className="oov-action-error">{actionError}</p>}
+                {statusUpdateProgress && (
+                  <p className="oov-status-empty" aria-live="polite">
+                    Processing {statusUpdateProgress.completed} of {statusUpdateProgress.total} orders…
+                  </p>
+                )}
                 <div className="oov-status-submit-row">
                   <Button variant="secondary" className="oov-outline-btn" onClick={() => { setIsActionOpen(false); setReasonRemarks(''); }}>
                     Cancel
@@ -717,9 +822,18 @@ const OOVOperations: React.FC = () => {
                     variant="primary"
                     className="oov-apply-btn"
                     onClick={applyStatusChange}
-                    disabled={statusUpdating || !effectiveNextStatus || (isReasonRequiredAction && !reasonRemarks.trim())}
+                    disabled={
+                      statusUpdating ||
+                      !effectiveNextStatus ||
+                      (isReasonRequiredAction && !reasonRemarks.trim()) ||
+                      (isDispatchAction && dispatchMethod === 'manifest' && !manifestBranchId)
+                    }
                   >
-                    {statusUpdating ? 'Applying...' : 'Submit'}
+                    {statusUpdating
+                      ? `Processing ${statusUpdateProgress?.completed ?? 0}/${statusUpdateProgress?.total ?? selectedOrders.length}...`
+                      : isDispatchAction && dispatchMethod === 'manifest'
+                        ? 'Add to manifest'
+                        : 'Submit'}
                   </Button>
                 </div>
               </div>
@@ -766,6 +880,45 @@ const OOVOperations: React.FC = () => {
             ))}
           </div>
         )}
+        {outsideTab.length > 0 && (
+          <div className="oov-outside-tab" role="status">
+            <button
+              type="button"
+              className="oov-outside-tab-title"
+              aria-expanded={outsideTabOpen}
+              onClick={() => setOutsideTabOpen(open => !open)}
+            >
+              {outsideTab.length} not in {TAB_LABELS[activeTab]}
+              <ChevronDown size={16} className={`oov-outside-tab-chevron${outsideTabOpen ? ' is-open' : ''}`} />
+            </button>
+            {outsideTabOpen && (
+            <ul className="oov-outside-tab-list">
+              {outsideTab.map(({ term, order }) => {
+                const otherTab = order ? tabForStatus(order.status) : undefined;
+                return (
+                  <li key={term}>
+                    <span className="oov-outside-tab-id">{order?.trackingId ?? term}</span>
+                    {!order ? (
+                      <StatusChip tone="danger">Not found</StatusChip>
+                    ) : otherTab && otherTab !== activeTab ? (
+                      <button
+                        type="button"
+                        className="oov-outside-tab-switch"
+                        onClick={() => { setView(otherTab); setActiveTab(otherTab); }}
+                        title={`Open ${TAB_LABELS[otherTab]} tab`}
+                      >
+                        <StatusChip tone={getOrderStatusTone(order.status)}>{STATUS_LABELS[order.status]}</StatusChip>
+                      </button>
+                    ) : (
+                      <StatusChip tone={getOrderStatusTone(order.status)}>{STATUS_LABELS[order.status]}</StatusChip>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            )}
+          </div>
+        )}
       </div>
 
       <Table
@@ -806,6 +959,8 @@ const OOVOperations: React.FC = () => {
           trackingId={remarkPopupOrder.trackingId}
           onClose={() => setRemarkPopupOrder(null)}
         />
+      )}
+      </>
       )}
     </div>
   );

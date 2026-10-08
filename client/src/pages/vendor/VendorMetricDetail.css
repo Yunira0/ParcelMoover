@@ -96,3 +96,11 @@
   color: var(--color-text-caption);
   font-size: var(--font-size-xs);
 }
+
+/* On a phone the header and stat rows wrap instead of running off-screen. */
+@media (max-width: 640px) {
+  .vmd-header,
+  .vmd-stats {
+    flex-wrap: wrap;
+  }
+}

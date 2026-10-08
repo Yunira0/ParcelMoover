@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import * as XLSX from 'xlsx';
-import { ArrowLeft, CheckCircle2, Download, Trash2, Upload, XCircle } from 'lucide-react';
+import { ArrowLeft, Download, FileSpreadsheet, Trash2, Upload } from 'lucide-react';
 import Button from '../../components/Button';
+import StatusChip from '../../components/StatusChip';
+import Table from '../../components/Table';
 import FormField from '../../components/FormField';
 import SearchableSelectAsync from '../../components/SearchableSelectAsync';
 import {
@@ -14,9 +15,9 @@ import {
   type SenderProfile,
   type ServiceType,
 } from '../../services/orders.service';
-import { getLocations, searchVendors } from '../../services/users.service';
+import { getLocations, searchVendors } from '../../queries/lookups';
 import { isVendorSide } from '../../utils/auth';
-import { downloadExcel } from '../../utils/excel';
+import { downloadExcelTemplate } from '../../utils/excel';
 import './BulkOrderPage.css';
 
 interface VendorOption {
@@ -36,8 +37,8 @@ interface LocationOption {
 
 // ── Row model ─────────────────────────────────────────────────────────────────
 // One editable draft per file row, mirroring every field on the Create Order
-// page (receiver, destination, service/order/package type, weight, COD,
-// instruction). Kept as strings so cells can be edited freely; validation and
+// page (receiver, destination, service/order type, package description,
+// weight, COD, instruction). Kept as strings so cells can be edited freely; validation and
 // the submit payload derive from them.
 
 interface DraftRow {
@@ -53,6 +54,7 @@ interface DraftRow {
   codAmount: string;
   itemValue: string;
   deliveryInstruction: string;
+  remarks: string;
 }
 
 type DraftField = keyof DraftRow;
@@ -60,7 +62,12 @@ type RowErrors = Partial<Record<DraftField | '_row', string>>;
 
 const SERVICE_TYPES: ServiceType[] = ['home_delivery', 'branch_delivery'];
 const ORDER_TYPES: OrderType[] = ['delivery', 'exchange', 'return'];
-const PACKAGE_TYPE_PRESETS = ['Parcel', 'Document', 'Fragile'];
+// Same limits as the Create Order form and the server. NCM's create-order API
+// rejects the whole order past 100 chars - a failure that only surfaces at
+// handoff, well after the import - so it's caught per row here instead.
+const PACKAGE_DESCRIPTION_MAX_LENGTH = 100;
+const DELIVERY_INSTRUCTION_MAX_LENGTH = 100;
+const REMARKS_MAX_LENGTH = 1000;
 const DELIVERY_INSTRUCTION_PRESETS = [
   'Cannot open the parcel',
   'Can open the parcel',
@@ -83,26 +90,35 @@ const TEMPLATE_HEADERS = [
   'destination',
   'service_type',
   'order_type',
-  'package_type',
+  'package_description',
   'weight_kg',
   'cod_amount',
   'item_value',
   'delivery_instruction',
+  'remarks',
 ] as const;
 
 type TemplateColumn = (typeof TEMPLATE_HEADERS)[number];
 
 const SAMPLE_ROW = [
   '1', 'John Doe', '9801234567', '', 'Gwarko, Lalitpur', 'Imadol', 'home_delivery',
-  'delivery', 'Parcel', '1', '0', '0', 'Call before delivery',
+  'delivery', '2 cotton t-shirts', '1', '0', '0', 'Call before delivery', '',
 ];
+
+// Wider columns for the free-text fields.
+const TEMPLATE_COLUMN_WIDTHS = { package_description: 45, delivery_instruction: 45, remarks: 45 };
 
 // An .xlsx rather than a comma-joined .csv. The template is opened in Excel
 // before it is filled in, and a CSV lands entirely in column A for anyone whose
 // Excel uses ';' as its list separator - which makes the headers unreadable and
 // the file useless as a starting point. The importer below reads both.
-function downloadTemplate() {
-  downloadExcel('bulk_order_template', 'Orders', [...TEMPLATE_HEADERS], [SAMPLE_ROW]);
+function downloadTemplate(destinations: LocationOption[]) {
+  return downloadExcelTemplate('bulk_order_template', 'Orders', [...TEMPLATE_HEADERS], [SAMPLE_ROW], {
+    destination: destinations.map(l => l.name).sort((a, b) => a.localeCompare(b)),
+    service_type: SERVICE_TYPES,
+    order_type: ORDER_TYPES,
+    delivery_instruction: DELIVERY_INSTRUCTION_PRESETS,
+  }, { columnWidths: TEMPLATE_COLUMN_WIDTHS, freeText: ['delivery_instruction'] });
 }
 
 // Single-pass parse (not line-split first) so a quoted field containing a
@@ -163,6 +179,10 @@ function matrixToRows(allRows: string[][]): DraftRow[] {
 
   const colIndex = new Map<TemplateColumn, number>();
   TEMPLATE_HEADERS.forEach((col, i) => colIndex.set(col, isHeader ? firstRow.indexOf(col) : i));
+  // Sheets made from the older template call this column package_type.
+  if (isHeader && colIndex.get('package_description') === -1) {
+    colIndex.set('package_description', firstRow.indexOf('package_type'));
+  }
 
   return dataRows.map((cols): DraftRow => {
     const get = (col: TemplateColumn) => {
@@ -177,11 +197,12 @@ function matrixToRows(allRows: string[][]): DraftRow[] {
       destination: get('destination'),
       serviceType: normalizeChoice(get('service_type'), SERVICE_TYPES),
       orderType: normalizeChoice(get('order_type'), ORDER_TYPES),
-      packageType: get('package_type'),
+      packageType: get('package_description'),
       weightKg: get('weight_kg'),
       codAmount: get('cod_amount'),
       itemValue: get('item_value'),
       deliveryInstruction: get('delivery_instruction'),
+      remarks: get('remarks'),
     };
   });
 }
@@ -209,7 +230,8 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
   if (!row.receiverPhone.trim()) errors.receiverPhone = 'receiver phone is required';
 
   const destination = resolveDestination(row.destination, destinations);
-  if (destination.error) errors.destination = destination.error;
+  if (!row.destination.trim()) errors.destination = 'destination is required';
+  else if (destination.error) errors.destination = destination.error;
   if (row.serviceType.trim() && !SERVICE_TYPES.includes(row.serviceType.trim() as ServiceType)) {
     errors.serviceType = `service type must be one of: ${SERVICE_TYPES.join(', ')}`;
   }
@@ -229,6 +251,15 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
     const parsed = Number(row.weightKg);
     if (!Number.isFinite(parsed) || parsed <= 0) errors.weightKg = 'weight must be a positive number';
   }
+  if (row.packageType.trim().length > PACKAGE_DESCRIPTION_MAX_LENGTH) {
+    errors.packageType = `package description must be at most ${PACKAGE_DESCRIPTION_MAX_LENGTH} characters`;
+  }
+  if (row.deliveryInstruction.trim().length > DELIVERY_INSTRUCTION_MAX_LENGTH) {
+    errors.deliveryInstruction = `delivery instruction must be at most ${DELIVERY_INSTRUCTION_MAX_LENGTH} characters`;
+  }
+  if (row.remarks.trim().length > REMARKS_MAX_LENGTH) {
+    errors.remarks = `remarks must be at most ${REMARKS_MAX_LENGTH} characters`;
+  }
   if (index >= MAX_ROWS_PER_IMPORT) {
     errors._row = `exceeds ${MAX_ROWS_PER_IMPORT} order limit per import — remove extra rows`;
   }
@@ -236,6 +267,106 @@ function validateRow(row: DraftRow, index: number, destinations: LocationOption[
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
+
+interface DestinationChoice {
+  id: string;
+  label: string;
+  description?: string | undefined;
+}
+
+// Free-typed input with an inline drill-down: matches branch names and their
+// covered areas, so "Gwarko" surfaces Imadol. The list is position: fixed
+// because the table wrapper scrolls sideways and would clip an absolute one.
+const DestinationCell: React.FC<{
+  value: string;
+  options: DestinationChoice[];
+  invalid: boolean;
+  title: string | undefined;
+  onChange: (value: string) => void;
+}> = ({ value, options, invalid, title, onChange }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const query = value.trim().toLowerCase();
+  const matches = useMemo(
+    () => (query
+      ? options.filter(o => o.label.toLowerCase().includes(query) || o.description?.toLowerCase().includes(query))
+      : options).slice(0, 30),
+    [options, query],
+  );
+
+  const show = () => {
+    const box = inputRef.current?.getBoundingClientRect();
+    if (box) setRect({ top: box.bottom + 2, left: box.left, width: Math.max(box.width, 260) });
+    setActive(0);
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  const pick = (choice: DestinationChoice) => {
+    onChange(choice.label);
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open && e.key === 'ArrowDown') { show(); e.preventDefault(); return; }
+    if (!open) return;
+    if (e.key === 'ArrowDown') { setActive(a => Math.min(a + 1, matches.length - 1)); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { setActive(a => Math.max(a - 1, 0)); e.preventDefault(); }
+    else if (e.key === 'Enter' && matches[active]) { pick(matches[active]); e.preventDefault(); }
+    else if (e.key === 'Escape') setOpen(false);
+  };
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        className={`bop-cell-input${invalid ? ' bop-cell-input--invalid' : ''}`}
+        value={value}
+        onChange={e => { onChange(e.target.value); show(); }}
+        onFocus={show}
+        onBlur={() => setOpen(false)}
+        onKeyDown={onKeyDown}
+        placeholder="Branch or area"
+        title={title}
+        aria-invalid={invalid}
+        aria-expanded={open}
+        role="combobox"
+        aria-autocomplete="list"
+        autoComplete="off"
+      />
+      {open && rect && matches.length > 0 && (
+        <ul className="bop-dest-list" role="listbox" style={{ top: rect.top, left: rect.left, width: rect.width }}>
+          {matches.map((m, idx) => (
+            <li
+              key={m.id}
+              role="option"
+              aria-selected={idx === active}
+              className={`bop-dest-item${idx === active ? ' bop-dest-item--active' : ''}`}
+              onMouseDown={e => { e.preventDefault(); pick(m); }}
+              onMouseEnter={() => setActive(idx)}
+            >
+              <span>{m.label}</span>
+              {m.description && <small>{m.description}</small>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+};
 
 const BulkOrderPage: React.FC = () => {
   const navigate = useNavigate();
@@ -255,8 +386,11 @@ const BulkOrderPage: React.FC = () => {
   const [locations, setLocations] = useState<LocationOption[]>([]);
   const [rows, setRows] = useState<DraftRow[]>([]);
   const [fileName, setFileName] = useState('');
+  const [readingFile, setReadingFile] = useState(false);
+  const fileReadVersion = useRef(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState('');
   const [result, setResult] = useState<BulkCreateResult | null>(null);
   // Snapshot of the drafts that were submitted, so the result screen can name
   // failed rows even after `rows` changes.
@@ -286,6 +420,8 @@ const BulkOrderPage: React.FC = () => {
         }
       } catch (err) {
         console.error('Failed to load destinations:', err);
+        // Without the list, every row's destination fails to match.
+        if (!cancelled) setError("Couldn't load destinations - refresh the page before uploading.");
       }
     })();
     return () => { cancelled = true; };
@@ -331,6 +467,7 @@ const BulkOrderPage: React.FC = () => {
   // fallback at line ~294).
   const handleVendorSelect = useCallback((id: string) => {
     setSelectedVendorId(id);
+    setError(current => current === 'Please select a vendor before submitting this import.' ? '' : current);
     searchVendors(id, 1).then(res => {
       if (res?.success && Array.isArray(res.data)) {
         const v = res.data.find((x: any) => x.id === id);
@@ -355,30 +492,54 @@ const BulkOrderPage: React.FC = () => {
     [locations],
   );
 
+  // Same as Create Order's Lookup Branch: each destination carries its covered
+  // areas as the description, so searching "Gwarko" finds Imadol.
+  const lookupBranchOptions = useMemo(
+    () => destinationOptions.map(l => {
+      const areas = locations.filter(a => a.parentId === l.id).map(a => a.name);
+      return { id: l.id, label: l.name, description: areas.length > 0 ? `Covers: ${areas.join(', ')}` : undefined };
+    }),
+    [destinationOptions, locations],
+  );
+
   const rowErrors = useMemo(
     () => rows.map((row, i) => validateRow(row, i, destinationOptions)),
     [rows, destinationOptions],
   );
   const errorCount = rowErrors.filter(e => Object.keys(e).length > 0).length;
   const validCount = rows.length - errorCount;
+  const vendorRequiredError = actingForVendor
+    && !selectedVendorId
+    && error === 'Please select a vendor before submitting this import.';
 
   const updateCell = (index: number, field: DraftField, value: string) => {
     setRows(prev => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+    // Editing a row changes the batch, so a stale "import anyway" from a
+    // previous fingerprint no longer applies to what's about to be submitted.
+    if (duplicateWarning) setDuplicateWarning('');
   };
 
   const removeRow = (index: number) => {
     setRows(prev => prev.filter((_, i) => i !== index));
+    if (duplicateWarning) setDuplicateWarning('');
   };
 
   const handleFile = (file: File) => {
+    const readVersion = ++fileReadVersion.current;
+    setReadingFile(true);
+    setRows([]);
     setFileName(file.name);
     setResult(null);
     setError('');
+    setDuplicateWarning('');
     const isExcel = /\.xlsx?$/.test(file.name.toLowerCase());
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        if (readVersion !== fileReadVersion.current) return;
         if (isExcel) {
+          const XLSX = await import('xlsx');
+          if (readVersion !== fileReadVersion.current) return;
           const wb = XLSX.read(e.target?.result as ArrayBuffer, { type: 'array' });
           const ws = wb.Sheets[wb.SheetNames[0]];
           // raw:false keeps phone numbers as their displayed text instead of
@@ -389,9 +550,17 @@ const BulkOrderPage: React.FC = () => {
           setRows(matrixToRows(parseCSV(e.target?.result as string)));
         }
       } catch {
+        if (readVersion !== fileReadVersion.current) return;
         setError('Could not read file. Make sure it is a valid .csv, .xlsx, or .xls file.');
         setRows([]);
+      } finally {
+        if (readVersion === fileReadVersion.current) setReadingFile(false);
       }
+    };
+    reader.onerror = () => {
+      if (readVersion !== fileReadVersion.current) return;
+      setReadingFile(false);
+      setError('Could not read file. Please try again.');
     };
     if (isExcel) reader.readAsArrayBuffer(file);
     else reader.readAsText(file);
@@ -431,13 +600,14 @@ const BulkOrderPage: React.FC = () => {
       codAmount: row.codAmount.trim() !== '' ? Number(row.codAmount) : 0,
       itemValue: row.itemValue.trim() !== '' ? Number(row.itemValue) : 0,
       deliveryInstruction: row.deliveryInstruction.trim() || undefined,
+      remarks: row.remarks.trim() || undefined,
     };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (actingForVendor && !selectedVendorId) {
-      setError('Pick which vendor this import is for.');
+      setError('Please select a vendor before submitting this import.');
       return;
     }
     if (!senderProfile) {
@@ -463,10 +633,20 @@ const BulkOrderPage: React.FC = () => {
         orders: validRows.map(row => (
           actingForVendor ? { ...toOrderRow(row), vendorId: selectedVendorId } : toOrderRow(row)
         )),
+        ...(duplicateWarning ? { confirmDuplicateBatch: true } : {}),
       });
       setResult(res.data);
+      setDuplicateWarning('');
     } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Bulk submission failed.');
+      const data = err?.response?.data;
+      // A batch matching this exact set of orders was already imported
+      // recently - show it inline and let a second click ("Import anyway")
+      // resend with confirmDuplicateBatch instead of silently blocking.
+      if (data?.code === 'DUPLICATE_BATCH' && !duplicateWarning) {
+        setDuplicateWarning(data.message || 'This exact batch was already imported recently.');
+        return;
+      }
+      setError(data?.message || err?.message || 'Bulk submission failed.');
     } finally {
       setSubmitting(false);
     }
@@ -475,52 +655,53 @@ const BulkOrderPage: React.FC = () => {
   // ── Result screen ────────────────────────────────────────────────────────────
   if (result) {
     return (
-      <div className="bop-page">
-        <div className="bop-result-card">
+      <div className="bop-page bop-page--result">
+        <button type="button" className="bop-back" onClick={() => navigate('/orders')}>
+          <ArrowLeft size={15} /> Orders
+        </button>
+        <section className="bop-result-card" aria-labelledby="bop-result-title">
+          <h1 id="bop-result-title">Import results</h1>
           <div className="bop-result-counts">
-            <div className="bop-result-stat bop-result-stat--success">
-              <CheckCircle2 size={28} />
-              <span className="bop-result-num">{result.created}</span>
-              <span className="bop-result-label">Created</span>
-            </div>
-            <div className="bop-result-stat bop-result-stat--fail">
-              <XCircle size={28} />
-              <span className="bop-result-num">{result.failed}</span>
-              <span className="bop-result-label">Failed</span>
-            </div>
+            <StatusChip tone="success">{result.created} created</StatusChip>
+            {result.failed > 0 && <StatusChip tone="danger">{result.failed} failed</StatusChip>}
           </div>
 
           {result.failed > 0 && (
-            <div className="bop-result-errors">
-              <h3>Failed Orders</h3>
-              <table className="bop-result-table">
-                <thead>
-                  <tr><th>ID</th><th>Row</th><th>Reason</th></tr>
-                </thead>
-                <tbody>
-                  {result.results
-                    .filter((r): r is Extract<typeof r, { success: false }> => !r.success)
-                    .map(r => (
-                      <tr key={r.index}>
-                        <td>{r.index + 1}</td>
-                        <td>{submittedRowsRef.current[r.index]?.receiverName ?? '—'}</td>
-                        <td className="bop-result-error-msg">{r.error}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+            <Table
+              minWidth="0"
+              emptyMessage=""
+              columns={[
+                { header: 'Row', accessor: 'row', width: '64px' },
+                { header: 'Receiver', accessor: 'receiver' },
+                { header: 'Reason', accessor: 'reason' },
+              ]}
+              data={result.results
+                .filter((r): r is Extract<typeof r, { success: false }> => !r.success)
+                .map(r => ({
+                  id: r.index,
+                  row: r.index + 1,
+                  receiver: submittedRowsRef.current[r.index]?.receiverName ?? '—',
+                  reason: r.error,
+                }))}
+            />
           )}
 
           <div className="bop-result-actions">
             <Button variant="secondary" onClick={() => { setResult(null); setRows([]); setFileName(''); }}>
-              Import More Orders
+              Import another file
             </Button>
-            <Button variant="primary" onClick={() => navigate('/orders')}>
-              View Orders
+            <Button
+              variant="primary"
+              onClick={() => navigate('/orders', {
+                state: {
+                  importedTrackingIds: result.results.flatMap(r => (r.success ? [r.trackingId] : [])),
+                },
+              })}
+            >
+              {result.created > 0 ? `View ${result.created} order${result.created === 1 ? '' : 's'}` : 'View orders'}
             </Button>
           </div>
-        </div>
+        </section>
       </div>
     );
   }
@@ -571,15 +752,26 @@ const BulkOrderPage: React.FC = () => {
       </button>
 
       <div className="bop-header">
-        <h1>Bulk Order Import</h1>
-        <p>Upload a CSV or Excel file to create multiple orders in a single request.</p>
+        <h1>Bulk order import</h1>
+        <p>Upload a spreadsheet, review the rows, then create the valid orders in one request.</p>
       </div>
 
-      <form className="bop-form" onSubmit={handleSubmit} noValidate>
+      <form
+        className="bop-form"
+        onSubmit={handleSubmit}
+        onKeyDown={e => {
+          // Enter in a cell must not submit a 100-row import by accident; Shift+Enter
+          // is the deliberate way. click() on the button respects its disabled state.
+          if (e.key !== 'Enter' || !(e.target instanceof HTMLInputElement)) return;
+          e.preventDefault();
+          if (e.shiftKey) e.currentTarget.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+        }}
+        noValidate
+      >
         {/* ── Sender ── */}
         <section className="bop-section">
           <div className="bop-section-heading">
-            <h2>Sender</h2>
+            <h2>Sender details</h2>
             <p>Applied to every order in this batch.</p>
           </div>
           {senderLoading ? (
@@ -588,7 +780,7 @@ const BulkOrderPage: React.FC = () => {
             <p role="alert" className="bop-error">{senderError}</p>
           ) : actingForVendor ? (
             <div className="bop-sender-fields">
-              <div style={{ gridColumn: '1 / -1' }}>
+              <div className="bop-field-full">
                 <label>
                   Vendor <span className="required">*</span>
                 </label>
@@ -600,6 +792,7 @@ const BulkOrderPage: React.FC = () => {
                   searchPlaceholder="Search vendors..."
                   emptyMessage="No vendors available."
                 />
+                {vendorRequiredError && <p role="alert" className="bop-field-error">Please select a vendor before submitting this import.</p>}
               </div>
               {senderProfile && (
                 <>
@@ -620,10 +813,15 @@ const BulkOrderPage: React.FC = () => {
         <section className="bop-section">
           <div className="bop-section-heading-row">
             <div>
-              <h2>Upload File</h2>
-              <p>One row per order. Max 100 orders per import.</p>
+              <h2>Upload order list</h2>
+              <p>Use one row per order. Each import can contain up to 100 orders.</p>
             </div>
-            <Button type="button" variant="outline" onClick={downloadTemplate}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => downloadTemplate(destinationOptions)
+                .catch(() => setError('Could not generate the template. Please try again.'))}
+            >
               <Download size={15} /> Download Template
             </Button>
           </div>
@@ -646,9 +844,12 @@ const BulkOrderPage: React.FC = () => {
               className="bop-file-input"
               aria-hidden="true"
             />
-            <Upload size={28} className="bop-dropzone-icon" />
+            {fileName ? <FileSpreadsheet size={28} className="bop-dropzone-icon" /> : <Upload size={28} className="bop-dropzone-icon" />}
             {fileName ? (
-              <span className="bop-dropzone-filename">{fileName}</span>
+              <>
+                <span className="bop-dropzone-filename">{fileName}</span>
+                <span className="bop-dropzone-hint">{readingFile ? 'Reading file…' : 'File loaded. Click or drop another file to replace it.'}</span>
+              </>
             ) : (
               <>
                 <span className="bop-dropzone-primary">Drop CSV or Excel here or click to browse</span>
@@ -663,17 +864,14 @@ const BulkOrderPage: React.FC = () => {
           <section className="bop-section bop-section--preview">
             <div className="bop-section-heading-row">
               <div>
-                <h2>Preview</h2>
-                <p>
-                  {rows.length} row(s) — {validCount} valid, {errorCount} with errors.
-                  Every cell is editable; hover a red cell for the reason.
-                </p>
+                <h2>Review imported orders</h2>
+                <p>All cells are editable. Invalid fields are highlighted so you can correct them before submitting.</p>
               </div>
-              {errorCount > 0 && (
-                <span className="bop-preview-badge bop-preview-badge--warn">
-                  {errorCount} row(s) need fixing or will be skipped
-                </span>
-              )}
+              <div className="bop-preview-counts" aria-label="Import summary">
+                <StatusChip tone="neutral">{rows.length} rows</StatusChip>
+                <StatusChip tone="success">{validCount} ready</StatusChip>
+                {errorCount > 0 && <StatusChip tone="danger">{errorCount} errors</StatusChip>}
+              </div>
             </div>
 
             <div className="bop-preview-wrap">
@@ -688,11 +886,12 @@ const BulkOrderPage: React.FC = () => {
                     <th>Destination</th>
                     <th>Service</th>
                     <th>Type</th>
-                    <th>Package</th>
+                    <th>Package Description</th>
                     <th>Weight (kg)</th>
                     <th>COD</th>
                     <th>Item Value</th>
                     <th>Instruction</th>
+                    <th>Remarks</th>
                     <th>Status</th>
                     <th aria-label="Remove" />
                   </tr>
@@ -709,25 +908,24 @@ const BulkOrderPage: React.FC = () => {
                         <td>{cell(i, 'receiverAltPhone', { placeholder: '—' })}</td>
                         <td>{cell(i, 'receiverAddress', { placeholder: 'Address' })}</td>
                         <td>
-                          <input
-                            className={`bop-cell-input${errors.destination ? ' bop-cell-input--invalid' : ''}`}
+                          <DestinationCell
                             value={row.destination}
-                            onChange={e => updateCell(i, 'destination', e.target.value)}
-                            list="bop-destination-options"
-                            placeholder="Branch"
+                            options={lookupBranchOptions}
+                            invalid={Boolean(errors.destination)}
                             title={errors.destination}
-                            aria-invalid={Boolean(errors.destination)}
+                            onChange={value => updateCell(i, 'destination', value)}
                           />
                         </td>
                         <td>{choiceCell(i, 'serviceType', SERVICE_TYPES, { home_delivery: 'Home Delivery', branch_delivery: 'Branch Delivery' })}</td>
                         <td>{choiceCell(i, 'orderType', ORDER_TYPES, { delivery: 'Delivery', exchange: 'Exchange', return: 'Return' })}</td>
                         <td>
                           <input
-                            className="bop-cell-input"
+                            className={`bop-cell-input bop-cell-input--wide${errors.packageType ? ' bop-cell-input--invalid' : ''}`}
                             value={row.packageType}
                             onChange={e => updateCell(i, 'packageType', e.target.value)}
-                            list="bop-package-options"
-                            placeholder="Parcel"
+                            placeholder="What's inside"
+                            title={errors.packageType}
+                            aria-invalid={Boolean(errors.packageType)}
                           />
                         </td>
                         <td>{cell(i, 'weightKg', { type: 'number', min: 0, step: '0.1', placeholder: '1' })}</td>
@@ -735,22 +933,31 @@ const BulkOrderPage: React.FC = () => {
                         <td>{cell(i, 'itemValue', { type: 'number', min: 0, step: '1', placeholder: '0' })}</td>
                         <td>
                           <input
-                            className="bop-cell-input bop-cell-input--wide"
+                            className={`bop-cell-input bop-cell-input--wide${errors.deliveryInstruction ? ' bop-cell-input--invalid' : ''}`}
                             value={row.deliveryInstruction}
                             onChange={e => updateCell(i, 'deliveryInstruction', e.target.value)}
                             list="bop-instruction-options"
                             placeholder="—"
+                            maxLength={DELIVERY_INSTRUCTION_MAX_LENGTH}
+                            title={errors.deliveryInstruction}
+                            aria-invalid={Boolean(errors.deliveryInstruction)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className={`bop-cell-input bop-cell-input--wide${errors.remarks ? ' bop-cell-input--invalid' : ''}`}
+                            value={row.remarks}
+                            onChange={e => updateCell(i, 'remarks', e.target.value)}
+                            placeholder="—"
+                            title={errors.remarks}
+                            aria-invalid={Boolean(errors.remarks)}
                           />
                         </td>
                         <td>
                           {errorMessage ? (
-                            <span className="bop-status bop-status--error" title={errorMessage}>
-                              <XCircle size={14} /> Error
-                            </span>
+                            <span title={errorMessage}><StatusChip tone="danger">Error</StatusChip></span>
                           ) : (
-                            <span className="bop-status bop-status--ok">
-                              <CheckCircle2 size={14} /> Ready
-                            </span>
+                            <StatusChip tone="success">Ready</StatusChip>
                           )}
                         </td>
                         <td className="bop-cell-remove">
@@ -771,33 +978,40 @@ const BulkOrderPage: React.FC = () => {
               </table>
             </div>
 
-            <datalist id="bop-destination-options">
-              {destinationOptions.map(d => <option key={d.id} value={d.name} />)}
-            </datalist>
-            <datalist id="bop-package-options">
-              {PACKAGE_TYPE_PRESETS.map(p => <option key={p} value={p} />)}
-            </datalist>
             <datalist id="bop-instruction-options">
               {DELIVERY_INSTRUCTION_PRESETS.map(p => <option key={p} value={p} />)}
             </datalist>
           </section>
         )}
 
-        {error && <p role="alert" className="bop-error">{error}</p>}
+        {error && !vendorRequiredError && <p role="alert" className="bop-error">{error}</p>}
+
+        {duplicateWarning && (
+          <p role="alert" className="bop-warning">
+            {duplicateWarning} Click <strong>Import anyway</strong> to continue.
+          </p>
+        )}
 
         <div className="bop-actions">
-          <Button type="button" variant="secondary" onClick={() => navigate('/orders')} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={submitting || validCount === 0 || !senderProfile}
-          >
-            {submitting
-              ? 'Submitting…'
-              : `Submit ${validCount} Order${validCount !== 1 ? 's' : ''} (1 request)`}
-          </Button>
+          {vendorRequiredError && (
+            <p role="alert" className="bop-submit-error">
+              Select a vendor before submitting this import.
+            </p>
+          )}
+          <div className="bop-actions-buttons">
+            <Button type="button" variant="secondary" onClick={() => navigate('/orders')} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={submitting || readingFile || validCount === 0 || (!actingForVendor && !senderProfile)}
+            >
+              {submitting
+                ? 'Submitting…'
+                : duplicateWarning ? 'Import anyway' : `Submit ${validCount} Order${validCount !== 1 ? 's' : ''}`}
+            </Button>
+          </div>
         </div>
       </form>
     </div>

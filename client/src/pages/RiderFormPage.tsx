@@ -3,9 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Truck, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
-import { registerUser, getLocations, getManagedUser, updateUserProfile } from '../services/users.service';
+import DocLink from '../components/DocLink';
+import { registerUser, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
+import { getLocations } from '../queries/lookups';
 import { getCurrentUser } from '../services/auth.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { useHubLock } from '../hooks/useHubLock';
 import './RiderFormPage.css';
 
@@ -17,6 +20,8 @@ const API_FIELD_MAP: Record<string, string> = {
 };
 
 interface RiderFormInput {
+  // Server-assigned, display-only - never sent back on submit.
+  employeeId: string;
   // Rider Info
   fullName: string;
   riderLocation: string;
@@ -32,9 +37,11 @@ interface RiderFormInput {
   pan: string;
   // Documents
   citizenshipDoc: File | null;
+  citizenshipDocBack: File | null;
   panVatDoc: File | null;
   licenceDoc: File | null;
   blueBookDoc: File | null;
+  agreementDoc: File | null;
   // Bank Details
   bankName: string;
   bankAccountNo: string;
@@ -49,6 +56,7 @@ interface RiderFormInput {
 }
 
 const emptyForm: RiderFormInput = {
+  employeeId: '',
   fullName: '',
   riderLocation: '',
   contactNo: '',
@@ -60,9 +68,11 @@ const emptyForm: RiderFormInput = {
   salaryCommission: '',
   pan: '',
   citizenshipDoc: null,
+  citizenshipDocBack: null,
   panVatDoc: null,
   licenceDoc: null,
   blueBookDoc: null,
+  agreementDoc: null,
   bankName: '',
   bankAccountNo: '',
   bankAccountHolder: '',
@@ -78,8 +88,19 @@ const FileInput: React.FC<{
   file: File | null | undefined;
   onChange: (file: File | null) => void;
   accept?: string;
-}> = ({ label, required, file, onChange, accept = 'image/*,.pdf' }) => {
+  hint?: string;
+}> = ({ label, required, file, onChange, accept = 'image/*,.pdf', hint = 'JPG, PNG or PDF · max 5 MB' }) => {
   const ref = useRef<HTMLInputElement>(null);
+  const [converting, setConverting] = useState(false);
+  const handleFile = async (picked: File | null) => {
+    if (!picked) { onChange(null); return; }
+    setConverting(true);
+    try {
+      onChange(await convertHeicFileIfNeeded(picked));
+    } finally {
+      setConverting(false);
+    }
+  };
   return (
     <div className="rfp-file-field">
       <label className="rfp-file-label">
@@ -94,8 +115,8 @@ const FileInput: React.FC<{
           </button>
         </div>
       ) : (
-        <button type="button" className="rfp-file-btn" onClick={() => ref.current?.click()}>
-          <Upload size={15} /> Choose file
+        <button type="button" className="rfp-file-btn" disabled={converting} onClick={() => ref.current?.click()}>
+          <Upload size={15} /> {converting ? 'Converting…' : 'Choose file'}
         </button>
       )}
       <input
@@ -103,9 +124,9 @@ const FileInput: React.FC<{
         type="file"
         accept={accept}
         style={{ display: 'none' }}
-        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
-      <span className="rfp-file-hint">JPG, PNG or PDF · max 5 MB</span>
+      <span className="rfp-file-hint">{hint}</span>
     </div>
   );
 };
@@ -134,6 +155,15 @@ const RiderFormPage: React.FC = () => {
   const [submitted, setSubmitted] = useState(false);
   const [hubs, setHubs] = useState<Array<{ value: string; label: string }>>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // Already-uploaded document paths, shown as view links in edit mode.
+  const [existingDocs, setExistingDocs] = useState<{
+    citizenshipDoc: string | null;
+    citizenshipDocBack: string | null;
+    panVatDoc: string | null;
+    licenceDoc: string | null;
+    bluebookDoc: string | null;
+    agreementDoc: string | null;
+  }>({ citizenshipDoc: null, citizenshipDocBack: null, panVatDoc: null, licenceDoc: null, bluebookDoc: null, agreementDoc: null });
   // A plain admin's riders always land in that admin's own hub; only a
   // super_admin may pick another service branch (server enforces the same).
   const { hubLocked, isPlainAdmin, isSuperAdmin } = useHubLock();
@@ -162,6 +192,7 @@ const RiderFormPage: React.FC = () => {
         }
       } catch (err) {
         console.error('Failed to load hubs:', err);
+        setFieldErrors(prev => ({ ...prev, serviceBranch: "Couldn't load hubs - refresh the page to try again." }));
       }
     };
     fetchHubs();
@@ -177,6 +208,7 @@ const RiderFormPage: React.FC = () => {
         const s = (v: unknown) => (v == null ? '' : String(v));
         setForm((prev) => ({
           ...prev,
+          employeeId: s(d.employeeId),
           fullName: s(d.fullName),
           email: s(d.email),
           contactNo: s(d.phone),
@@ -193,6 +225,14 @@ const RiderFormPage: React.FC = () => {
           bankAccountHolder: s(d.bankAccountHolder),
           carrierCode: s(d.carrierCode),
         }));
+        setExistingDocs({
+          citizenshipDoc: d.citizenshipDoc ?? null,
+          citizenshipDocBack: d.citizenshipDocBack ?? null,
+          panVatDoc: d.panVatDoc ?? null,
+          licenceDoc: d.licenceDoc ?? null,
+          bluebookDoc: d.bluebookDoc ?? null,
+          agreementDoc: d.agreementDoc ?? null,
+        });
       })
       .catch(() => setError('Failed to load rider details.'));
   }, [isEdit, editId]);
@@ -232,7 +272,8 @@ const RiderFormPage: React.FC = () => {
     else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Documents and password only required when creating a new rider.
     if (!isEdit) {
-      if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship document is required';
+      if (!form.citizenshipDoc) errors.citizenshipDoc = 'Citizenship front side is required';
+      if (!form.citizenshipDocBack) errors.citizenshipDocBack = 'Citizenship back side is required';
       if (!form.licenceDoc) errors.licenceDoc = 'License document is required';
       if (!form.password.trim()) errors.password = 'Password is required';
       else if (form.password.length < 8) errors.password = 'Min. 8 characters';
@@ -275,6 +316,13 @@ const RiderFormPage: React.FC = () => {
           bankAccountNo: form.bankAccountNo,
           bankAccountHolder: form.bankAccountHolder,
           ...(isSuperAdmin ? { carrierCode: form.carrierCode } : {}),
+          // Only slots with a newly picked file; the rest keep what's stored.
+          ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
+          ...(form.citizenshipDocBack ? { citizenshipDocBack: form.citizenshipDocBack } : {}),
+          ...(form.panVatDoc ? { panVatDoc: form.panVatDoc } : {}),
+          ...(form.licenceDoc ? { licenceDoc: form.licenceDoc } : {}),
+          ...(form.blueBookDoc ? { bluebookDoc: form.blueBookDoc } : {}),
+          ...(form.agreementDoc ? { agreementDoc: form.agreementDoc } : {}),
         });
         navigate('/riders');
         return;
@@ -297,9 +345,11 @@ const RiderFormPage: React.FC = () => {
         bankAccountNo: form.bankAccountNo,
         bankAccountHolder: form.bankAccountHolder,
         citizenshipDoc: form.citizenshipDoc,
+        citizenshipDocBack: form.citizenshipDocBack,
         panVatDoc: form.panVatDoc,
         licenceDoc: form.licenceDoc,
         bluebookDoc: form.blueBookDoc,
+        agreementDoc: form.agreementDoc,
         ...(isSuperAdmin ? { carrierCode: form.carrierCode } : {}),
       });
       setSubmitted(true);
@@ -356,7 +406,14 @@ const RiderFormPage: React.FC = () => {
       </button>
 
       <div className="rfp-header">
-        <h1>{isEdit ? 'Edit Rider' : 'Add New Rider'}</h1>
+        <div className="rfp-header-title-row">
+          <h1>{isEdit ? 'Edit Rider' : 'Add New Rider'}</h1>
+          {/* A carrier placeholder (NCM/Upaya) isn't a real employee, so it
+              never shows one even though the row gets a DB-assigned number. */}
+          {isEdit && !form.carrierCode && form.employeeId && (
+            <span className="rfp-employee-id">{form.employeeId}</span>
+          )}
+        </div>
         <p>Complete the registration form below to create a new rider account.</p>
       </div>
 
@@ -486,42 +543,79 @@ const RiderFormPage: React.FC = () => {
 
           {/* Right Column */}
           <div className="rfp-right">
-            {/* Documents — only when creating */}
-            {!isEdit && (
+            {/* Documents */}
             <section className="rfp-section">
               <SectionHeader
                 icon={<FileText size={18} />}
                 title="Documents"
                 description="Upload required documents"
               />
-              <div className="rfp-docs">
-                <FileInput
-                  label="Citizenship"
-                  required
-                  file={form.citizenshipDoc}
-                  onChange={setFile('citizenshipDoc')}
-                />
-                {fieldErrors.citizenshipDoc && <span className="rfp-field-error">{fieldErrors.citizenshipDoc}</span>}
-                <FileInput
-                  label="PAN / VAT"
-                  file={form.panVatDoc}
-                  onChange={setFile('panVatDoc')}
-                />
-                <FileInput
-                  label="License"
-                  required
-                  file={form.licenceDoc}
-                  onChange={setFile('licenceDoc')}
-                />
-                {fieldErrors.licenceDoc && <span className="rfp-field-error">{fieldErrors.licenceDoc}</span>}
-                <FileInput
-                  label="Blue Book"
-                  file={form.blueBookDoc}
-                  onChange={setFile('blueBookDoc')}
-                />
-              </div>
+              {isEdit ? (
+                // Every slot stays visible on edit: the file on record (if any)
+                // plus an upload to attach a missing one or replace it.
+                <div className="rfp-docs">
+                  <FileInput label="Citizenship (Front)" file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} />
+                  {existingDocs.citizenshipDoc && <DocLink path={existingDocs.citizenshipDoc} label="View current citizenship (front)" />}
+                  <FileInput label="Citizenship (Back)" file={form.citizenshipDocBack} onChange={setFile('citizenshipDocBack')} />
+                  {existingDocs.citizenshipDocBack && <DocLink path={existingDocs.citizenshipDocBack} label="View current citizenship (back)" />}
+                  <FileInput label="PAN / VAT" file={form.panVatDoc} onChange={setFile('panVatDoc')} />
+                  {existingDocs.panVatDoc && <DocLink path={existingDocs.panVatDoc} label="View current PAN / VAT" />}
+                  <FileInput label="License" file={form.licenceDoc} onChange={setFile('licenceDoc')} />
+                  {existingDocs.licenceDoc && <DocLink path={existingDocs.licenceDoc} label="View current license" />}
+                  <FileInput label="Blue Book" file={form.blueBookDoc} onChange={setFile('blueBookDoc')} />
+                  {existingDocs.bluebookDoc && <DocLink path={existingDocs.bluebookDoc} label="View current blue book" />}
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
+                  />
+                  {existingDocs.agreementDoc && <DocLink path={existingDocs.agreementDoc} label="View current agreement" />}
+                </div>
+              ) : (
+                <div className="rfp-docs">
+                  <FileInput
+                    label="Citizenship (Front)"
+                    required
+                    file={form.citizenshipDoc}
+                    onChange={setFile('citizenshipDoc')}
+                  />
+                  {fieldErrors.citizenshipDoc && <span className="rfp-field-error">{fieldErrors.citizenshipDoc}</span>}
+                  <FileInput
+                    label="Citizenship (Back)"
+                    required
+                    file={form.citizenshipDocBack}
+                    onChange={setFile('citizenshipDocBack')}
+                  />
+                  {fieldErrors.citizenshipDocBack && <span className="rfp-field-error">{fieldErrors.citizenshipDocBack}</span>}
+                  <FileInput
+                    label="PAN / VAT"
+                    file={form.panVatDoc}
+                    onChange={setFile('panVatDoc')}
+                  />
+                  <FileInput
+                    label="License"
+                    required
+                    file={form.licenceDoc}
+                    onChange={setFile('licenceDoc')}
+                  />
+                  {fieldErrors.licenceDoc && <span className="rfp-field-error">{fieldErrors.licenceDoc}</span>}
+                  <FileInput
+                    label="Blue Book"
+                    file={form.blueBookDoc}
+                    onChange={setFile('blueBookDoc')}
+                  />
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
+                  />
+                </div>
+              )}
             </section>
-            )}
 
             {/* Bank Details */}
             <section className="rfp-section">

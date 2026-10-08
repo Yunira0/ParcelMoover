@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import {
   Package, Truck, RotateCcw,
-  PackageSearch, Clock, RefreshCw,
+  PackageSearch, Clock, RefreshCw, Route,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { formatCurrency } from '../../utils/format';
@@ -15,13 +15,17 @@ interface VendorOverviewCardsProps {
   deliveredAmount: number;
   rtvDelivered: number;
   rtvDeliveredAmount: number;
-  inDelivery: number;
-  inDeliveryAmount: number;
+  inTransit: number;
+  inTransitAmount: number;
+  inProgress: number;
+  inProgressAmount: number;
   pendingPickup: number;
   pendingPickupAmount: number;
   returnProcess: number;
   returnProcessAmount: number;
   loading?: boolean;
+  /** Hidden for vendor staff without FINANCE_ACCESS. */
+  showAmounts?: boolean;
 }
 
 interface MetricCard {
@@ -41,22 +45,36 @@ const VendorOverviewCards: React.FC<VendorOverviewCardsProps> = ({
   deliveredAmount,
   rtvDelivered,
   rtvDeliveredAmount,
-  inDelivery,
-  inDeliveryAmount,
+  inTransit,
+  inTransitAmount,
+  inProgress,
+  inProgressAmount,
   pendingPickup,
   pendingPickupAmount,
   returnProcess,
   returnProcessAmount,
   loading = false,
+  showAmounts = true,
 }) => {
   const fmt = (v: number) => (loading ? '—' : v.toLocaleString());
-  const fmtAmount = (v: number) => (loading ? undefined : formatCurrency(v ?? 0));
+  const fmtAmount = (v: number) => (loading || !showAmounts ? undefined : formatCurrency(v ?? 0));
 
   const cards: MetricCard[] = [
     { icon: Package,       label: 'Total Orders',  value: fmt(totalOrders),  sub: fmtAmount(totalOrderAmount),    accent: 'primary', to: '/dashboard/metric/total-orders' },
     { icon: Truck,         label: 'Delivered',     value: fmt(delivered),    sub: fmtAmount(deliveredAmount),     accent: 'success', to: '/dashboard/metric/delivered' },
-    { icon: RotateCcw,     label: 'RTV Delivered', value: fmt(rtvDelivered), sub: fmtAmount(rtvDeliveredAmount),  accent: 'warning', to: '/dashboard/metric/rtv-delivered' },
-    { icon: PackageSearch, label: 'In Progress',   value: fmt(inDelivery),   sub: fmtAmount(inDeliveryAmount),    accent: 'info',    to: '/dashboard/metric/in-delivery' },
+    // The COD on returned parcels was never collected - labelled so it doesn't
+    // read as money owed to the vendor.
+    { icon: RotateCcw,     label: 'RTV Delivered', value: fmt(rtvDelivered), sub: loading || !showAmounts ? undefined : `${formatCurrency(rtvDeliveredAmount ?? 0)} not collected`,  accent: 'warning', to: '/dashboard/metric/rtv-delivered' },
+    // Transit only: parcels moving between hubs (Transit/oov) or out on a
+    // dispatch (In Transit/dispatched). Deliberately NOT the whole
+    // picked-up-to-doorstep span - that is the in-delivery bucket this card
+    // used to count, which made "In Transit" open onto parcels still sitting
+    // at a hub or already out for delivery.
+    { icon: PackageSearch, label: 'In Transit',    value: fmt(inTransit),    sub: fmtAmount(inTransitAmount),     accent: 'info',    to: '/dashboard/metric/in-transit' },
+    // The wider bucket In Transit deliberately excludes: everything from pickup
+    // to the doorstep, including parcels resting at a hub or already out for
+    // delivery. Opens the in-delivery drill-down, which is labelled In Process.
+    { icon: Route,         label: 'In Process',   value: fmt(inProgress),   sub: fmtAmount(inProgressAmount),    accent: 'progress', to: '/dashboard/metric/in-delivery' },
     { icon: Clock,         label: 'Pending Pickup',value: fmt(pendingPickup),  sub: fmtAmount(pendingPickupAmount),   accent: 'neutral', to: '/dashboard/metric/pending-pickup' },
     { icon: RefreshCw,     label: 'Return Process',value: fmt(returnProcess),sub: fmtAmount(returnProcessAmount), accent: 'danger',  to: '/dashboard/metric/return-process' },
   ];

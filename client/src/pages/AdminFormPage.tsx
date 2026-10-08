@@ -1,10 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useId } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
-import { registerUser, getManagedUser, updateUserProfile, getLocations } from '../services/users.service';
+import DocLink from '../components/DocLink';
+import { registerUser, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
+import { getLocations } from '../queries/lookups';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
+import { convertHeicFileIfNeeded } from '../utils/heicConvert';
+import { adminDocumentSizeError, adminSaveErrorMessage, formatAdminFileSize } from '../utils/adminUpload';
 import { useHubLock } from '../hooks/useHubLock';
 import './AdminFormPage.css';
 
@@ -12,11 +16,13 @@ import './AdminFormPage.css';
 // Fields not listed here share the same name on both sides.
 const API_FIELD_MAP: Record<string, string> = {
   position: 'designation',
-  idDocumentType: 'documentType',
-  idDocumentNumber: 'documentNumber',
+  idDocumentNumber: 'nationalIdNumber',
+  idDocument: 'nationalIdDoc',
 };
 
 interface AdminFormInput {
+  // Server-assigned, display-only - never sent back on submit.
+  employeeId: string;
   // Employee Info
   fullName: string;
   address: string;
@@ -35,9 +41,12 @@ interface AdminFormInput {
   department: string;
   designation: string;
   // Documents
-  documentType: string;
-  documentNumber: string;
-  idDocument: File | null;
+  citizenshipDoc: File | null;
+  citizenshipDocBack: File | null;
+  nationalIdNumber: string;
+  nationalIdDoc: File | null;
+  panDoc: File | null;
+  agreementDoc: File | null;
   // Bank Details
   bankName: string;
   bankAccountNo: string;
@@ -55,13 +64,8 @@ const DEPARTMENT_OPTIONS = [
   { value: 'Sales', label: 'Sales' },
 ];
 
-const DOCUMENT_TYPE_OPTIONS = [
-  { value: 'Citizenship', label: 'Citizenship' },
-  { value: 'National ID', label: 'National ID' },
-  { value: 'PAN', label: 'PAN' },
-];
-
 const emptyForm: AdminFormInput = {
+  employeeId: '',
   fullName: '',
   address: '',
   phone: '',
@@ -77,9 +81,12 @@ const emptyForm: AdminFormInput = {
   locationId: '',
   department: '',
   designation: '',
-  documentType: '',
-  documentNumber: '',
-  idDocument: null,
+  citizenshipDoc: null,
+  citizenshipDocBack: null,
+  nationalIdNumber: '',
+  nationalIdDoc: null,
+  panDoc: null,
+  agreementDoc: null,
   bankName: '',
   bankAccountNo: '',
   bankAccountHolder: '',
@@ -93,35 +100,64 @@ const FileInput: React.FC<{
   required?: boolean;
   file: File | null | undefined;
   onChange: (file: File | null) => void;
+  onBusyChange: (busy: boolean) => void;
+  error?: string;
+  disabled?: boolean;
   accept?: string;
-}> = ({ label, required, file, onChange, accept = 'image/*,.pdf' }) => {
+  hint?: string;
+}> = ({ label, required, file, onChange, onBusyChange, error, disabled, accept = 'image/*,.pdf', hint = 'JPG, PNG or PDF · max 5 MB' }) => {
   const ref = useRef<HTMLInputElement>(null);
+  const id = useId();
+  const description = `${id}-hint${error ? ` ${id}-error` : ''}`;
+  const [converting, setConverting] = useState(false);
+  const handleFile = async (picked: File | null) => {
+    // Let the same file be selected again after rejection or removal.
+    if (ref.current) ref.current.value = '';
+    if (!picked) return;
+    // Reject before HEIC conversion, which can otherwise hide an oversized input.
+    if (adminDocumentSizeError(picked)) { onChange(picked); return; }
+    setConverting(true);
+    onBusyChange(true);
+    try {
+      onChange(await convertHeicFileIfNeeded(picked));
+    } finally {
+      setConverting(false);
+      onBusyChange(false);
+    }
+  };
   return (
     <div className="afp-file-field">
-      <label className="afp-file-label">
+      <label className="afp-file-label" htmlFor={id}>
         {label}{required && <span className="afp-required"> *</span>}
       </label>
       {file ? (
         <div className="afp-file-chip">
           <FileText size={14} />
-          <span>{file.name}</span>
-          <button type="button" onClick={() => onChange(null)} aria-label="Remove file">
+          <span title={file.name}>{file.name}</span>
+          <span className="afp-file-size">{formatAdminFileSize(file.size)}</span>
+          <button type="button" disabled={disabled || converting} onClick={() => onChange(null)} aria-label={`Remove ${label} file`}>
             <X size={14} />
           </button>
         </div>
       ) : (
-        <button type="button" className="afp-file-btn" onClick={() => ref.current?.click()}>
-          <Upload size={15} /> Choose file
+        <button type="button" className="afp-file-btn" disabled={disabled || converting} aria-label={`Choose ${label} file`} aria-invalid={!!error} aria-describedby={description} onClick={() => ref.current?.click()}>
+          <Upload size={15} /> {converting ? 'Converting…' : 'Choose file'}
         </button>
       )}
       <input
         ref={ref}
+        id={id}
         type="file"
+        disabled={disabled || converting}
+        aria-describedby={description}
+        aria-invalid={!!error}
         accept={accept}
         style={{ display: 'none' }}
-        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
-      <span className="afp-file-hint">JPG, PNG or PDF · max 5 MB</span>
+      <span className="afp-file-hint" id={`${id}-hint`}>{hint}</span>
+      {error && <span className="afp-field-error" id={`${id}-error`} role="alert">{error}</span>}
+      {error && !file && <button type="button" className="afp-back" disabled={disabled || converting} onClick={() => onChange(null)}>Clear selection</button>}
     </div>
   );
 };
@@ -149,7 +185,18 @@ const AdminFormPage: React.FC = () => {
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [hubs, setHubs] = useState<Array<{ value: string; label: string }>>([]);
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+  const [busyUploads, setBusyUploads] = useState<Record<string, boolean>>({});
+  const uploadsBusy = Object.values(busyUploads).some(Boolean);
+  const [hubs, setHubs] = useState<Array<{ value: string; label: string; isMasterHub: boolean }>>([]);
+  // Already-uploaded document paths, shown as view links in edit mode.
+  const [existingDocs, setExistingDocs] = useState<{
+    citizenshipDoc: string | null;
+    citizenshipDocBack: string | null;
+    idDocument: string | null;
+    panDoc: string | null;
+    agreementDoc: string | null;
+  }>({ citizenshipDoc: null, citizenshipDocBack: null, idDocument: null, panDoc: null, agreementDoc: null });
   // Accounts created by a plain admin inherit that admin's hub; only a
   // super_admin may choose a different one (server enforces the same rule).
   const { myHubId, hubLocked, isPlainAdmin } = useHubLock();
@@ -169,7 +216,14 @@ const AdminFormPage: React.FC = () => {
           setHubs(
             res.data
               .filter((loc: any) => loc.is_hub)
-              .map((loc: any) => ({ value: loc.id, label: loc.name })),
+              .map((loc: any) => ({
+                value: loc.id,
+                label: loc.name,
+                // Branches are top-level hubs too, so the only thing that
+                // marks the central hub is its IMADOL code - matching the
+                // server's getMasterHubId()/deriveBranchScoped.
+                isMasterHub: String(loc.code ?? '').trim().toUpperCase() === 'IMADOL',
+              })),
           );
         }
       })
@@ -186,6 +240,7 @@ const AdminFormPage: React.FC = () => {
         const s = (v: unknown) => (v == null ? '' : String(v));
         setForm((prev) => ({
           ...prev,
+          employeeId: s(d.employeeId),
           fullName: s(d.fullName),
           email: s(d.email),
           phone: s(d.phone),
@@ -202,12 +257,18 @@ const AdminFormPage: React.FC = () => {
           locationId: s(d.locationId),
           department: s(d.department),
           designation: s(d.position),
-          documentType: s(d.idDocumentType),
-          documentNumber: s(d.idDocumentNumber),
+          nationalIdNumber: s(d.idDocumentNumber),
           bankName: s(d.bankName),
           bankAccountNo: s(d.bankAccountNo),
           bankAccountHolder: s(d.bankAccountHolder),
         }));
+        setExistingDocs({
+          citizenshipDoc: d.citizenshipDoc ?? null,
+          citizenshipDocBack: d.citizenshipDocBack ?? null,
+          idDocument: d.idDocument ?? null,
+          panDoc: d.panDoc ?? null,
+          agreementDoc: d.agreementDoc ?? null,
+        });
       })
       .catch(() => setError('Failed to load admin details.'));
   }, [isEdit, editId]);
@@ -224,7 +285,21 @@ const AdminFormPage: React.FC = () => {
   };
 
   const setFile = (field: keyof AdminFormInput) => (file: File | null) => {
+    const sizeError = file ? adminDocumentSizeError(file) : undefined;
+    if (sizeError) {
+      // Keep any previously accepted document, but block saving until the
+      // rejected replacement is corrected or the slot is explicitly cleared.
+      setUploadErrors((prev) => ({ ...prev, [field]: sizeError }));
+      setFieldErrors((prev) => ({ ...prev, [field]: sizeError }));
+      return;
+    }
     setForm((prev) => ({ ...prev, [field]: file }));
+    setError('');
+    setUploadErrors((prev) => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
     if (fieldErrors[field]) {
       setFieldErrors((prev) => {
         const next = { ...prev };
@@ -234,8 +309,11 @@ const AdminFormPage: React.FC = () => {
     }
   };
 
+  const setUploadBusy = (field: keyof AdminFormInput) => (busy: boolean) =>
+    setBusyUploads((prev) => ({ ...prev, [field]: busy }));
+
   const validate = (): Record<string, string> => {
-    const errors: Record<string, string> = {};
+    const errors: Record<string, string> = { ...uploadErrors };
     if (!form.fullName.trim()) errors.fullName = 'Name is required';
     else if (!isValidName(form.fullName)) errors.fullName = "Enter a valid name (letters, spaces, . ' - only)";
     if (!form.address.trim()) errors.address = 'Address is required';
@@ -249,9 +327,10 @@ const AdminFormPage: React.FC = () => {
     else if (!isValidEmail(form.email)) errors.email = 'Enter a valid email address';
     // Document and password only required when creating a new admin.
     if (!isEdit) {
-      if (!form.documentType.trim()) errors.documentType = 'Document type is required';
-      if (!form.documentNumber.trim()) errors.documentNumber = 'Document number is required';
-      if (!form.idDocument) errors.idDocument = 'Document is required';
+      if (!form.citizenshipDoc) errors.citizenshipDoc ??= 'Citizenship front side is required';
+      if (!form.citizenshipDocBack) errors.citizenshipDocBack ??= 'Citizenship back side is required';
+      if (!form.nationalIdNumber.trim()) errors.nationalIdNumber = 'National ID number is required';
+      if (!form.nationalIdDoc) errors.nationalIdDoc ??= 'National ID document is required';
       if (!form.password.trim()) errors.password = 'Password is required';
       else if (form.password.length < 8) errors.password = 'Min. 8 characters';
       if (!form.confirmPassword.trim()) errors.confirmPassword = 'Please confirm the password';
@@ -262,6 +341,7 @@ const AdminFormPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading || uploadsBusy) return;
     setLoading(true);
     setError('');
 
@@ -269,8 +349,7 @@ const AdminFormPage: React.FC = () => {
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setLoading(false);
-      const firstError = document.querySelector('.afp-field-error');
-      firstError?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => document.querySelector('.afp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
       return;
     }
 
@@ -297,8 +376,14 @@ const AdminFormPage: React.FC = () => {
           bankName: form.bankName,
           bankAccountNo: form.bankAccountNo,
           bankAccountHolder: form.bankAccountHolder,
-          idDocumentType: form.documentType,
-          idDocumentNumber: form.documentNumber,
+          idDocumentType: 'National ID',
+          idDocumentNumber: form.nationalIdNumber,
+          // Only slots with a newly picked file; the rest keep what's stored.
+          ...(form.citizenshipDoc ? { citizenshipDoc: form.citizenshipDoc } : {}),
+          ...(form.citizenshipDocBack ? { citizenshipDocBack: form.citizenshipDocBack } : {}),
+          ...(form.nationalIdDoc ? { idDocument: form.nationalIdDoc } : {}),
+          ...(form.panDoc ? { panDoc: form.panDoc } : {}),
+          ...(form.agreementDoc ? { agreementDoc: form.agreementDoc } : {}),
         });
         navigate('/admin');
         return;
@@ -325,9 +410,13 @@ const AdminFormPage: React.FC = () => {
         bankName: form.bankName,
         bankAccountNo: form.bankAccountNo,
         bankAccountHolder: form.bankAccountHolder,
-        idDocumentType: form.documentType,
-        idDocumentNumber: form.documentNumber,
-        idDocument: form.idDocument,
+        idDocumentType: 'National ID',
+        idDocumentNumber: form.nationalIdNumber,
+        idDocument: form.nationalIdDoc,
+        citizenshipDoc: form.citizenshipDoc,
+        citizenshipDocBack: form.citizenshipDocBack,
+        panDoc: form.panDoc,
+        agreementDoc: form.agreementDoc,
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -341,7 +430,7 @@ const AdminFormPage: React.FC = () => {
           document.querySelector('.afp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 0);
       } else {
-        setError(err.response?.data?.message || 'Failed to create admin. Please try again.');
+        setError(adminSaveErrorMessage(err, isEdit ? 'Failed to update admin. Please try again.' : 'Failed to create admin. Please try again.'));
       }
     } finally {
       setLoading(false);
@@ -383,7 +472,10 @@ const AdminFormPage: React.FC = () => {
       </button>
 
       <div className="afp-header">
-        <h1>{isEdit ? 'Edit Admin' : 'Add New Admin'}</h1>
+        <div className="afp-header-title-row">
+          <h1>{isEdit ? 'Edit Admin' : 'Add New Admin'}</h1>
+          {isEdit && form.employeeId && <span className="afp-employee-id">{form.employeeId}</span>}
+        </div>
         <p>Complete the registration form below to create a new admin account.</p>
       </div>
 
@@ -501,6 +593,13 @@ const AdminFormPage: React.FC = () => {
                   disabled={hubFieldDisabled}
                 />
                 {fieldErrors.locationId && <span className="afp-field-error">{fieldErrors.locationId}</span>}
+                {form.locationId && (
+                  <p className="afp-hint">
+                    {hubs.find((h) => h.value === form.locationId)?.isMasterHub
+                      ? 'Imadol admins get the full head-office view — every branch, not just their own.'
+                      : "This hub gets the limited branch workspace automatically — only this hub's orders, branch settlements, and branch payments."}
+                  </p>
+                )}
                 <FormField
                   label="Department"
                   type="select"
@@ -534,35 +633,87 @@ const AdminFormPage: React.FC = () => {
               />
               <div className="afp-fields">
                 <FormField
-                  label="Document"
-                  type="select"
+                  label="National ID Number"
                   required
-                  value={form.documentType}
-                  onChange={set('documentType')}
-                  placeholder="Select document type"
-                  options={DOCUMENT_TYPE_OPTIONS}
+                  value={form.nationalIdNumber}
+                  onChange={set('nationalIdNumber')}
+                  placeholder="National ID number"
                 />
-                {fieldErrors.documentType && <span className="afp-field-error">{fieldErrors.documentType}</span>}
-                <FormField
-                  label="Document Number"
-                  required
-                  value={form.documentNumber}
-                  onChange={set('documentNumber')}
-                  placeholder="Number of the selected document"
-                />
-                {fieldErrors.documentNumber && <span className="afp-field-error">{fieldErrors.documentNumber}</span>}
-                {!isEdit && (
-                  <>
-                    <FileInput
-                      label="Upload Document"
-                      required
-                      file={form.idDocument}
-                      onChange={setFile('idDocument')}
-                    />
-                    {fieldErrors.idDocument && <span className="afp-field-error">{fieldErrors.idDocument}</span>}
-                  </>
-                )}
+                {fieldErrors.nationalIdNumber && <span className="afp-field-error">{fieldErrors.nationalIdNumber}</span>}
               </div>
+              {isEdit ? (
+                // Every slot stays visible on edit: the file on record (if any)
+                // plus an upload to attach a missing one or replace it.
+                <div className="afp-docs">
+                  <FileInput label="Citizenship (Front)" file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} onBusyChange={setUploadBusy('citizenshipDoc')} error={fieldErrors.citizenshipDoc} disabled={loading} />
+                  {existingDocs.citizenshipDoc && <DocLink path={existingDocs.citizenshipDoc} label="View current citizenship (front)" />}
+                  <FileInput label="Citizenship (Back)" file={form.citizenshipDocBack} onChange={setFile('citizenshipDocBack')} onBusyChange={setUploadBusy('citizenshipDocBack')} error={fieldErrors.citizenshipDocBack} disabled={loading} />
+                  {existingDocs.citizenshipDocBack && <DocLink path={existingDocs.citizenshipDocBack} label="View current citizenship (back)" />}
+                  <FileInput label="National ID" file={form.nationalIdDoc} onChange={setFile('nationalIdDoc')} onBusyChange={setUploadBusy('nationalIdDoc')} error={fieldErrors.nationalIdDoc} disabled={loading} />
+                  {existingDocs.idDocument && <DocLink path={existingDocs.idDocument} label="View current national ID" />}
+                  <FileInput label="PAN" file={form.panDoc} onChange={setFile('panDoc')} onBusyChange={setUploadBusy('panDoc')} error={fieldErrors.panDoc} disabled={loading} />
+                  {existingDocs.panDoc && <DocLink path={existingDocs.panDoc} label="View current PAN" />}
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    onBusyChange={setUploadBusy('agreementDoc')}
+                    error={fieldErrors.agreementDoc}
+                    disabled={loading}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
+                  />
+                  {existingDocs.agreementDoc && <DocLink path={existingDocs.agreementDoc} label="View current agreement" />}
+                </div>
+              ) : (
+                <div className="afp-docs">
+                  <FileInput
+                    label="Citizenship (Front)"
+                    required
+                    file={form.citizenshipDoc}
+                    onChange={setFile('citizenshipDoc')}
+                    onBusyChange={setUploadBusy('citizenshipDoc')}
+                    error={fieldErrors.citizenshipDoc}
+                    disabled={loading}
+                  />
+                  <FileInput
+                    label="Citizenship (Back)"
+                    required
+                    file={form.citizenshipDocBack}
+                    onChange={setFile('citizenshipDocBack')}
+                    onBusyChange={setUploadBusy('citizenshipDocBack')}
+                    error={fieldErrors.citizenshipDocBack}
+                    disabled={loading}
+                  />
+                  <FileInput
+                    label="National ID"
+                    required
+                    file={form.nationalIdDoc}
+                    onChange={setFile('nationalIdDoc')}
+                    onBusyChange={setUploadBusy('nationalIdDoc')}
+                    error={fieldErrors.nationalIdDoc}
+                    disabled={loading}
+                  />
+                  <FileInput
+                    label="PAN"
+                    file={form.panDoc}
+                    onChange={setFile('panDoc')}
+                    onBusyChange={setUploadBusy('panDoc')}
+                    error={fieldErrors.panDoc}
+                    disabled={loading}
+                  />
+                  <FileInput
+                    label="Agreement"
+                    file={form.agreementDoc}
+                    onChange={setFile('agreementDoc')}
+                    onBusyChange={setUploadBusy('agreementDoc')}
+                    error={fieldErrors.agreementDoc}
+                    disabled={loading}
+                    accept={AGREEMENT_FILE_ACCEPT}
+                    hint="PDF or DOCX · max 5 MB"
+                  />
+                </div>
+              )}
             </section>
 
             {/* Bank Details */}
@@ -649,8 +800,8 @@ const AdminFormPage: React.FC = () => {
           <Button type="button" variant="secondary" onClick={() => navigate('/admin')} disabled={loading}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Admin'}
+          <Button type="submit" variant="primary" disabled={loading || uploadsBusy}>
+            {loading ? 'Saving...' : uploadsBusy ? 'Preparing document...' : isEdit ? 'Save Changes' : 'Create Admin'}
           </Button>
         </div>
       </form>

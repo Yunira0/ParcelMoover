@@ -1,0 +1,696 @@
+import { Prisma } from "../../generated/prisma/client";
+import prisma from "../../lib/prisma";
+import redis from "../../lib/redis";
+import { NEPAL_UTC_OFFSET_MS, formatNepalDate as formatDate } from "../../utils/nepalTime";
+import { getSlaSettings, SLA_GROUPS, BRANCH_COD_SLA_KEY } from "../sla.service";
+import { unclosedRemarksWhere } from "../remark.service";
+import {
+  DASHBOARD_SUMMARY_TTL_SECONDS,
+  dashboardSummaryCacheKey,
+  salesDashboardSummaryCacheKey,
+  dedupeInFlight,
+} from "./cache";
+import {
+  getActorScope,
+  branchHandlesFilter,
+  branchHandlesSql,
+  riderHandledFilter,
+  riderHandledSql,
+} from "./scope";
+import {
+  PICKUP_PENDING_STATUSES,
+  IN_TRANSIT_STATUSES,
+  RETURN_PENDING_STATUSES,
+  DELIVERY_PENDING_STATUSES,
+  AWAITING_PICKUP_STATUSES,
+  IN_DELIVERY_STATUSES,
+} from "./status-shared";
+import { branchCodFilter } from "./cod-detail";
+import { buildCodSummaryQuery, type CodSummaryRow } from "./dashboard-cod";
+import type { OrderActor } from "./types";
+import { buildReturnedTodayQuery, buildReturnedTrendQuery } from "./dashboard-returns";
+import { buildDashboardTrendQuery } from "./dashboard-trend";
+import { branchCodParcelSql } from "./branchCod";
+
+const moneyToNumber = (value?: Prisma.Decimal | null) => value ? Number(value) : 0;
+
+export async function getDashboardSummary(actor: OrderActor, trendDays: 7 | 30 = 7) {
+  const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
+  // A branch-scoped admin never uses the shared cache (there is no per-branch
+  // key for it, same reasoning as the sales vendorIds case below) - it would
+  // otherwise serve one branch-scoped admin's figures to another, or the
+  // unscoped figures to either.
+  const cacheKey =
+    branchLocationIds !== undefined
+      ? null
+      : vendorIds === undefined
+      ? dashboardSummaryCacheKey(vendorId, riderId, trendDays)
+      : vendorIds.length > 0
+      ? salesDashboardSummaryCacheKey(vendorIds, trendDays)
+      : null;
+
+  if (cacheKey) {
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (error) {
+      console.error("[Redis] Failed to read dashboard summary cache:", error);
+    }
+  }
+
+  return dedupeInFlight(cacheKey, () =>
+    computeDashboardSummary(trendDays, vendorId, vendorIds, riderId, branchLocationIds, cacheKey),
+  );
+}
+
+async function computeDashboardSummary(
+  trendDays: 7 | 30,
+  vendorId: string | undefined,
+  vendorIds: string[] | undefined,
+  riderId: string | undefined,
+  branchLocationIds: string[] | undefined,
+  cacheKey: string | null,
+) {
+  // Start of today in Nepal local time. setHours() would truncate to the *host*
+  // timezone, and the production container runs UTC - so every day bucket below
+  // (the trend graph included) started 5h45m late, filing anything that happened
+  // between midnight and 05:45 NPT under the previous day.
+  const todayStart = new Date(
+    Date.parse(`${formatDate(new Date())}T00:00:00Z`) - NEPAL_UTC_OFFSET_MS,
+  );
+
+  // A branch-scoped admin (see getAdminBranchScope): same OR-of-three-columns
+  // every other branch check in this file uses, reused below wherever a query
+  // needs it expressed differently (a relation filter, a raw-SQL join).
+  const branchOr: Prisma.parcelsWhereInput | undefined = branchLocationIds
+    ? branchHandlesFilter(branchLocationIds)
+    : undefined;
+
+  const parcelWhere: Prisma.parcelsWhereInput = {
+    deleted_at: null,
+    ...(vendorId ? { vendor_id: vendorId } : {}),
+    ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
+    ...(riderId ? riderHandledFilter(riderId) : {}),
+    ...(branchOr ?? {}),
+  };
+
+  const codWhere: Prisma.cod_collectionsWhereInput = {
+    ...(vendorId ? { vendor_id: vendorId } : {}),
+    ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
+    ...(riderId ? { rider_id: riderId } : {}),
+    // cod_collections carries no location itself - reach through to its parcel.
+    ...(branchOr ? { parcels: branchOr } : {}),
+  };
+
+  // The COD Settlement card counts every delivered / partially-delivered
+  // order, all-time - not a rolling window, since "pending" is money still
+  // owed and must never silently drop off just because it's old. To keep the
+  // math honest across partial deliveries - where the declared cod_amount
+  // overstates what was actually collected - every figure is anchored on
+  // collected_amount (the cash actually in hand), and the settled legs are
+  // clamped with LEAST() so a settlement can never exceed what was collected.
+  // Pending is then collected - settled, so Settled + Pending always equals
+  // Total exactly.
+  // The query this feeds always joins `p` (parcels) alongside `c`, so the
+  // branch check reads off that join rather than a subquery.
+  const codScopeSql: Prisma.Sql = vendorId
+    ? Prisma.sql`AND c.vendor_id = ${vendorId}::uuid`
+    : vendorIds
+    ? Prisma.sql`AND c.vendor_id = ANY(${vendorIds}::uuid[])`
+    : riderId
+    ? Prisma.sql`AND c.rider_id = ${riderId}::uuid`
+    : branchLocationIds
+    ? branchHandlesSql(branchLocationIds, "p.")
+    : Prisma.empty;
+
+  const settlementWhere: Prisma.settlementsWhereInput = {
+    status: "settled",
+    ...(vendorId ? { vendor_id: vendorId } : {}),
+    ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
+    ...(riderId ? { rider_id: riderId } : {}),
+    // settlements carries no location either - reach through settlement_items
+    // → cod_collections → parcels. "some" is correct here (not "every"): a
+    // settlement scoped to another branch that happens to also bundle one of
+    // this branch's parcels should still surface as the branch's own pending
+    // settlement, the same way listOrders would show that one parcel.
+    ...(branchOr ? { settlement_items: { some: { cod_collections: { parcels: branchOr } } } } : {}),
+  };
+
+  const TREND_DAYS = trendDays;
+  // Rolling window ending today. Anchoring the 7-day view to the calendar week
+  // (Sun -> Sat) left every day after today blank, e.g. only Sunday on a Sunday.
+  const trendDayRanges = Array.from({ length: TREND_DAYS }, (_, index) => {
+    const dayDelta = -(TREND_DAYS - 1 - index);
+    const start = new Date(todayStart);
+    start.setDate(start.getDate() + dayDelta);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  });
+
+  // "Delivered" on the rider dashboard is a claim about who handed the parcel
+  // over, not merely who touched it - so for a rider it counts only their own
+  // deliveries. Without this a 3PL delivery (delivery_rider_id NULL) was filed
+  // under whichever rider had collected the parcel days earlier, and riders
+  // reported NCM "delivering in their name". Empty for vendor/staff/sales
+  // scopes, which are not making that claim.
+  const riderDeliveredSql: Prisma.Sql = riderId
+    ? Prisma.sql`AND delivery_rider_id = ${riderId}::uuid`
+    : Prisma.empty;
+
+  // Every card on the rider dashboard deep-links to the list of orders behind
+  // it, so a card whose number is computed on different terms than its own
+  // drill-down is simply wrong - a rider taps "Total Picked Up: 340" and lands
+  // on three rows. The list is fixed at a status set (the rider APK is
+  // sideloaded and can't be updated), so the number is what has to move.
+  //
+  // Picked Up -> ?view=picked_up, which lists status = picked_up. For that
+  // status custody and handled scope agree, so no extra rider predicate is
+  // needed. The card stops being a lifetime tally and becomes "collected, not
+  // yet handed over at the hub" - which is the honest reading of a number you
+  // can tap into, and matches the Pickup lane riders already work from.
+  const pickedUpFilterSql: Prisma.Sql = riderId
+    ? Prisma.sql`status::text = 'picked_up'`
+    : Prisma.sql`status::text NOT IN ('pickup_ordered','rider_assigned','failed_pickup','cancelled')`;
+
+  // Total RTV -> ?view=return, which lists sent_to_vendor/returned_to_vendor.
+  // order_type = 'return' is a different question entirely (it counts return
+  // orders at any status, including ones this rider never carried back), so
+  // for a rider it's replaced by the statuses the list actually shows, scoped
+  // the same way custody scopes them: the rider who carried the return.
+  const returnsFilterSql: Prisma.Sql = riderId
+    ? Prisma.sql`status::text = ANY(ARRAY['sent_to_vendor','returned_to_vendor']) AND delivery_rider_id = ${riderId}::uuid`
+    : Prisma.sql`order_type::text = 'return'`;
+
+  // Same scope (vendor/rider/none) as parcelWhere above, expressed as raw SQL so
+  // it can be reused across both consolidated queries below. Casting the enum
+  // columns to text and comparing against plain string arrays sidesteps
+  // Postgres enum-array parameter binding, which $queryRaw doesn't infer well.
+  const parcelScopeSql: Prisma.Sql = vendorId
+    ? Prisma.sql`AND vendor_id = ${vendorId}::uuid`
+    : vendorIds
+    ? Prisma.sql`AND vendor_id = ANY(${vendorIds}::uuid[])`
+    : riderId
+    ? riderHandledSql(riderId)
+    : branchLocationIds
+    ? branchHandlesSql(branchLocationIds)
+    : Prisma.empty;
+
+  // The 11 overview/today metrics below all count the same `parcels` table
+  // under the same scope, differing only in which status/date predicate
+  // applies - conditional aggregation collapses them into one round trip
+  // instead of 11. (Previously the single biggest contributor to this
+  // endpoint's ~17-query fan-out under load - see server/loadtest/README.md.)
+  const [overviewRow] = await prisma.$queryRaw<
+    Array<{
+      total_orders: bigint;
+      pending_pickups: bigint;
+      pending_returns: bigint;
+      in_transit: bigint;
+      pending_deliveries: bigint;
+      awaiting_pickup: bigint;
+      in_delivery: bigint;
+      total_delivered: bigint;
+      total_picked_up: bigint;
+      total_returns: bigint;
+      total_returned_to_vendor: bigint;
+      todays_orders: bigint;
+      todays_delivered: bigint;
+      todays_returns: bigint;
+      total_order_amount: string;
+      pending_pickups_amount: string;
+      pending_returns_amount: string;
+      in_transit_amount: string;
+      pending_deliveries_amount: string;
+      awaiting_pickup_amount: string;
+      in_delivery_amount: string;
+      todays_delivered_amount: string;
+      total_delivered_amount: string;
+      total_returns_amount: string;
+      total_returned_to_vendor_amount: string;
+    }>
+  >(Prisma.sql`
+    SELECT
+      COUNT(*) AS total_orders,
+      COUNT(*) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})) AS pending_pickups,
+      COUNT(*) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})) AS pending_returns,
+      COUNT(*) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})) AS in_transit,
+      COUNT(*) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})) AS pending_deliveries,
+      COUNT(*) FILTER (WHERE status::text = ANY(${AWAITING_PICKUP_STATUSES})) AS awaiting_pickup,
+      COUNT(*) FILTER (WHERE status::text = ANY(${IN_DELIVERY_STATUSES})) AS in_delivery,
+      COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) ${riderDeliveredSql}) AS total_delivered,
+      COUNT(*) FILTER (WHERE ${pickedUpFilterSql}) AS total_picked_up,
+      COUNT(*) FILTER (WHERE ${returnsFilterSql}) AS total_returns,
+      COUNT(*) FILTER (WHERE status::text = 'returned_to_vendor') AS total_returned_to_vendor,
+      COUNT(*) FILTER (WHERE created_at >= ${todayStart}) AS todays_orders,
+      COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql}) AS todays_delivered,
+      COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns,
+      COALESCE(SUM(cod_amount), 0) AS total_order_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${RETURN_PENDING_STATUSES})), 0) AS pending_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_TRANSIT_STATUSES})), 0) AS in_transit_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${DELIVERY_PENDING_STATUSES})), 0) AS pending_deliveries_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${AWAITING_PICKUP_STATUSES})), 0) AS awaiting_pickup_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${IN_DELIVERY_STATUSES})), 0) AS in_delivery_amount,
+      COALESCE(SUM(COALESCE((SELECT cc.collected_amount FROM cod_collections cc WHERE cc.parcel_id = parcels.id), cod_amount)) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql}), 0) AS todays_delivered_amount,
+      -- Delivered amounts are the cash collected, not the declared COD, which
+      -- overstates partial deliveries (and matches the COD card below).
+      COALESCE(SUM(COALESCE((SELECT cc.collected_amount FROM cod_collections cc WHERE cc.parcel_id = parcels.id), cod_amount)) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) ${riderDeliveredSql}), 0) AS total_delivered_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE ${returnsFilterSql}), 0) AS total_returns_amount,
+      COALESCE(SUM(cod_amount) FILTER (WHERE status::text = 'returned_to_vendor'), 0) AS total_returned_to_vendor_amount
+    FROM parcels
+    WHERE deleted_at IS NULL ${parcelScopeSql}
+  `);
+
+  const totalOrders = Number(overviewRow!.total_orders);
+  const pendingPickups = Number(overviewRow!.pending_pickups);
+  const pendingReturns = Number(overviewRow!.pending_returns);
+  const inTransit = Number(overviewRow!.in_transit);
+  const pendingDeliveries = Number(overviewRow!.pending_deliveries);
+  const awaitingPickup = Number(overviewRow!.awaiting_pickup);
+  const inDelivery = Number(overviewRow!.in_delivery);
+  const totalDelivered = Number(overviewRow!.total_delivered);
+  const totalPickedUp = Number(overviewRow!.total_picked_up);
+  const totalReturns = Number(overviewRow!.total_returns);
+  const totalReturnedToVendor = Number(overviewRow!.total_returned_to_vendor);
+  const todaysOrders = Number(overviewRow!.todays_orders);
+  const todaysDelivered = Number(overviewRow!.todays_delivered);
+  const todaysReturns = Number(overviewRow!.todays_returns);
+  const totalOrderAmount = Number(overviewRow!.total_order_amount);
+  const pendingPickupsAmount = Number(overviewRow!.pending_pickups_amount);
+  const pendingReturnsAmount = Number(overviewRow!.pending_returns_amount);
+  const inTransitAmount = Number(overviewRow!.in_transit_amount);
+  const pendingDeliveriesAmount = Number(overviewRow!.pending_deliveries_amount);
+  const awaitingPickupAmount = Number(overviewRow!.awaiting_pickup_amount);
+  const inDeliveryAmount = Number(overviewRow!.in_delivery_amount);
+  const todaysDeliveredAmount = Number(overviewRow!.todays_delivered_amount);
+  const totalDeliveredAmount = Number(overviewRow!.total_delivered_amount);
+  const totalReturnsAmount = Number(overviewRow!.total_returns_amount);
+  const totalReturnedToVendorAmount = Number(overviewRow!.total_returned_to_vendor_amount);
+
+  // Same consolidation for the weekly/monthly trend: previously 4 queries per
+  // day (up to 120 for the 30-day view), now one query with 3 conditional
+  // aggregates per day. Column aliases are loop-index-derived, never
+  // user-supplied, so Prisma.raw here isn't an injection risk.
+  //
+  // Every series here is an event-of-the-day count keyed off the timestamp of
+  // the milestone itself - creation for Total, picked_up_at for Picked Up,
+  // delivered_at for Delivered. "Returned" follows the same rule but its event
+  // lives in parcel_status_history (parcels has no returned_at column), so it's
+  // counted in a separate query below - see trendReturnedRow. Counting
+  // order_type = 'return' orders by created_at here instead measured a
+  // different thing entirely (return orders raised, not parcels sent back) and
+  // never matched the "Returned" figure on Today's activity.
+  const [trendRow] = await prisma.$queryRaw<Array<Record<string, bigint>>>(
+    buildDashboardTrendQuery(trendDayRanges, parcelScopeSql),
+  );
+  const trendCounts = trendDayRanges.map((_, i) => [
+    Number(trendRow![`d${i}_total`]),
+    Number(trendRow![`d${i}_picked_up`]),
+    Number(trendRow![`d${i}_delivered`]),
+  ]);
+
+  // Same scope as parcelScopeSql but qualified for the `p` alias, so it can be
+  // reused in joins against parcel_status_history below.
+  const pAliasScopeSql: Prisma.Sql = vendorId
+    ? Prisma.sql`AND p.vendor_id = ${vendorId}::uuid`
+    : vendorIds
+    ? Prisma.sql`AND p.vendor_id = ANY(${vendorIds}::uuid[])`
+    : riderId
+    ? riderHandledSql(riderId, "p.")
+    : branchLocationIds
+    ? branchHandlesSql(branchLocationIds, "p.")
+    : Prisma.empty;
+
+  // Per-day "Returned" for the trend graph: parcels whose status *became*
+  // returned_to_vendor within each day's window, keyed off the status-history
+  // timestamp - the same event and scope as returnedTodayRows below, just
+  // bucketed across the whole range so the graph's last point equals the
+  // "Returned" figure on Today's activity. Aliases are loop-index-derived.
+  const branchFilter = await branchCodFilter();
+  const [todaysRemarks, unclosedComments, codRows, pendingCodCount, lastSettlement, returnedTodayRows, trendReturnedRows] = await Promise.all([
+    prisma.parcel_remarks.count({
+      where: { created_at: { gte: todayStart }, parcels: parcelWhere },
+    }),
+    // Same set as the nav's "Unclosed cmt" badge - this row links to the vendor
+    // queue, so it counts what that page lists. Rider-raised remarks are the
+    // separate "Rider cmt" queue.
+    prisma.parcel_remarks.count({
+      where: { ...unclosedRemarksWhere("vendor"), parcels: parcelWhere },
+    }),
+    prisma.$queryRaw<CodSummaryRow[]>(buildCodSummaryQuery(codScopeSql, branchFilter, Boolean(riderId))),
+    // Counted over the same parcels as the amounts above (collected, at a
+    // delivered / returned status), so "N parcels with COD" describes the
+    // figure beside it - not every order still awaiting payment.
+    prisma.cod_collections.count({
+      where: {
+        ...(riderId
+          ? { ...codWhere, rider_payment_status: "pending" as const, collected_amount: { gt: 0 } }
+          : { ...codWhere, payment_status: "pending" as const }),
+        collected_at: { not: null },
+        parcels: {
+          ...(branchOr ?? {}),
+          deleted_at: null,
+          status: { in: ["delivered", "partially_delivered", "returned_to_vendor"] },
+        },
+      },
+    }),
+    // The last money actually paid out: an instalment, so a part payment counts
+    // and the date is when it was paid rather than when the statement was cut.
+    // payable > 0 keeps out statements where the vendor paid us.
+    prisma.settlement_payments.findFirst({
+      where: {
+        amount: { gt: 0 },
+        settlements: { ...settlementWhere, status: { in: ["settled", "partially_paid"] }, payable_amount: { gt: 0 } },
+      },
+      orderBy: { paid_at: "desc" },
+      select: { amount: true, paid_at: true },
+    }),
+    // Parcels whose status *became* returned_to_vendor today (by status-history
+    // timestamp, since parcels has no returned_at column). DISTINCT guards
+    // against a parcel bouncing into the status more than once in a day.
+    prisma.$queryRaw<Array<{ count: bigint }>>(buildReturnedTodayQuery(todayStart, pAliasScopeSql)),
+    prisma.$queryRaw<Array<Record<string, bigint>>>(buildReturnedTrendQuery(trendDayRanges, pAliasScopeSql)),
+  ]);
+  const todaysReturnedToVendor = Number(returnedTodayRows[0]?.count ?? 0);
+  const trendReturnedRow = trendReturnedRows[0];
+
+  // All figures are on the collected-cash basis (see codScopeSql above). Total
+  // is the cash actually collected; settled is what has been remitted onward
+  // (to the vendor for vendor/staff scope, to the office for rider scope),
+  // clamped in SQL so it can't exceed the collection; pending is the remainder.
+  const codRow = codRows[0];
+  const totalCod = Number(codRow?.total_collected ?? 0);
+  const settledCod = riderId
+    ? Number(codRow?.settled_to_rider ?? 0)
+    : Number(codRow?.settled_to_vendor ?? 0);
+  const pendingCod = Math.max(totalCod - settledCod, 0);
+
+  // Cash currently outstanding, split by who's holding it - shown on the
+  // dashboard card under one "COD still to collect" heading, broken
+  // down by who holds it beneath it. NCM's figure is a proxy (no NCM
+  // remittance-to-office column exists): it clears the moment the vendor leg
+  // settles, same as the rest of "pending" does. The parent total is the sum
+  // of the identified carriers, not an independent all-rider_id-null figure -
+  // that keeps every level using the same accurate per-carrier formula (a
+  // future 3PL just adds another FILTER clause and another addend here).
+  const codFromPmRider = Number(codRow?.cod_from_pm_rider ?? 0);
+  const codFromNcm = Number(codRow?.cod_from_ncm ?? 0);
+  const codFromUpaya = Number(codRow?.cod_from_upaya ?? 0);
+  // A rider's card is about the cash in their own hands, not their branch's.
+  const codFromBranches = riderId ? 0 : Number(codRow?.cod_from_branches ?? 0);
+  const codFromRiders = codFromPmRider + codFromNcm + codFromUpaya + codFromBranches;
+
+  // Delivery charge on orders whose COD hasn't been settled to the vendor
+  // yet - this is deducted from collected_amount at settlement time (see
+  // finance.service.ts's payableAmount calc), so it's still "owed" until then.
+  const pendingDeliveryCharge = Number(codRow?.pending_delivery_charge ?? 0);
+  // Total delivery charges (the office's cut) on the same delivered orders the
+  // COD figures above are drawn from - shown as its own line on the COD card.
+  const deliveryCharge = Number(codRow?.total_delivery_charge ?? 0);
+
+  const weeklyTrend = trendDayRanges.map(({ start }, index) => {
+    const [dayTotalOrders, dayPickedUp, dayDelivered] = trendCounts[index] ?? [0, 0, 0];
+    const dayReturned = Number(trendReturnedRow?.[`d${index}_returned`] ?? 0);
+    const nepalDate = formatDate(start);
+    return {
+      // Weekday of the Nepal calendar date, not the raw instant - the host
+      // timezone must not shift a Sunday bucket onto "Sat".
+      day: new Date(`${nepalDate}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+      date: nepalDate,
+      totalOrders: dayTotalOrders,
+      pickedUp: dayPickedUp,
+      delivered: dayDelivered,
+      returned: dayReturned,
+    };
+  });
+
+  // ── SLA breaches ────────────────────────────────────────────────────────────
+  // An order breaches its SLA when the time since it *entered its current status*
+  // (latest parcel_status_history row, falling back to created_at) exceeds the
+  // hours configured for that status. Counts are scoped like everything else.
+  const slaSettings = await getSlaSettings();
+  const statusThresholds: Array<[string, number]> = [];
+  for (const status of [
+    ...SLA_GROUPS.pickup,
+    ...SLA_GROUPS.delivery,
+    ...SLA_GROUPS.transit,
+    ...SLA_GROUPS.return,
+  ]) {
+    const hours = slaSettings[status];
+    if (typeof hours === "number") statusThresholds.push([status, hours]);
+  }
+
+  const slaCounts: Record<string, number> = {};
+  // Delivery breaches whose destination sits inside the valley, per status.
+  // Only the delivery group is split this way - a pickup is worked by the
+  // origin branch's own riders, so splitting it by valley tells the desk
+  // nothing it doesn't already know from the row it is looking at.
+  // "Inside" is valley = 'inside' on the destination, which covers both sides
+  // of the ring road. The outside-valley figure is the status total minus this,
+  // so a destination outside the valley - or not classified at all - lands in
+  // the outside bucket, the same way pricing treats anything that is not
+  // explicitly inside (resolveDestinationPricing).
+  const slaInsideValleyCounts: Record<string, number> = {};
+  const deliverySlaStatuses: readonly string[] = SLA_GROUPS.delivery;
+  if (statusThresholds.length) {
+    const breachedSql = (status: string, hours: number) =>
+      Prisma.sql`status = ${status} AND status_since < now() - (${hours} * interval '1 hour')`;
+    const breachColumns = statusThresholds.flatMap(([status, hours]) => {
+      const columns = [
+        Prisma.sql`COUNT(*) FILTER (WHERE ${breachedSql(status, hours)}) AS ${Prisma.raw(`c_${status}`)}`,
+      ];
+      if (deliverySlaStatuses.includes(status)) {
+        columns.push(Prisma.sql`COUNT(*) FILTER (
+          WHERE ${breachedSql(status, hours)} AND destination_valley = 'inside'
+        ) AS ${Prisma.raw(`i_${status}`)}`);
+      }
+      return columns;
+    });
+    // A location's valley falls back to its parent's, the same way pricing
+    // resolves it (resolveDestinationPricing).
+    const [row] = await prisma.$queryRaw<Array<Record<string, bigint>>>(Prisma.sql`
+      SELECT ${Prisma.join(breachColumns)}
+      FROM (
+        SELECT
+          status::text AS status,
+          COALESCE(
+            (SELECT MAX(h.created_at) FROM parcel_status_history h WHERE h.parcel_id = parcels.id),
+            created_at
+          ) AS status_since,
+          (
+            SELECT COALESCE(l.valley, pl.valley)
+            FROM locations l LEFT JOIN locations pl ON pl.id = l.parent_id
+            WHERE l.id = parcels.destination_location_id
+          ) AS destination_valley
+        FROM parcels
+        WHERE deleted_at IS NULL
+          AND status::text = ANY(${statusThresholds.map(([status]) => status)})
+          ${parcelScopeSql}
+      ) sla_parcels
+    `);
+    for (const [status] of statusThresholds) {
+      slaCounts[status] = Number(row?.[`c_${status}`] ?? 0);
+      if (row?.[`i_${status}`] !== undefined) slaInsideValleyCounts[status] = Number(row[`i_${status}`]);
+    }
+  }
+
+  const sumStatuses = (statuses: readonly string[]) =>
+    statuses.reduce((n, s) => n + (slaCounts[s] ?? 0), 0);
+
+  // The statuses behind a group's total, so "Pickup SLA breached: 3" can say
+  // which stages those three are stuck in. Only the ones actually breaching -
+  // a list padded with zeroes tells the reader nothing and crowds the row.
+  const breachesByStatus = (statuses: readonly string[]) =>
+    statuses
+      .map((status) => ({ status, count: slaCounts[status] ?? 0 }))
+      .filter((entry) => entry.count > 0);
+
+  // The delivery group split by the destination's valley: inside (both sides of
+  // the ring road) and outside (everything else) - each side with its own total
+  // and per-status breakdown.
+  const breachesByValley = (statuses: readonly string[]) => {
+    const side = (countFor: (status: string) => number) => {
+      const breaches = statuses
+        .map((status) => ({ status, count: countFor(status) }))
+        .filter((entry) => entry.count > 0);
+      return { count: breaches.reduce((n, entry) => n + entry.count, 0), breaches };
+    };
+    const inside = (status: string) => slaInsideValleyCounts[status] ?? 0;
+    return {
+      insideValley: side(inside),
+      outsideValley: side((status) => (slaCounts[status] ?? 0) - inside(status)),
+    };
+  };
+
+  // Representative SLA threshold to display for a group row: the tightest
+  // (smallest) configured hours among its statuses, or null if none set.
+  const groupHours = (statuses: readonly string[]): number | null => {
+    const vals = statuses
+      .map((s) => slaSettings[s])
+      .filter((h): h is number => typeof h === "number");
+    return vals.length ? Math.min(...vals) : null;
+  };
+
+  // Branch COD submission: parcels a branch delivered whose COD is still not on
+  // a branch statement past the SLA - the same rule and net-of-commission amount
+  // branch-billing's overdue figure uses (computeBranchBalance). Only real
+  // branch hubs count; Imadol is the master branch its COD is owed to. A
+  // branch-scoped admin sees their own branch; head office sees every branch.
+  let overdueBranchCod = 0;
+  let overdueBranchCodAmount = 0;
+  const branchCodHours = slaSettings[BRANCH_COD_SLA_KEY];
+  if (typeof branchCodHours === "number") {
+    const ownBranchSql = branchLocationIds === undefined
+      ? Prisma.empty
+      : Prisma.sql`AND (b.id = ANY(${branchLocationIds}::uuid[]) OR EXISTS (
+          SELECT 1 FROM locations m
+          WHERE m.id = ANY(${branchLocationIds}::uuid[]) AND upper(m.code) = 'IMADOL' AND m.parent_id IS NULL
+        ))`;
+    const rows = await prisma.$queryRaw<Array<{ n: bigint; amount: string }>>(Prisma.sql`
+      WITH branches AS (
+        SELECT b.id, b.commission_per_parcel FROM locations b
+        WHERE b.parent_id IS NULL AND b.is_hub AND upper(COALESCE(b.code, '')) <> 'IMADOL'
+          ${ownBranchSql}
+      ), branch_locs AS (
+        -- Mirrors computeBranchBalance's branch_locs, for every branch at once.
+        SELECT b.id AS branch_id, b.id AS loc_id FROM branches b
+        UNION SELECT b.id, l.id FROM branches b JOIN locations l ON l.parent_id = b.id AND l.is_active
+        UNION SELECT b.id, vc.covered_branch_id FROM branches b JOIN branch_virtual_coverage vc ON vc.branch_id = b.id
+        UNION SELECT b.id, l.id FROM branches b
+          JOIN branch_virtual_coverage vc ON vc.branch_id = b.id
+          JOIN locations l ON l.parent_id = vc.covered_branch_id AND l.is_active
+      ), overdue AS (
+        -- DISTINCT ON: a parcel covered by two branches is still one parcel.
+        SELECT DISTINCT ON (p.id)
+          GREATEST(0::numeric, COALESCE(cc.collected_amount, p.cod_amount) - COALESCE(b.commission_per_parcel, 0)) AS net_cod
+        FROM parcels p
+        JOIN branch_locs bl ON bl.loc_id = p.destination_location_id
+        JOIN branches b ON b.id = bl.branch_id
+        LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
+        WHERE p.deleted_at IS NULL
+          AND p.status::text IN ('delivered', 'partially_delivered')
+          AND p.delivered_at < now() - make_interval(hours => ${branchCodHours})
+          AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
+          ${branchCodParcelSql("p.")}
+        ORDER BY p.id, bl.branch_id
+      )
+      SELECT COUNT(*)::bigint AS n, COALESCE(SUM(net_cod), 0) AS amount FROM overdue
+    `);
+    overdueBranchCod = Number(rows[0]?.n ?? 0);
+    overdueBranchCodAmount = Math.round(Number(rows[0]?.amount ?? 0) * 100) / 100;
+  }
+
+  let overdueRemarks = 0;
+  const remarksHours = slaSettings["remarks"];
+  if (typeof remarksHours === "number") {
+    const remarksCutoff = new Date(Date.now() - remarksHours * 3600 * 1000);
+    // Unclosed comments past their SLA - the same set the badge counts, aged.
+    // Counting raw parcel_remarks rows instead swept in every reply as its own
+    // breach, plus staff notes and the sync jobs' own bookkeeping rows, none of
+    // which anyone is waiting to reply to and none of which are ever closed.
+    // Both queues here, not just the vendor one: this row links to /remarks,
+    // which lists them together.
+    overdueRemarks = await prisma.parcel_remarks.count({
+      where: {
+        ...unclosedRemarksWhere(),
+        // The clock runs from the last message in the thread, not from the one
+        // that opened it: the row means "nobody has answered this in N hours",
+        // so a reply is activity and restarts it. Root older than the cutoff
+        // AND no reply since is the same test as "newest message is older than
+        // the cutoff", without a correlated subquery.
+        created_at: { lt: remarksCutoff },
+        replies: { none: { created_at: { gte: remarksCutoff } } },
+        parcels: parcelWhere,
+      },
+    });
+  }
+
+  const summary = {
+    overview: {
+      totalOrders,
+      totalOrderAmount,
+      pendingPickups,
+      pendingPickupsAmount,
+      pendingReturns,
+      pendingReturnsAmount,
+      inTransit,
+      inTransitAmount,
+      pendingDeliveries,
+      pendingDeliveriesAmount,
+      awaitingPickup,
+      awaitingPickupAmount,
+      inDelivery,
+      inDeliveryAmount,
+      totalDelivered,
+      totalDeliveredAmount,
+      totalPickedUp,
+      totalReturns,
+      totalReturnsAmount,
+      totalReturnedToVendor,
+      totalReturnedToVendorAmount,
+    },
+    today: {
+      totalOrders: todaysOrders,
+      delivered: todaysDelivered,
+      deliveredAmount: todaysDeliveredAmount,
+      inTransit,
+      returns: todaysReturns,
+      returnedToVendor: todaysReturnedToVendor,
+      remarks: todaysRemarks,
+      unclosedComments,
+    },
+    codSettlement: {
+      totalCod,
+      settledCod,
+      pendingCod,
+      codFromRiders,
+      codFromPmRider,
+      codFromNcm,
+      codFromUpaya,
+      codFromBranches,
+      deliveryCharge,
+      pendingCodCount,
+      pendingDeliveryCharge,
+      progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,
+      scopedToRider: Boolean(riderId),
+      // The last payment made (net of delivery charges, like every payout).
+      lastAmount: lastSettlement ? moneyToNumber(lastSettlement.amount) : 0,
+      lastSettledAt: lastSettlement ? lastSettlement.paid_at.toISOString() : null,
+    },
+    sla: {
+      overduePickup: sumStatuses(SLA_GROUPS.pickup),
+      overdueDelivery: sumStatuses(SLA_GROUPS.delivery),
+      overdueTransit: sumStatuses(SLA_GROUPS.transit),
+      overdueRemarks,
+      overdueReturn: sumStatuses(SLA_GROUPS.return),
+      overdueBranchCod,
+      overdueBranchCodAmount,
+      branchCodHours: typeof branchCodHours === "number" ? branchCodHours : null,
+      pickupHours: groupHours(SLA_GROUPS.pickup),
+      deliveryHours: groupHours(SLA_GROUPS.delivery),
+      transitHours: groupHours(SLA_GROUPS.transit),
+      remarksHours: typeof slaSettings["remarks"] === "number" ? slaSettings["remarks"] : null,
+      returnHours: groupHours(SLA_GROUPS.return),
+      pickupBreaches: breachesByStatus(SLA_GROUPS.pickup),
+      deliveryBreaches: breachesByStatus(SLA_GROUPS.delivery),
+      transitBreaches: breachesByStatus(SLA_GROUPS.transit),
+      returnBreaches: breachesByStatus(SLA_GROUPS.return),
+      deliveryByValley: breachesByValley(SLA_GROUPS.delivery),
+    },
+    weeklyTrend,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (cacheKey) {
+    try {
+      await redis.setex(cacheKey, DASHBOARD_SUMMARY_TTL_SECONDS, JSON.stringify(summary));
+    } catch (error) {
+      console.error("[Redis] Failed to write dashboard summary cache:", error);
+    }
+  }
+
+  return summary;
+}

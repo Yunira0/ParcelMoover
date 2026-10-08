@@ -1,5 +1,5 @@
 import React from 'react';
-import { getCurrentUserRoles, hasAnyRole, hasAdminPermission, hasStaffPermission } from '../utils/auth';
+import { getCurrentUserRoles, hasAnyRole, hasAdminPermission, hasStaffPermission, isBranchWorkspaceUser } from '../utils/auth';
 import NotAuthorized from '../pages/NotAuthorized';
 
 interface RoleGuardProps {
@@ -18,6 +18,13 @@ interface RoleGuardProps {
    * section a super_admin opened up to them.
    */
   adminPermission?: string;
+  /**
+   * When set alongside adminPermission, a branch-workspace admin also passes
+   * the permission check with no explicit delegation needed - for pages whose
+   * API already scopes them to the admin's own branch (e.g. Route Rates),
+   * so the permission only gates the unscoped, whole-network view.
+   */
+  allowBranchWorkspace?: boolean;
   children: React.ReactNode;
 }
 
@@ -25,7 +32,7 @@ interface RoleGuardProps {
 // "is this role allowed on this specific route" check - e.g. vendor-only finance
 // pages shouldn't be reachable by typing the URL as a rider or another vendor's admin.
 // Disallowed roles get an explicit "Not Authorized" page instead of a silent redirect.
-const RoleGuard: React.FC<RoleGuardProps> = ({ allowedRoles, requiredPermission, adminPermission, children }) => {
+const RoleGuard: React.FC<RoleGuardProps> = ({ allowedRoles, requiredPermission, adminPermission, allowBranchWorkspace, children }) => {
   if (!hasAnyRole(allowedRoles)) {
     return <NotAuthorized />;
   }
@@ -35,7 +42,7 @@ const RoleGuard: React.FC<RoleGuardProps> = ({ allowedRoles, requiredPermission,
     return <NotAuthorized />;
   }
 
-  if (adminPermission && !hasAdminPermission(adminPermission)) {
+  if (adminPermission && !hasAdminPermission(adminPermission) && !(allowBranchWorkspace && isBranchWorkspaceUser())) {
     return <NotAuthorized />;
   }
 

@@ -1,15 +1,20 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Info } from 'lucide-react';
 import FormField from '../components/FormField';
+import Banner from '../components/Banner';
 import SearchableSelectAsync from '../components/SearchableSelectAsync';
 import PageHeader from '../components/PageHeader';
 import BillingStatusBanner from '../components/BillingStatusBanner';
 import Button from '../components/Button';
-import { getLocations, searchVendors } from '../services/users.service';
+import { getLocations, searchVendors } from '../queries/lookups';
 import { getVendorQuote } from '../services/pricing.service';
+import { listMyVouchers, lookupVoucher, voucherBenefit, voucherDiscountForFee,
+  type MyVoucher, type VoucherLookup, type VoucherOffer } from '../services/voucher.service';
+import { getDeliveryQuote as getRouteQuote } from '../services/deliveryRates.service';
 import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type UpdateOrderInput, type OrderType, type ServiceType } from '../services/orders.service';
-import { isVendorSide } from '../utils/auth';
+import { getCurrentUser, isVendorSide } from '../utils/auth';
+import { findMasterHub } from '../utils/locations';
+import { apiErrorMessage } from '../utils/serverValidation';
 import './CreateOrderPage.css';
 
 interface VendorOption {
@@ -39,17 +44,40 @@ const ORDER_TYPE_OPTIONS: { value: OrderType; label: string }[] = [
   { value: 'return', label: 'Return' },
 ];
 
-const PACKAGE_TYPE_OPTIONS = ['Parcel', 'Document', 'Fragile', 'Other'];
-const OTHER_PACKAGE_TYPE = 'Other';
+// Free-text description of what's inside - sent as packageType (the server
+// falls back to "Parcel" when it's left empty).
+const PACKAGE_DESCRIPTION_MAX_LENGTH = 100;
+// Mirror the server's createOrderSchema limits (100 = what NCM accepts).
+const DELIVERY_INSTRUCTION_MAX_LENGTH = 100;
+const REMARKS_MAX_LENGTH = 1000;
 
-const DELIVERY_INSTRUCTION_OPTIONS = [
+// Quick-add dropdown inside the free-text delivery instruction. Picking one
+// appends it to the text (comma-separated); picking it again removes it.
+const DELIVERY_INSTRUCTION_PRESETS = [
   'Cannot open the parcel',
   'Can open the parcel',
   'Call before delivery',
   'Handle with care',
-  'Other',
 ];
-const OTHER_DELIVERY_INSTRUCTION = 'Other';
+// Picking one of these drops the other - they contradict each other.
+const EXCLUSIVE_PRESETS = ['Cannot open the parcel', 'Can open the parcel'];
+
+const splitInstruction = (text: string) =>
+  text.split(',').map(part => part.trim()).filter(Boolean);
+
+const hasPreset = (text: string, preset: string) =>
+  splitInstruction(text).some(part => part.toLowerCase() === preset.toLowerCase());
+
+const togglePreset = (text: string, preset: string) => {
+  const parts = splitInstruction(text);
+  if (hasPreset(text, preset)) {
+    return parts.filter(part => part.toLowerCase() !== preset.toLowerCase()).join(', ');
+  }
+  const conflicts = EXCLUSIVE_PRESETS.includes(preset)
+    ? EXCLUSIVE_PRESETS.filter(p => p !== preset).map(p => p.toLowerCase())
+    : [];
+  return [...parts.filter(part => !conflicts.includes(part.toLowerCase())), preset].join(', ');
+};
 
 const defaultFormState = {
   vendorId: '',
@@ -64,11 +92,10 @@ const defaultFormState = {
   weightKg: '2',
   codAmount: '',
   itemValue: '0',
-  packageType: 'Parcel',
-  packageTypeOther: '',
+  packageType: '',
   deliveryInstruction: 'Cannot open the parcel',
-  deliveryInstructionOther: '',
   remarks: '',
+  voucherCode: '',
 };
 
 type FormState = typeof defaultFormState;
@@ -90,6 +117,8 @@ const SERVER_FIELD_MAP: Record<string, keyof FormState> = {
   itemValue: 'itemValue',
   packageType: 'packageType',
   deliveryInstruction: 'deliveryInstruction',
+  remarks: 'remarks',
+  voucherCode: 'voucherCode',
 };
 
 const CreateOrderPage: React.FC = () => {
@@ -103,7 +132,6 @@ const CreateOrderPage: React.FC = () => {
   } | null;
   const prefillInitialData = navState?.initialData;
   const editOrderId = navState?.mode === 'edit' ? navState.orderId : undefined;
-  const editTrackingId = navState?.mode === 'edit' ? navState.trackingId : undefined;
   const isEditMode = Boolean(editOrderId);
 
   const isVendorActor = isVendorSide();
@@ -191,13 +219,6 @@ const CreateOrderPage: React.FC = () => {
   // Prefill from a "copy"/"edit" navigation (replaces the old modal's initialData prop)
   useEffect(() => {
     if (!prefillInitialData) return;
-    // A copied order's packageType/deliveryInstruction may be free text that
-    // predates these presets - fall back to "Other" + the raw text so nothing
-    // silently gets dropped.
-    const incomingPackageType = prefillInitialData.packageType || 'Parcel';
-    const isKnownPackageType = PACKAGE_TYPE_OPTIONS.includes(incomingPackageType);
-    const incomingInstruction = prefillInitialData.deliveryInstruction || '';
-    const isKnownInstruction = DELIVERY_INSTRUCTION_OPTIONS.includes(incomingInstruction);
     setForm(prev => ({
       ...prev,
       vendorId: prefillInitialData.vendorId || '',
@@ -212,19 +233,85 @@ const CreateOrderPage: React.FC = () => {
       weightKg: prefillInitialData.weightKg !== undefined ? String(prefillInitialData.weightKg) : '',
       codAmount: prefillInitialData.codAmount !== undefined ? String(prefillInitialData.codAmount) : '',
       itemValue: prefillInitialData.itemValue !== undefined ? String(prefillInitialData.itemValue) : '0',
-      packageType: isKnownPackageType ? incomingPackageType : OTHER_PACKAGE_TYPE,
-      packageTypeOther: isKnownPackageType ? '' : incomingPackageType,
-      deliveryInstruction: incomingInstruction
-        ? (isKnownInstruction ? incomingInstruction : OTHER_DELIVERY_INSTRUCTION)
-        : 'Cannot open the parcel',
-      deliveryInstructionOther: incomingInstruction && !isKnownInstruction ? incomingInstruction : '',
+      packageType: prefillInitialData.packageType || '',
+      deliveryInstruction: prefillInitialData.deliveryInstruction || 'Cannot open the parcel',
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillInitialData]);
 
   // When actor is a vendor (or vendor_staff), their own sender identity is
   // implicit - no Vendor picker shown.
-  const selectedVendor = isVendorActor ? myVendorProfile ?? undefined : selectedVendorDetails ?? undefined;
+  // Only trust the loaded details once they belong to the vendor actually
+  // picked: right after a vendor switch they still hold the previous vendor,
+  // and submitting then would ship the new order as the old vendor's sender.
+  const selectedVendor = isVendorActor
+    ? myVendorProfile ?? undefined
+    : selectedVendorDetails && selectedVendorDetails.id === form.vendorId
+      ? selectedVendorDetails
+      : undefined;
+
+  // Daraz-style vouchers: the vendor's usable claims for the fee/discount/
+  // final preview. Admins keying an order in preview the picked vendor's
+  // vouchers; vendors preview their own.
+  const [myVouchers, setMyVouchers] = useState<MyVoucher[]>([]);
+  const [voucherClaimId, setVoucherClaimId] = useState('');
+  const [voucherRefresh, setVoucherRefresh] = useState(0);
+  const voucherVendorId = isVendorActor ? selectedVendor?.id : form.vendorId;
+  useEffect(() => {
+    // Editing never touches vouchers — they attach once, at creation.
+    if (isEditMode || form.orderType !== 'delivery' || !voucherVendorId) { setMyVouchers([]); return; }
+    let cancelled = false;
+    listMyVouchers(isVendorActor ? undefined : voucherVendorId)
+      .then(v => { if (!cancelled) setMyVouchers(v); })
+      .catch(() => { if (!cancelled) setMyVouchers([]); });
+    return () => { cancelled = true; };
+  }, [isEditMode, form.orderType, voucherVendorId, isVendorActor, voucherRefresh]);
+
+  const usableVouchers = myVouchers.filter(v => v.usable);
+  // A vendor switch replaces the list, so a previously picked claim may no
+  // longer belong here — derive validity instead of resetting state in an effect.
+  const effectiveClaimId = usableVouchers.some(v => v.claimId === voucherClaimId) ? voucherClaimId : '';
+  const typedVoucherCode = form.voucherCode.trim().toUpperCase();
+  const typedClaim = typedVoucherCode
+    ? myVouchers.find(v => v.voucher.code === typedVoucherCode) ?? null
+    : null;
+
+  // A code needs no prior claim — placing the order claims it. Look an unclaimed
+  // one up so the discount previews here the same way a claimed one does.
+  const [typedLookup, setTypedLookup] = useState<VoucherLookup | null>(null);
+  const [typedLookupError, setTypedLookupError] = useState('');
+  const [typedLookupLoading, setTypedLookupLoading] = useState(false);
+  useEffect(() => {
+    setTypedLookup(null);
+    setTypedLookupError('');
+    if (isEditMode || form.orderType !== 'delivery' || !voucherVendorId || !typedVoucherCode || typedClaim) {
+      setTypedLookupLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setTypedLookupLoading(true);
+    const timer = setTimeout(() => {
+      lookupVoucher(typedVoucherCode, isVendorActor ? undefined : voucherVendorId)
+        .then(r => { if (!cancelled) setTypedLookup(r); })
+        .catch(e => {
+          if (!cancelled) setTypedLookupError(apiErrorMessage(e, `Voucher ${typedVoucherCode} does not exist`));
+        })
+        .finally(() => { if (!cancelled) setTypedLookupLoading(false); });
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); setTypedLookupLoading(false); };
+  }, [typedVoucherCode, typedClaim, isEditMode, form.orderType, voucherVendorId, isVendorActor]);
+
+  // A typed code wins over the dropdown; the server enforces exclusivity too.
+  const pickedVoucher: { voucher: VoucherOffer; usable: boolean; unusableReason: string | null } | null =
+    typedVoucherCode
+      ? typedClaim ?? typedLookup
+      : usableVouchers.find(v => v.claimId === effectiveClaimId) ?? null;
+  const voucherFee = quote?.totalPayable ?? 0;
+  const voucherBelowMinimum = !!pickedVoucher?.usable && !!quote && voucherFee < pickedVoucher.voucher.minimumCharge;
+  const voucherDiscount = pickedVoucher?.usable && quote && !voucherBelowMinimum
+    ? voucherDiscountForFee(pickedVoucher.voucher, voucherFee)
+    : 0;
+  const voucherFinal = quote ? Math.max(0, Math.round((voucherFee - voucherDiscount) * 100) / 100) : null;
 
   // Async search for vendor dropdown — fetches from server on each keystroke.
   const handleVendorSearch = useCallback(async (search: string, offset: number) => {
@@ -244,36 +331,52 @@ const CreateOrderPage: React.FC = () => {
     return { results: [], hasMore: false };
   }, []);
 
-  // The single admin hub all orders originate from. Matched by code first, name as fallback.
-  const imadolHub = locationOptions.find(
-    l => (l.code || '').toUpperCase() === 'IMADOL' || l.name.trim().toLowerCase() === 'imadol',
-  );
+  // The Imadol master hub: top-level IMADOL row matched by code, never a
+  // covered area sharing the name (see findMasterHub — a loose match here
+  // misprices every Imadol-origin order as a branch route with no rate).
+  const imadolHub = findMasterHub(locationOptions);
+  // A branch admin's orders originate at their own branch (the server enforces
+  // this for every non-super-admin). A hubless head-office admin falls back to
+  // Imadol.
+  const myAdminHubId = getCurrentUser()?.locationId ?? null;
+  const adminOriginHub = (myAdminHubId && locationOptions.find(l => l.id === myAdminHubId)) || imadolHub;
 
-  // Origin ("From") is always fixed to the Imadol admin hub — for vendors it's their
-  // assigned hub (Imadol), for admins we lock it to Imadol too rather than a free picker.
+  // Origin ("From") is fixed, not a free picker. A parcel is picked up at the
+  // vendor's premises, so once a vendor is chosen its hub is the origin - for
+  // an admin too (a super admin creating an order for a Hetauda vendor ships
+  // it from Hetauda, not Imadol). Falls back to the admin's own hub before a
+  // vendor is selected. The server applies the same rule.
   // Edit mode only: leave the parcel's real originLocationId (from prefillInitialData)
   // alone. There can be more than one location row that resolves as "Imadol" (matched
   // loosely by name/code), so forcing it here can silently reassign an existing order
   // to a different-but-identical-looking Imadol row - which then also reads as a real
   // "origin changed" edit server-side, defeating the COD-only edit allowance on a
   // delivered/RTV/RTO parcel purely because of this reset, not an actual user change.
-  const fixedOriginId = isVendorActor ? selectedVendor?.locationId : imadolHub?.id;
+  const fixedOriginId = isVendorActor
+    ? selectedVendor?.locationId
+    : selectedVendor?.locationId || adminOriginHub?.id;
   useEffect(() => {
     if (!fixedOriginId || isEditMode) return;
     setForm(prev => (prev.originLocationId === fixedOriginId ? prev : { ...prev, originLocationId: fixedOriginId }));
   }, [fixedOriginId, isEditMode]);
 
   const weightKgNumber = Number(form.weightKg) || 0;
+  // A branch-origin order (origin hub is not Imadol) is priced off the
+  // (branch → destination) route table, not the vendor's Imadol rate model -
+  // mirrors the branch path in order.service.ts.
+  const originIsBranch = !isVendorActor && Boolean(fixedOriginId) && Boolean(imadolHub) && fixedOriginId !== imadolHub!.id;
 
-  // Auto-calculate the payable amount from the VENDOR's chosen rate model
-  // (per-destination / zone / flat) — mirrors the server-side charge in
-  // order.service.ts so the displayed number matches what gets saved.
+  // Auto-calculate the payable amount so the displayed number matches what the
+  // server will save. With a vendor, the server's quote runs the same ladder as
+  // order creation (a branch flat vendor's inside/outside-branch rate, else the
+  // branch route rate, else the vendor's model). Without one, a branch order
+  // prices off the route rate.
   useEffect(() => {
     // For admin actors, use form.vendorId directly (set synchronously on selection).
     // For vendor actors, use selectedVendor.id resolved from their own profile.
     const vendorId = isVendorActor ? selectedVendor?.id : form.vendorId;
-    // Need a destination, a weight, and a resolvable vendor (admins must pick one).
-    if (!form.destinationLocationId || !weightKgNumber || (!isVendorActor && !form.vendorId)) {
+    const useVendorQuote = isVendorActor || Boolean(form.vendorId);
+    if (!form.destinationLocationId || !weightKgNumber || (!useVendorQuote && !originIsBranch)) {
       setQuote(null);
       setQuoteError('');
       return;
@@ -283,7 +386,18 @@ const CreateOrderPage: React.FC = () => {
     setQuoteError('');
     const timer = setTimeout(async () => {
       try {
-        const res = await getVendorQuote(form.destinationLocationId, weightKgNumber, vendorId, form.serviceType);
+        const res = useVendorQuote
+          ? await getVendorQuote(
+              form.destinationLocationId,
+              weightKgNumber,
+              vendorId,
+              form.serviceType,
+              form.orderType === 'return',
+            )
+          : await getRouteQuote(fixedOriginId!, form.destinationLocationId, weightKgNumber, {
+              serviceType: form.serviceType,
+              isReturn: form.orderType === 'return',
+            });
         if (!cancelled && res?.success) {
           setQuote(res.data);
         }
@@ -292,7 +406,7 @@ const CreateOrderPage: React.FC = () => {
           setQuote(null);
           setQuoteError(
             err.response?.status === 404
-              ? (err.response?.data?.message || 'No rate configured for this destination yet. Contact an admin.')
+              ? (err.response?.data?.message || 'No rate configured for this route yet. Contact an admin.')
               : 'Failed to calculate charges for this destination.',
           );
         }
@@ -301,7 +415,7 @@ const CreateOrderPage: React.FC = () => {
       }
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [form.destinationLocationId, weightKgNumber, form.vendorId, form.serviceType, selectedVendor?.id, isVendorActor]);
+  }, [form.destinationLocationId, weightKgNumber, form.vendorId, form.serviceType, form.orderType, selectedVendor?.id, isVendorActor, originIsBranch, fixedOriginId]);
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -319,33 +433,17 @@ const CreateOrderPage: React.FC = () => {
     if (duplicateWarning) setDuplicateWarning('');
   };
 
-  // When a vendor is selected from the async dropdown, store full details.
+  // The full details load in the effect below, keyed off form.vendorId.
   const handleVendorSelect = useCallback((id: string) => {
     setField('vendorId', id);
-    // Fetch the full details for this vendor to use in form submission.
-    searchVendors(id, 1).then(res => {
-      if (res?.success && Array.isArray(res.data)) {
-        const v = res.data.find((x: any) => x.id === id);
-        if (v) {
-          setSelectedVendorDetails({
-            id: v.id,
-            userId: null,
-            label: v.label,
-            phone: v.phone,
-            address: v.address || '',
-            locationId: v.locationId ?? null,
-          });
-        }
-      }
-    }).catch(() => {});
   }, [setField]);
 
-  // Edit mode: the vendor picker is disabled (vendor is fixed), so
-  // handleVendorSelect never fires to populate selectedVendorDetails.
-  // Fetch it directly from the prefilled vendorId, or submission always
-  // fails with "Vendor profile is still loading."
+  // Load the full details for whichever vendor form.vendorId names - one
+  // picked from the dropdown, or prefilled by a copy/edit (where no pick ever
+  // happens). Without them submission fails with "Vendor profile is still
+  // loading." A late response for a vendor no longer picked is dropped.
   useEffect(() => {
-    if (!isEditMode || isVendorActor || !form.vendorId || selectedVendorDetails) return;
+    if (isVendorActor || !form.vendorId || selectedVendorDetails?.id === form.vendorId) return;
     let cancelled = false;
     searchVendors(form.vendorId, 1).then(res => {
       if (cancelled || !res?.success || !Array.isArray(res.data)) return;
@@ -362,7 +460,7 @@ const CreateOrderPage: React.FC = () => {
       }
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [isEditMode, isVendorActor, form.vendorId, selectedVendorDetails]);
+  }, [isVendorActor, form.vendorId, selectedVendorDetails?.id]);
 
   // keepVendor is set after a successful create: an admin keying in a batch of
   // orders for one vendor shouldn't have to re-pick that vendor every time. The
@@ -379,6 +477,7 @@ const CreateOrderPage: React.FC = () => {
     }));
     setQuote(null);
     setQuoteError('');
+    setVoucherClaimId('');
     setFieldErrors({});
     setGeneralError('');
     setSuccessMessage('');
@@ -413,6 +512,8 @@ const CreateOrderPage: React.FC = () => {
     try {
       const res = await createOrder(payload);
       resetForm(true);
+      // A spent voucher leaves "My Vouchers" — refresh so it can't be picked twice.
+      setVoucherRefresh(t => t + 1);
       setSuccessMessage(`Order #${res.data.orderNumber} (${res.data.trackingId}) created successfully. You can create another order below.`);
     } catch (err: any) {
       const data = err.response?.data;
@@ -467,11 +568,13 @@ const CreateOrderPage: React.FC = () => {
     if (!weightKgNumber) {
       errors.weightKg = 'Package weight is required.';
     }
-    if (form.packageType === OTHER_PACKAGE_TYPE && !form.packageTypeOther.trim()) {
-      errors.packageTypeOther = 'Please specify the package type.';
+    // Belt to maxLength's braces: a prefilled copy-of-an-order can arrive
+    // longer than the cap without the field ever being typed into.
+    if (form.packageType.trim().length > PACKAGE_DESCRIPTION_MAX_LENGTH) {
+      errors.packageType = `Keep this to ${PACKAGE_DESCRIPTION_MAX_LENGTH} characters — longer descriptions are rejected at carrier handoff.`;
     }
-    if (form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION && !form.deliveryInstructionOther.trim()) {
-      errors.deliveryInstructionOther = 'Please specify the delivery instruction.';
+    if (form.deliveryInstruction.trim().length > DELIVERY_INSTRUCTION_MAX_LENGTH) {
+      errors.deliveryInstruction = `Keep this to ${DELIVERY_INSTRUCTION_MAX_LENGTH} characters — longer instructions are rejected at carrier handoff.`;
     }
 
     if (Object.keys(errors).length > 0) {
@@ -491,13 +594,6 @@ const CreateOrderPage: React.FC = () => {
       ? { name: selectedVendor.label, phone: selectedVendor.phone, address: selectedVendor.address }
       : { name: form.customerName, phone: form.contactNumber, address: form.address };
 
-    const effectivePackageType = form.packageType === OTHER_PACKAGE_TYPE
-      ? form.packageTypeOther.trim()
-      : form.packageType;
-    const effectiveDeliveryInstruction = form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION
-      ? form.deliveryInstructionOther.trim()
-      : form.deliveryInstruction;
-
     const payload: CreateOrderInput = {
       vendorId: isVendorActor ? undefined : form.vendorId,
       sender,
@@ -516,10 +612,18 @@ const CreateOrderPage: React.FC = () => {
       weightKg: weightKgNumber,
       codAmount: Number(form.codAmount) || 0,
       itemValue: Number(form.itemValue) || 0,
-      packageType: effectivePackageType || undefined,
-      deliveryInstruction: effectiveDeliveryInstruction || undefined,
+      packageType: form.packageType.trim() || undefined,
+      deliveryInstruction: form.deliveryInstruction.trim() || undefined,
       remarks: form.remarks.trim() || undefined,
       pickupAddress: selectedVendor?.address || undefined,
+      // Vouchers only exist on outbound delivery orders; the server re-checks this.
+      ...(form.orderType === 'delivery'
+        ? typedVoucherCode
+          ? { voucherCode: typedVoucherCode }
+          : effectiveClaimId
+            ? { voucherClaimId: effectiveClaimId }
+            : {}
+        : {}),
     };
 
     if (isEditMode && editOrderId) {
@@ -584,9 +688,6 @@ const CreateOrderPage: React.FC = () => {
     <div className="create-order-page">
       <PageHeader
         title={isEditMode ? 'Edit Order' : 'Create Order'}
-        subtitle={isEditMode
-          ? `Update parcel details for ${editTrackingId || 'this order'}. Changes are recorded in the parcel history.`
-          : 'Set up and submit new package orders through the system. (Enter item value for parcel exceeding Rs 5000)'}
       />
 
       {!isEditMode && <BillingStatusBanner />}
@@ -744,53 +845,64 @@ const CreateOrderPage: React.FC = () => {
                 error={fieldErrors.itemValue}
               />
               <FormField
-                label="Package Type"
-                type="select"
-                options={PACKAGE_TYPE_OPTIONS.map(opt => ({ value: opt, label: opt }))}
-                value={form.packageType}
-                onChange={value => setField('packageType', value)}
-                error={fieldErrors.packageType}
-              />
-              {form.packageType === OTHER_PACKAGE_TYPE && (
-                <FormField
-                  label="Specify Package Type"
-                  required
-                  value={form.packageTypeOther}
-                  onChange={value => setField('packageTypeOther', value)}
-                  placeholder="Enter package type"
-                  error={fieldErrors.packageTypeOther}
-                  gridColumn="span 2"
-                />
-              )}
-              <FormField
-                label="Delivery Instruction"
-                type="select"
-                placeholder="Select delivery instruction"
-                options={DELIVERY_INSTRUCTION_OPTIONS.map(opt => ({ value: opt, label: opt }))}
-                value={form.deliveryInstruction}
-                onChange={value => setField('deliveryInstruction', value)}
-                error={fieldErrors.deliveryInstruction}
-              />
-              <FormField
                 label="Remarks"
-                type="textarea"
-                rows={1}
+                maxLength={REMARKS_MAX_LENGTH}
                 value={form.remarks}
                 onChange={value => setField('remarks', value)}
                 placeholder="Any additional notes (optional)"
                 error={fieldErrors.remarks}
               />
-              {form.deliveryInstruction === OTHER_DELIVERY_INSTRUCTION && (
-                <FormField
-                  label="Specify Delivery Instruction"
-                  required
-                  value={form.deliveryInstructionOther}
-                  onChange={value => setField('deliveryInstructionOther', value)}
-                  placeholder="Enter delivery instruction"
-                  error={fieldErrors.deliveryInstructionOther}
-                  gridColumn="span 2"
-                />
-              )}
+            </div>
+
+            <div className="order-field-grid">
+              <FormField
+                label="Package Description"
+                type="textarea"
+                rows={5}
+                maxLength={PACKAGE_DESCRIPTION_MAX_LENGTH}
+                value={form.packageType}
+                onChange={value => setField('packageType', value)}
+                placeholder="Describe what's in the package (e.g. 2 cotton t-shirts, 1 phone case)"
+                hint={`${form.packageType.length}/${PACKAGE_DESCRIPTION_MAX_LENGTH}`}
+                error={fieldErrors.packageType}
+                className="order-long-text"
+              />
+              <div className="order-long-field">
+                {/* Same-size box as the description, with the quick-add
+                    dropdown sitting inside its top-left corner. */}
+                <div className="order-instruction-box">
+                  <FormField
+                    label="Delivery Instruction"
+                    type="textarea"
+                    rows={5}
+                    maxLength={DELIVERY_INSTRUCTION_MAX_LENGTH}
+                    value={form.deliveryInstruction}
+                    onChange={value => setField('deliveryInstruction', value)}
+                    placeholder="How should the rider handle this delivery?"
+                    className={`order-long-text${fieldErrors.deliveryInstruction ? ' has-error' : ''}`}
+                  />
+                  {/* Always shows its placeholder: picking an option adds it to
+                      the text (or removes it if it's already there). */}
+                  <FormField
+                    label="Add a common delivery instruction"
+                    hideLabel
+                    type="select"
+                    placeholder="+ Add common instruction"
+                    options={DELIVERY_INSTRUCTION_PRESETS.map(preset => ({
+                      value: preset,
+                      label: hasPreset(form.deliveryInstruction, preset) ? `✓ ${preset}` : preset,
+                    }))}
+                    value=""
+                    onChange={preset => {
+                      if (preset) setField('deliveryInstruction', togglePreset(form.deliveryInstruction, preset));
+                    }}
+                    className="order-instruction-select"
+                  />
+                </div>
+                {fieldErrors.deliveryInstruction
+                  ? <small className="form-error">{fieldErrors.deliveryInstruction}</small>
+                  : <small className="form-hint">{form.deliveryInstruction.length}/{DELIVERY_INSTRUCTION_MAX_LENGTH}</small>}
+              </div>
             </div>
           </div>
         </div>
@@ -829,17 +941,71 @@ const CreateOrderPage: React.FC = () => {
             )}
             <div className="order-summary-divider" />
             <div className="order-summary-row order-summary-total">
-              <span>Total Payable</span>
+              <span>{voucherDiscount > 0 ? 'Delivery fee' : 'Total Payable'}</span>
               <span>{quote ? quote.totalPayable.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '-'}</span>
             </div>
-            <div className="order-summary-info">
-              <Info size={16} />
-              <span>
-                {quoteLoading
-                  ? 'Calculating charges...'
-                  : quoteError || 'Charges will be calculated automatically based on the details provided.'}
-              </span>
-            </div>
+            {form.orderType === 'delivery' && !isEditMode && voucherVendorId && quote && !quoteError && (
+              <div className="order-voucher" role="group" aria-labelledby="order-voucher-label">
+                <span className="order-voucher-label" id="order-voucher-label">Voucher (optional)</span>
+                {usableVouchers.length > 0 && (
+                  <FormField
+                    label="Pick a claimed voucher"
+                    hideLabel
+                    type="select"
+                    placeholder="Select a voucher…"
+                    options={usableVouchers.map(v => ({
+                      value: v.claimId,
+                      label: `${v.voucher.code} — ${voucherBenefit(v.voucher)}`,
+                    }))}
+                    value={effectiveClaimId}
+                    disabled={!!typedVoucherCode || submitting}
+                    onChange={value => { setVoucherClaimId(value); if (generalError) setGeneralError(''); }}
+                  />
+                )}
+                <FormField
+                  label="Voucher code"
+                  hideLabel
+                  className="order-voucher-code"
+                  value={form.voucherCode}
+                  disabled={submitting || !!effectiveClaimId}
+                  onChange={value => setField('voucherCode', value.toUpperCase())}
+                  placeholder="Or enter code (e.g. MOVE100)"
+                  maxLength={32}
+                  error={fieldErrors.voucherCode}
+                  hint={typedVoucherCode && typedLookupLoading
+                    ? `Checking ${typedVoucherCode}…`
+                    : effectiveClaimId
+                      ? 'Using the selected voucher — clear the selection above to type a code instead.'
+                      : undefined}
+                />
+                {typedLookupError && <Banner tone="danger">{typedLookupError}</Banner>}
+                {voucherDiscount > 0 && pickedVoucher && (
+                  <>
+                    <div className="order-summary-row order-voucher-discount">
+                      <span>Voucher {pickedVoucher.voucher.code}</span>
+                      <span>− {voucherDiscount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="order-summary-row order-summary-total">
+                      <span>Final charge</span>
+                      <span>{voucherFinal?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    </div>
+                  </>
+                )}
+                {pickedVoucher && !pickedVoucher.usable && (
+                  <Banner tone="danger">{pickedVoucher.unusableReason || 'This voucher cannot be used.'}</Banner>
+                )}
+                {pickedVoucher?.usable && voucherBelowMinimum && (
+                  <Banner tone="danger">
+                    {pickedVoucher.voucher.code} needs a minimum delivery charge of Rs. {pickedVoucher.voucher.minimumCharge}.
+                  </Banner>
+                )}
+              </div>
+            )}
+            <Banner tone="primary">
+              {quoteLoading
+                ? 'Calculating charges...'
+                : quoteError || 'Charges will be calculated automatically based on the details provided.'}
+            </Banner>
           </div>
 
           {successMessage && <p className="order-form-success">{successMessage}</p>}

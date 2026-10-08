@@ -1,5 +1,6 @@
 import type { ParcelStatus, RunSheet } from '../services/orders.service';
 import { toBsDate, toNptTime } from './nepaliDate';
+import { receiverPhonesHtml } from './format';
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
@@ -83,7 +84,7 @@ export function printRunSheet(
     <tr>
       <td class="num">${index + 1}</td>
       <td class="mono">${esc(parcel.trackingId)}</td>
-      <td>${esc(parcel.receiverName)}<small>${esc(parcel.receiverPhone)}</small></td>
+      <td>${esc(parcel.receiverName)}<small>${receiverPhonesHtml(parcel.receiverPhone, parcel.receiverAlternatePhone)}</small></td>
       <td>${esc(parcel.address || parcel.destination || '-')}</td>
       <td class="num">${parcel.pieces}</td>
       <td class="num">${parcel.codAmount > 0 ? fmt(parcel.codAmount) : '-'}</td>

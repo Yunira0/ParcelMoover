@@ -53,13 +53,62 @@ const MultiSearchableSelectAsync: React.FC<MultiSearchableSelectAsyncProps> = ({
   // selected vendor's name after a new search/page replaces `options` and it's
   // no longer in the loaded list.
   const [labelCache, setLabelCache] = useState<Map<string, string>>(new Map());
+  const labelCacheRef = useRef<Map<string, string>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef(0);
   const offsetRef = useRef(0);
+  // A lookup that returned no exact match must not be retried every time the
+  // options cache changes. Keep this outside state so marking an id as
+  // attempted does not itself retrigger hydration. Removing and re-selecting
+  // an id clears it below and permits a fresh lookup.
+  const attemptedLabelLookupsRef = useRef<Set<string>>(new Set());
 
   const selectedSet = new Set(value);
+
+  // A value restored from the URL exists before this async picker has loaded
+  // any option pages. Resolve those ids directly so the trigger shows the
+  // human-readable labels after a refresh instead of leaking raw UUIDs. This
+  // is separate from the dropdown's paginated fetch so opening/searching the
+  // panel cannot cancel label hydration (and vice versa). Deliberately do not
+  // depend on `labelCache`: a dropdown result updates that cache, and using it
+  // as a dependency would clean up this in-flight hydration before it can add
+  // the selected vendor names.
+  useEffect(() => {
+    const selectedIds = new Set(value);
+    attemptedLabelLookupsRef.current.forEach(id => {
+      if (!selectedIds.has(id)) attemptedLabelLookupsRef.current.delete(id);
+    });
+    const missingIds = Array.from(new Set(value.filter(
+      id => !labelCacheRef.current.has(id) && !attemptedLabelLookupsRef.current.has(id),
+    )));
+    if (missingIds.length === 0) return;
+
+    missingIds.forEach(id => attemptedLabelLookupsRef.current.add(id));
+
+    let cancelled = false;
+    Promise.allSettled(missingIds.map(id => asyncSearch(id, 0))).then(results => {
+      if (cancelled) return;
+      setLabelCache(prev => {
+        let changed = false;
+        const next = new Map(prev);
+        results.forEach((result, index) => {
+          if (result.status !== 'fulfilled') return;
+          const id = missingIds[index];
+          const exactMatch = result.value.results.find(option => option.id === id);
+          if (exactMatch && next.get(id) !== exactMatch.label) {
+            next.set(id, exactMatch.label);
+            changed = true;
+          }
+        });
+        if (changed) labelCacheRef.current = next;
+        return changed ? next : prev;
+      });
+    });
+
+    return () => { cancelled = true; };
+  }, [value, asyncSearch]);
 
   const fetchOptions = useCallback(
     (search: string, offset: number, append: boolean) => {
@@ -91,6 +140,7 @@ const MultiSearchableSelectAsync: React.FC<MultiSearchableSelectAsyncProps> = ({
                   changed = true;
                 }
               }
+              if (changed) labelCacheRef.current = next;
               return changed ? next : prev;
             });
           }
@@ -142,10 +192,18 @@ const MultiSearchableSelectAsync: React.FC<MultiSearchableSelectAsyncProps> = ({
   }, [query, loading, loadingMore, hasMore, fetchOptions]);
 
   // Trigger label lists every selected option (comma-separated), sourced from
-  // labelCache so it stays correct regardless of what's currently loaded.
-  const triggerLabel = value.length
-    ? value.map(id => labelCache.get(id) || id).join(', ')
-    : placeholder;
+  // labelCache so it stays correct regardless of what's currently loaded. Do
+  // not expose unresolved database ids while restored labels are loading.
+  const resolvedLabels = value.flatMap(id => {
+    const label = labelCache.get(id);
+    return label ? [label] : [];
+  });
+  const unresolvedCount = value.length - resolvedLabels.length;
+  const triggerLabel = value.length === 0
+    ? placeholder
+    : resolvedLabels.length === 0
+      ? (value.length === 1 ? 'Loading selection…' : `${value.length} vendors selected`)
+      : `${resolvedLabels.join(', ')}${unresolvedCount ? `, +${unresolvedCount} more` : ''}`;
 
   return (
     <div className="searchable-select" ref={containerRef}>

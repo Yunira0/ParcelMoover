@@ -4,7 +4,9 @@ import { CheckCircle, ChevronRight, ChevronLeft, Upload, X } from 'lucide-react'
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import { submitKycApplication, type KycApplicationInput } from '../services/kyc.service';
-import { hasLetter, isValidEmail, isValidName, isValidPhone } from '../utils/serverValidation';
+import { apiErrorMessage, hasLetter, isValidEmail, isValidName, isValidPhone } from '../utils/serverValidation';
+import { convertHeicFileIfNeeded } from '../utils/heicConvert';
+import { usePageMeta } from '../utils/pageMeta';
 import './KycApplicationPage.css';
 
 const STEPS = ['Business', 'Owner & Bank', 'Documents'];
@@ -21,7 +23,8 @@ const emptyForm = (): KycApplicationInput => ({
   registeredAddress: '',
   registrationNo: '',
   panVatNo: '',
-  citizenshipDoc: null,
+  citizenshipDocFront: null,
+  citizenshipDocBack: null,
   panVatDoc: null,
   businessCertDoc: null,
   bankName: '',
@@ -37,6 +40,16 @@ const FileField: React.FC<{
   required?: boolean;
 }> = ({ label, file, onChange, required }) => {
   const ref = useRef<HTMLInputElement>(null);
+  const [converting, setConverting] = useState(false);
+  const handleFile = async (picked: File | null) => {
+    if (!picked) { onChange(null); return; }
+    setConverting(true);
+    try {
+      onChange(await convertHeicFileIfNeeded(picked));
+    } finally {
+      setConverting(false);
+    }
+  };
   return (
     <div className="kyc-file-field">
       <span className="kyc-file-label">
@@ -51,8 +64,8 @@ const FileField: React.FC<{
           </button>
         </div>
       ) : (
-        <button type="button" className="kyc-file-btn" onClick={() => ref.current?.click()}>
-          <Upload size={15} /> Upload
+        <button type="button" className="kyc-file-btn" disabled={converting} onClick={() => ref.current?.click()}>
+          <Upload size={15} /> {converting ? 'Converting…' : 'Upload'}
         </button>
       )}
       <input
@@ -60,13 +73,18 @@ const FileField: React.FC<{
         type="file"
         accept="image/*,.pdf"
         style={{ display: 'none' }}
-        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
       />
     </div>
   );
 };
 
 const KycApplicationPage: React.FC = () => {
+  usePageMeta({
+    title: 'Become a Vendor | Ship with Parcel Moover (ParcelMoover)',
+    description: 'Apply to ship with ParcelMoover: courier pickup and delivery across the Kathmandu valley and Nepal, live tracking for your customers, and COD settlement for your business.',
+    path: '/apply',
+  });
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<KycApplicationInput>(emptyForm());
   const [loading, setLoading] = useState(false);
@@ -93,9 +111,13 @@ const KycApplicationPage: React.FC = () => {
       if (!isValidEmail(form.ownerEmail)) return 'Enter a valid email address';
       if (!form.ownerContact.trim()) return 'Contact number is required';
       if (!isValidPhone(form.ownerContact)) return 'Enter a valid Nepali mobile number (e.g. 98XXXXXXXX)';
+      if (!form.bankName?.trim()) return 'Bank name is required';
+      if (!form.bankAccountNo?.trim()) return 'Bank account number is required';
+      if (!form.bankAccountHolder?.trim()) return 'Account holder name is required';
     }
     if (step === 2) {
-      if (!form.citizenshipDoc) return 'Citizenship document is required';
+      if (!form.citizenshipDocFront) return 'Citizenship document (front side) is required';
+      if (!form.citizenshipDocBack) return 'Citizenship document (back side) is required';
     }
     return '';
   };
@@ -128,8 +150,8 @@ const KycApplicationPage: React.FC = () => {
     try {
       await submitKycApplication(form);
       setSubmitted(true);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to submit application. Please try again.');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to submit application. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -158,7 +180,10 @@ const KycApplicationPage: React.FC = () => {
     <div className="kyc-page">
       <div className="kyc-container">
         <div className="kyc-header">
-          <Link to="/" className="kyc-logo">ParcelMoover</Link>
+          <Link to="/" className="kyc-logo">
+            <img src="/brand/logo-icon.png" alt="" className="kyc-logo-mark" />
+            ParcelMoover
+          </Link>
           <h1>Vendor KYC Application</h1>
           <p>Fill in your details to apply as a delivery vendor partner.</p>
         </div>
@@ -267,18 +292,21 @@ const KycApplicationPage: React.FC = () => {
                 />
                 <FormField
                   label="Bank Name"
+                  required
                   value={form.bankName ?? ''}
                   onChange={set('bankName')}
                   placeholder="e.g. Nabil Bank"
                 />
                 <FormField
                   label="Bank Account No."
+                  required
                   value={form.bankAccountNo ?? ''}
                   onChange={set('bankAccountNo')}
                   placeholder="Account number"
                 />
                 <FormField
                   label="Account Holder Name"
+                  required
                   value={form.bankAccountHolder ?? ''}
                   onChange={set('bankAccountHolder')}
                   placeholder="Name as on bank account"
@@ -291,7 +319,8 @@ const KycApplicationPage: React.FC = () => {
             <div className="kyc-section">
               <h3>Documents &amp; Review</h3>
               <div className="kyc-grid">
-                <FileField label="Citizenship" required file={form.citizenshipDoc} onChange={setFile('citizenshipDoc')} />
+                <FileField label="Citizenship (Front)" required file={form.citizenshipDocFront} onChange={setFile('citizenshipDocFront')} />
+                <FileField label="Citizenship (Back)" required file={form.citizenshipDocBack} onChange={setFile('citizenshipDocBack')} />
                 <FileField label="PAN / VAT Document" file={form.panVatDoc} onChange={setFile('panVatDoc')} />
                 <FileField label="Business Certificate" file={form.businessCertDoc} onChange={setFile('businessCertDoc')} />
               </div>

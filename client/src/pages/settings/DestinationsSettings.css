@@ -7,7 +7,7 @@
 .dest-settings-head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--space-4);
 }
 
@@ -44,10 +44,9 @@
   gap: var(--space-3);
 }
 
-.dest-form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
+/* Two fields a row, so the pop-up is wider than the default modal. */
+.modal-content.dest-form {
+  width: 680px;
 }
 
 .dest-error {
@@ -109,6 +108,20 @@
   border: none;
   padding: 0;
   cursor: pointer;
+}
+
+/* Zone + valley side, between a destination's title and its covered areas.
+   Two fixed-width columns on wide screens, one full-width column on phones. */
+.dest-classification {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 260px));
+  gap: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .dest-classification {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .dest-areas {
@@ -176,13 +189,6 @@
 .dest-edit-btn:hover {
   background: var(--color-background-canvas);
   color: #000;
-}
-
-.dest-form-title {
-  margin: 0 0 var(--space-2);
-  font-size: 0.95rem;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-default);
 }
 
 .dest-confirm-delete {
@@ -286,7 +292,7 @@
 
 .dest-area-edit-input:focus {
   outline: none;
-  border-color: var(--color-border-strong, var(--color-text-caption));
+  border-color: var(--color-text-caption, var(--color-text-caption));
 }
 
 .dest-area-confirm-text {
@@ -441,7 +447,7 @@
 
 .dest-search-input:focus {
   outline: none;
-  border-color: var(--color-border-strong, var(--color-text-caption));
+  border-color: var(--color-text-caption, var(--color-text-caption));
 }
 
 .dest-search-clear {
@@ -464,4 +470,9 @@
 .dest-search-clear:hover {
   background: var(--color-danger-surface);
   color: var(--color-danger-default);
+}
+
+/* A covered area shown read-only (branch view): not clickable. */
+.dest-area-chip--static {
+  cursor: default;
 }

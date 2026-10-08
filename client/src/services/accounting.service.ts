@@ -10,6 +10,76 @@ import api from '../utils/api';
 // what the account is for — cash held, money owed to a vendor, revenue earned.
 
 export type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
+
+/**
+ * What an account is - the one classification anyone picks.
+ *
+ * Mirrors the server's `ledger_account_sub_type`. `type` is derived from this
+ * on the server, so a screen only has to ask for the class; the API rejects a
+ * `type` that contradicts one rather than quietly dropping it.
+ */
+export type AccountClass =
+  | 'fixed_asset'
+  | 'intangible_asset'
+  | 'current_asset'
+  | 'long_term_liability'
+  | 'current_liability'
+  | 'capital'
+  | 'reserves'
+  | 'direct_income'
+  | 'indirect_income'
+  | 'direct_expense'
+  | 'indirect_expense';
+
+/** In the order a chart of accounts is read: assets down to expenses. */
+export const ACCOUNT_CLASSES: readonly AccountClass[] = [
+  'fixed_asset',
+  'intangible_asset',
+  'current_asset',
+  'long_term_liability',
+  'current_liability',
+  'capital',
+  'reserves',
+  'direct_income',
+  'indirect_income',
+  'direct_expense',
+  'indirect_expense',
+];
+
+export const ACCOUNT_CLASS_LABELS: Record<AccountClass, string> = {
+  fixed_asset: 'Fixed Assets',
+  intangible_asset: 'Intangible Assets',
+  current_asset: 'Current Assets',
+  long_term_liability: 'Long-term Liability',
+  current_liability: 'Current Liability',
+  capital: 'Capital',
+  reserves: 'Reserves & Surplus',
+  direct_income: 'Direct Income',
+  indirect_income: 'Indirect Income',
+  direct_expense: 'Direct Expense',
+  indirect_expense: 'Indirect Expense',
+};
+
+/**
+ * The side that increases each class, offered as the default when adding.
+ *
+ * The server applies the same defaults, so this only saves the form from
+ * showing a blank; sending a different side is still how a contra account
+ * (accumulated depreciation against fixed assets) gets made.
+ */
+export const CLASS_NORMAL_SIDE: Record<AccountClass, 'debit' | 'credit'> = {
+  fixed_asset: 'debit',
+  intangible_asset: 'debit',
+  current_asset: 'debit',
+  long_term_liability: 'credit',
+  current_liability: 'credit',
+  capital: 'credit',
+  reserves: 'credit',
+  direct_income: 'credit',
+  indirect_income: 'credit',
+  direct_expense: 'debit',
+  indirect_expense: 'debit',
+};
 export type PartyType = 'vendor' | 'rider' | 'payment_method' | 'location' | 'user';
 
 /** The three ways of asking "when". The server reads them in this priority order. */
@@ -28,11 +98,20 @@ export interface Account {
   name: string;
   type: AccountType;
   normalSide: 'debit' | 'credit';
+  subType: AccountClass | null;
   isControl: boolean;
   subledgerType: PartyType | null;
   description: string | null;
   isActive: boolean;
 }
+
+/**
+ * Whether a hand-written entry can post to this account. A control account
+ * needs its party named, and the party picker knows only riders and vendors -
+ * COD with Branch is tagged per branch, so it is posted through Branch COD.
+ */
+export const isPostableByHand = (account: Account) =>
+  !account.isControl || account.subledgerType === 'rider' || account.subledgerType === 'vendor';
 
 export interface AccountBalance extends Account {
   debit: number;
@@ -85,6 +164,8 @@ export interface LedgerRow {
   entryDate: string;
   bsDate: string;
   memo: string | null;
+  /** What raised the entry, shown as the voucher type. */
+  sourceType: string;
   contraAccounts: string;
   debit: number;
   credit: number;
@@ -95,13 +176,65 @@ export interface AccountLedger {
   account: Account;
   range: { from: string; to: string; label: string };
   openingBalance: number;
+  /** Across the whole range, not just the returned page. */
   closingBalance: number;
   totalDebit: number;
   totalCredit: number;
   rows: LedgerRow[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export type PartyLedger = AccountLedger & { partyName: string };
+
+/** One movement on a party ledger: a delivery run or a statement. */
+export interface PartyLedgerEntry {
+  id: string;
+  kind: 'statement' | 'instalment';
+  reference: string;
+  entryId: string | null;
+  date: string;
+  bsDate: string;
+  description: string;
+  debit: number;
+  credit: number;
+  runningBalance: number;
+}
+
+export interface PartyLedgerSummaryLine {
+  label: string;
+  amount: number;
+}
+
+/**
+ * A rider's or vendor's ledger. A rider's runs debit-normal - the balance is
+ * COD still in their pocket - and a vendor's credit-normal.
+ */
+export interface PartySettlementLedger {
+  partyType: 'rider' | 'vendor';
+  partyId: string;
+  partyName: string;
+  partySubtitle: string | null;
+  range: { from: string; to: string; label: string };
+  openingBalance: number;
+  /** Across the whole range, not just the returned page. */
+  closingBalance: number;
+  totalDebit: number;
+  totalCredit: number;
+  summary: PartyLedgerSummaryLine[];
+  rows: PartyLedgerEntry[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface PartyMethodTotal {
+  method: string;
+  amount: number;
+}
 
 export interface PartyBalance {
   partyId: string;
@@ -110,6 +243,8 @@ export interface PartyBalance {
   debit: number;
   credit: number;
   balance: number;
+  /** What has actually been paid, split by method, largest first. */
+  methods: PartyMethodTotal[];
 }
 
 export interface PartySearchResult {
@@ -140,6 +275,9 @@ export interface PartyMovement {
   debit: number;
   credit: number;
   trackingId: string | null;
+  /** `voided` is a cancelled voucher; its reversal comes back as `sourceType: 'reversal'`. */
+  status: string;
+  sourceType: string;
 }
 
 /** Everything the company has paid to or collected from one person. */
@@ -193,8 +331,8 @@ export const getOverview = async (params: RangeParams = {}): Promise<AccountingO
   return response.data.data;
 };
 
-export const listAccounts = async (): Promise<Account[]> => {
-  const response = await api.get('/accounting/accounts');
+export const listAccounts = async (scope?: 'cash_bank'): Promise<Account[]> => {
+  const response = await api.get('/accounting/accounts', { params: scope ? { scope } : undefined });
   return response.data.data;
 };
 
@@ -226,6 +364,8 @@ export interface TransactionRow {
   entryDate: string;
   bsDate: string;
   memo: string | null;
+  /** What raised the entry, shown as the voucher type. */
+  sourceType: string;
   accountCode: string;
   accountName: string;
   contraAccounts: string;
@@ -271,7 +411,10 @@ export const getJournalEntry = async (id: string): Promise<JournalEntry> => {
   return response.data.data;
 };
 
-export const getAccountLedger = async (code: string, params: RangeParams = {}): Promise<AccountLedger> => {
+export const getAccountLedger = async (
+  code: string,
+  params: RangeParams & { page?: number; pageSize?: number } = {},
+): Promise<AccountLedger> => {
   const response = await api.get(`/accounting/ledger/${code}`, { params });
   return response.data.data;
 };
@@ -295,9 +438,31 @@ export const getPartyLedger = async (
   return response.data.data;
 };
 
-/** Riders, vendors and staff in one lookup. */
+export const getPartySettlementLedger = async (
+  partyType: 'vendor' | 'rider',
+  partyId: string,
+  params: RangeParams & { page?: number; pageSize?: number } = {},
+): Promise<PartySettlementLedger> => {
+  const response = await api.get(`/accounting/parties/${partyType}/${partyId}/settlements`, { params });
+  return response.data.data;
+};
+
+/** Riders, vendors and other users in one lookup. */
 export const searchParties = async (q: string): Promise<PartySearchResult[]> => {
   const response = await api.get('/accounting/party-search', { params: { q } });
+  return response.data.data;
+};
+
+/** Bounded browse/search for voucher party pickers; loads more as the list scrolls. */
+export const searchPartiesPage = async (
+  q: string,
+  types: PartySearchResult['partyType'][],
+  offset = 0,
+  limit = 30,
+): Promise<{ results: PartySearchResult[]; hasMore: boolean }> => {
+  const response = await api.get('/accounting/party-search', {
+    params: { q, types: types.join(','), offset, limit, paged: 'true' },
+  });
   return response.data.data;
 };
 
@@ -336,7 +501,117 @@ export const createManualEntry = async (input: {
   return response.data.data;
 };
 
+export interface BranchCodOutstanding {
+  branchId: string;
+  branchName: string;
+  outstanding: number;
+  statements: number;
+}
+
+/** Branches with COD still open on statements — who a branch receipt can be from. */
+export const listBranchCodOutstanding = async (): Promise<BranchCodOutstanding[]> => {
+  const response = await api.get('/accounting/branch-cod');
+  return response.data.data;
+};
+
+export interface BranchCodReceipt {
+  branchId: string;
+  amount: number;
+  allocations: { settlementId: string; statementNo: string; amount: number; settled: boolean }[];
+  entries: { id: string; entryNo: string }[];
+}
+
+/**
+ * Cash from a branch on a Receipt voucher. Pays the branch's open COD
+ * statements down oldest first; each statement re-posts its own entry.
+ */
+export const receiveBranchCod = async (input: {
+  branchId: string;
+  amount: number;
+  accountCode: string;
+  reference?: string;
+  narration?: string;
+}): Promise<BranchCodReceipt> => {
+  const response = await api.post('/accounting/branch-cod/receipts', input);
+  return response.data.data;
+};
+
 export const reverseEntry = async (id: string, reason: string): Promise<JournalEntry> => {
   const response = await api.post(`/accounting/journal/${id}/reverse`, { reason });
+  return response.data.data;
+};
+
+// ── Masters ──────────────────────────────────────────────────────────────────
+//
+// The chart of accounts, editable. `lineCount` is what the UI keys off: an
+// account with posted lines can be renamed and regrouped but never redefined,
+// because its type and normal side decide how those lines are read.
+
+export interface AccountNode {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  normalSide: 'debit' | 'credit';
+  subType: AccountClass | null;
+  parentId: string | null;
+  parentCode: string | null;
+  isControl: boolean;
+  subledgerType: PartyType | null;
+  description: string | null;
+  isActive: boolean;
+  lineCount: number;
+  depth: number;
+  children: AccountNode[];
+}
+
+export const getChart = async (): Promise<AccountNode[]> => {
+  const response = await api.get('/accounting/chart');
+  return response.data.data;
+};
+
+export const createAccount = async (input: {
+  code: string;
+  name: string;
+  /** What the account is. The server derives the two below from it. */
+  subType: AccountClass;
+  /** Sent only to override the class default - that is, for a contra account. */
+  type?: AccountType;
+  normalSide?: 'debit' | 'credit';
+  parentCode?: string | null;
+  description?: string | null;
+  isControl?: boolean;
+  subledgerType?: PartyType | null;
+}): Promise<AccountNode> => {
+  const response = await api.post('/accounting/chart', input);
+  return response.data.data;
+};
+
+export const updateAccount = async (
+  code: string,
+  update: {
+    name?: string;
+    description?: string | null;
+    parentCode?: string | null;
+    isActive?: boolean;
+    type?: AccountType;
+    normalSide?: 'debit' | 'credit';
+    subType?: AccountClass;
+  },
+): Promise<AccountNode> => {
+  const response = await api.patch(`/accounting/chart/${code}`, update);
+  return response.data.data;
+};
+
+export const setOpeningBalance = async (input: {
+  accountCode: string;
+  /** Signed from the account's own side: positive debits it, negative credits it. */
+  amount: number;
+  asOf: string;
+  partyType?: 'vendor' | 'rider' | null;
+  partyId?: string | null;
+  reference: string;
+}): Promise<{ entryNo: string | null; skipped: boolean; created: boolean }> => {
+  const response = await api.post('/accounting/opening-balance', input);
   return response.data.data;
 };

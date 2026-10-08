@@ -10,6 +10,16 @@ export interface CurrentUser {
    * admins (codes delegated by a super_admin, e.g. MANAGE_USERS).
    */
   permissions?: string[];
+  /** An admin/super_admin's own assigned hub, if any. Branch COD has a fixed
+   *  receiving master (Imadol), independent of this profile assignment. */
+  locationId?: string | null;
+  /** Human-readable name of the admin's assigned branch. */
+  locationName?: string | null;
+  /**
+   * True for a branch workspace account. These admins operate only inside
+   * their assigned branch instead of receiving the full head-office shell.
+   */
+  branchScoped?: boolean;
 }
 
 export function getCurrentUser(): CurrentUser | null {
@@ -40,13 +50,114 @@ export function isAdminSide(): boolean {
   return hasAnyRole(['super_admin', 'admin']);
 }
 
+/** True only for a branch-scoped plain admin, never a head-office super admin. */
+export function isBranchWorkspaceUser(): boolean {
+  const user = getCurrentUser();
+  if (!user) return false;
+  return (
+    user.branchScoped === true &&
+    user.roles.includes('admin') &&
+    !user.roles.includes('super_admin')
+  );
+}
+
+/** Routes that belong to the intentionally small assigned-branch workspace. */
+export function isBranchWorkspacePathAllowed(pathname: string): boolean {
+  return (
+    pathname === '/dashboard' ||
+    // Drill-downs behind the dashboard's own overview cards (/overview/inTransit
+    // and friends). Without these the In transit card bounced to the unfiltered
+    // /orders list, which reads as "the card opens every in-progress order".
+    // The list itself is GET /orders, already narrowed to the branch's hub
+    // coverage server-side, so this exposes nothing the dashboard did not.
+    pathname.startsWith('/overview/') ||
+    pathname === '/orders' ||
+    pathname === '/orders/create' ||
+    pathname === '/orders/bulk-create' ||
+    pathname.startsWith('/orders/track/') ||
+    // Branch onboards and manages its own vendors; the vendor APIs scope a
+    // branch-scoped admin to vendors registered at their branch.
+    pathname === '/vendors' ||
+    pathname.startsWith('/vendors/') ||
+    pathname === '/merchant-overview' ||
+    // Branch runs its own pickup, dispatch, transit and return desks; the order
+    // APIs behind these pages scope a branch-scoped admin to their own branch.
+    pathname === '/pickup' ||
+    pathname === '/dispatch' ||
+    pathname === '/oov' ||
+    pathname === '/return' ||
+    pathname === '/hold' ||
+    // Branch manages its own riders and settles their COD; the rider APIs
+    // behind these pages scope a branch-scoped admin to their branch's riders.
+    pathname === '/riders' ||
+    pathname.startsWith('/riders/') ||
+    pathname === '/accounting/transactions/rider-cod' ||
+    pathname.startsWith('/finance/settlements/') ||
+    // Support desk for the branch's own parcels / staff.
+    pathname === '/tickets' ||
+    pathname.startsWith('/tickets/') ||
+    pathname === '/remarks' ||
+    pathname.startsWith('/remarks/') ||
+    pathname === '/branches/settlement' ||
+    // Includes /branches/settlement/new — a branch creates its own COD statement.
+    pathname.startsWith('/branches/settlement/') ||
+    pathname === '/branches/billing' ||
+    // Read-only destination network (editing stays in head-office Settings).
+    pathname === '/branches/destinations' ||
+    // Rates, pinned to the branch's own hub as origin. No SETTINGS_ACCESS
+    // needed: the route's RoleGuard lets a branch workspace through, and the
+    // server confines reads and writes to routes out of their own hub.
+    pathname === '/settings/delivery-rates'
+  );
+}
+
+/**
+ * True for a finance-only accountant account (the "Accountant" department). The
+ * server gives it the whole Finance section plus branch COD settlement, and
+ * read-only views of orders and the overviews - no operations, users or settings.
+ */
+export function isAccountantUser(): boolean {
+  return hasAnyRole(['accountant']) && !isAdminSide();
+}
+
+/** Where an accountant lands, and where any non-finance URL sends them back to. */
+export const ACCOUNTANT_HOME = '/accounting';
+
+/** Routes that belong to the accountant's finance-only workspace. */
+export function isAccountantPathAllowed(pathname: string): boolean {
+  return (
+    pathname === '/profile' ||
+    pathname === '/accounting' ||
+    pathname.startsWith('/accounting/') ||
+    pathname === '/finance' ||
+    pathname.startsWith('/finance/') ||
+    pathname === '/billing' ||
+    // Drill-downs behind the COD Settlement card on the finance overview.
+    pathname.startsWith('/cod/') ||
+    pathname === '/cod-settlement-requests' ||
+    pathname.startsWith('/cod-settlement-requests/') ||
+    // Branch COD: the statement list/detail (recording payments), creating a
+    // statement, and the branch billing queue.
+    pathname === '/branches/settlement' ||
+    pathname.startsWith('/branches/settlement/') ||
+    pathname === '/branches/billing' ||
+    // Read-only views to check the money against: the order list and an
+    // order's detail (never create/bulk-create), and the three overviews.
+    pathname === '/orders' ||
+    pathname.startsWith('/orders/track/') ||
+    pathname === '/merchant-overview' ||
+    pathname === '/rider-overview' ||
+    pathname === '/branches'
+  );
+}
+
 /** True for a pure sales account — excludes admin/super_admin, who also carry the 'sales' role code when department = Sales but use the admin views. */
 export function isSalesUser(): boolean {
   return hasAnyRole(['sales']) && !isAdminSide();
 }
 
 /** Roles that actually have a web (admin/vendor/sales) experience. */
-const WEB_ROLES = ['super_admin', 'admin', 'sales', 'vendor', 'vendor_staff'];
+const WEB_ROLES = ['super_admin', 'admin', 'sales', 'accountant', 'vendor', 'vendor_staff'];
 
 /**
  * True for a rider who has no web-facing role. Riders use the dedicated Rider
@@ -72,9 +183,20 @@ export function hasStaffPermission(permission: string): boolean {
  * Delegated admin privileges (MANAGE_USERS, SETTINGS_ACCESS). A super_admin
  * implicitly holds all of them; a plain admin only what a super_admin granted.
  */
+/** The current admin/super_admin's own assigned hub, or null if they have none. */
+export function getCurrentUserLocationId(): string | null {
+  return getCurrentUser()?.locationId ?? null;
+}
+
+// The finance grants an accountant holds by role, matching the server (where
+// requireAdminPermission never narrows a non-admin role). BRANCH_TRACKING_READ
+// is the read-only Branch Overview; never the WRITE level.
+const ACCOUNTANT_PERMISSIONS = ['ACCOUNTING_ACCESS', 'EDIT_SETTLEMENTS', 'BRANCH_TRACKING_READ'];
+
 export function hasAdminPermission(permission: string): boolean {
   const roles = getCurrentUserRoles();
   if (roles.includes('super_admin')) return true;
+  if (roles.includes('accountant') && ACCOUNTANT_PERMISSIONS.includes(permission)) return true;
   if (!roles.includes('admin')) return false;
   const p = getCurrentUser()?.permissions;
   return Array.isArray(p) && p.includes(permission);

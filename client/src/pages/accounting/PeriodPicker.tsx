@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import FilterDropdown from '../../components/FilterDropdown';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
-import { listPeriods, type AccountingPeriod } from '../../services/accounting.service';
+import type { AccountingPeriod } from '../../services/accounting.service';
+import { listPeriods } from '../../queries/lookups';
 import { currentPeriodKey, type RangeMode, type RangeSelection } from './range';
 import './Accounting.css';
 

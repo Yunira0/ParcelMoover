@@ -7,6 +7,7 @@ import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
+  accountLedgerQuerySchema,
   createExpenseSchema,
   createManualEntrySchema,
   expensesQuerySchema,
@@ -14,8 +15,12 @@ import {
   partyBalancesQuerySchema,
   partySearchQuerySchema,
   rangeQuerySchema,
+  receiveBranchCodSchema,
   reverseEntrySchema,
   setPeriodStatusSchema,
+  createAccountSchema,
+  openingBalanceSchema,
+  updateAccountSchema,
   transactionsQuerySchema,
   voidExpenseSchema,
 } from "../validators/accounting.schema";
@@ -27,9 +32,14 @@ import {
   getJournalEntryController,
   getOverviewController,
   getPartyLedgerController,
+  getPartySettlementLedgerController,
   getProfitAndLossController,
   getTrialBalanceController,
   listAccountsController,
+  listChartController,
+  createAccountController,
+  setOpeningBalanceController,
+  updateAccountController,
   listExpensesController,
   listJournalController,
   listPartyBalancesController,
@@ -37,6 +47,8 @@ import {
   listTransactionsController,
   searchPartiesController,
   getPartyStatementController,
+  listBranchCodOutstandingController,
+  receiveBranchCodController,
   reverseEntryController,
   setPeriodStatusController,
   voidExpenseController,
@@ -64,6 +76,7 @@ const readLimiter = rateLimit({
   legacyHeaders: false,
   // Fail open rather than 500 if Redis is unreachable, matching finance.routes.
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("accounting-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -80,7 +93,7 @@ const writeLimiter = rateLimit({
 
 const read = [
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("ACCOUNTING_ACCESS"),
   readLimiter,
 ] as const;
@@ -88,7 +101,7 @@ const read = [
 const write = [
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "accountant", "admin"),
   requireAdminPermission("ACCOUNTING_ACCESS"),
   writeLimiter,
 ] as const;
@@ -108,7 +121,7 @@ accountingRouter.get("/journal", ...read, validate(journalQuerySchema, "query"),
 accountingRouter.get("/journal/:id", ...read, getJournalEntryController);
 
 // GET /api/accounting/ledger/:code — one account's movements + running balance
-accountingRouter.get("/ledger/:code", ...read, validate(rangeQuerySchema, "query"), getAccountLedgerController);
+accountingRouter.get("/ledger/:code", ...read, validate(accountLedgerQuerySchema, "query"), getAccountLedgerController);
 
 // GET /api/accounting/transactions — movements on one set of accounts, newest
 // first. Line-level, so a scope + direction gives a cash book directly.
@@ -135,7 +148,18 @@ accountingRouter.get(
   getPartyLedgerController,
 );
 
-// GET /api/accounting/party-search — riders, vendors and staff in one lookup
+// GET /api/accounting/parties/:partyType/:id/settlements — the same party as a
+// ledger of their statements, which is what a settled statement is missing from
+// the subledger above (its posting nets to zero there once it is paid)
+accountingRouter.get(
+  "/parties/:partyType/:id/settlements",
+  ...read,
+  validate(accountLedgerQuerySchema, "query"),
+  getPartySettlementLedgerController,
+);
+
+// GET /api/accounting/party-search — staff-only lookup across riders, vendors
+// and other users; the ACCOUNTING_ACCESS gate keeps it outside Partner API.
 accountingRouter.get("/party-search", ...read, validate(partySearchQuerySchema, "query"), searchPartiesController);
 
 // GET /api/accounting/statement/:partyType/:id — everything paid to or
@@ -173,10 +197,41 @@ accountingRouter.post("/expenses/:id/void", ...write, validate(voidExpenseSchema
 // POST /api/accounting/journal — hand-written entry
 accountingRouter.post("/journal", ...write, validate(createManualEntrySchema), createManualEntryController);
 
+// GET /api/accounting/branch-cod — branches with COD open on statements
+accountingRouter.get("/branch-cod", ...read, listBranchCodOutstandingController);
+
+// POST /api/accounting/branch-cod/receipts — a Receipt voucher's cash from a
+// branch, paid down against its open statements oldest first
+accountingRouter.post("/branch-cod/receipts", ...write, validate(receiveBranchCodSchema), receiveBranchCodController);
+
 // POST /api/accounting/journal/:id/reverse — mirror-image an entry
 accountingRouter.post("/journal/:id/reverse", ...write, validate(reverseEntrySchema), reverseEntryController);
 
 // PATCH /api/accounting/periods/:periodKey — close or reopen a BS month
 accountingRouter.patch("/periods/:periodKey", ...write, validate(setPeriodStatusSchema), setPeriodStatusController);
+
+// ── Masters ─────────────────────────────────────────────────────────────────
+//
+// Editing the chart comes with ACCOUNTING_ACCESS like the rest of the section.
+// masters.service refuses the dangerous edits (type, normal side) outright once
+// an account has been posted to.
+
+// GET /api/accounting/chart — the chart as a tree, with posted-line counts
+accountingRouter.get("/chart", ...read, listChartController);
+
+// POST /api/accounting/chart — add an account or a group
+accountingRouter.post("/chart", ...write, validate(createAccountSchema), createAccountController);
+
+// PATCH /api/accounting/chart/:code — rename, regroup, deactivate
+accountingRouter.patch("/chart/:code", ...write, validate(updateAccountSchema), updateAccountController);
+
+// POST /api/accounting/opening-balance — a starting position no source row can
+// produce: cash a rider was already holding, a bank account opened with money
+accountingRouter.post(
+  "/opening-balance",
+  ...write,
+  validate(openingBalanceSchema),
+  setOpeningBalanceController,
+);
 
 export default accountingRouter;

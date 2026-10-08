@@ -7,6 +7,17 @@ export function actorFrom(req: Request) {
   return { id: req.apiKey!.userId, roles: ["vendor"] };
 }
 
+// The Redis idempotency cache is shared with dashboard routes and every other
+// vendor. A client UUID alone must never identify a cached Partner API result.
+export function partnerIdempotencyKey(
+  req: Request,
+  operation: string,
+  clientKey: string,
+  resourceId?: string,
+) {
+  return `partner-api:v1:${req.apiKey!.vendorId}:${operation}:${resourceId ?? "-"}:${clientKey}`;
+}
+
 export const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

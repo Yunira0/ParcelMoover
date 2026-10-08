@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, ChevronDown, FolderOpen } from 'lucide-react';
+import { Plus, Search, ChevronDown, FolderOpen, ShieldCheck } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
-import SegmentedTabs from '../components/SegmentedTabs';
+import SegmentedTabs, { type SegmentedTabOption } from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
+import ToggleSwitch from '../components/ToggleSwitch';
 import Button from '../components/Button';
 import UserDocumentsModal from '../components/UserDocumentsModal';
+import VendorVolumeLimitPanel from '../components/vendor/VendorVolumeLimitPanel';
 import KycManagement from './KycManagement';
-import { getVendors } from '../services/users.service';
+import { getVendors, updateUserStatus } from '../services/users.service';
 import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser, hasAdminPermission } from '../utils/auth';
 import './VendorManagement.css';
 
@@ -34,11 +36,21 @@ interface VendorUser {
   lastOrderedDate: string;
   salesUserId: string | null;
   salesEditUsed: boolean;
+  /** Verified = approved KYC behind them; pending = a verification in the
+      queue; needed = nothing — the only state that shows the Start KYC action. */
+  kycStatus: 'verified' | 'pending' | 'needed';
 }
 
 // Starting rows-per-page. The selector below the table can change it; the
 // server caps any value at 100 (auth.controller LIST_MAX_PAGE_SIZE).
 const PAGE_SIZE = 20;
+type VendorManagementView = 'vendors' | 'kyc' | 'volume-limit';
+
+// The vendor's registered company - what identifies them everywhere on this
+// page now, in place of the owner's personal client name. Falls back to the
+// client name for the rare vendor registered before a company name was
+// required.
+const vendorDisplayName = (v: { company: string; client: string }): string => v.company || v.client;
 
 const VendorManagement: React.FC = () => {
   const navigate = useNavigate();
@@ -54,16 +66,26 @@ const VendorManagement: React.FC = () => {
   // KYC is the application a vendor account starts life as, so it lives here
   // as a second view rather than as a section of its own. Sales never sees it.
   const canReviewKyc = hasAdminPermission('KYC_ACCESS');
+  // Only super admin sets the "High volume vendor" threshold - it's a policy
+  // knob, not a day-to-day vendor-management action.
+  const isSuperAdmin = hasAnyRole(['super_admin']);
   const [searchParams, setSearchParams] = useSearchParams();
-  const view: 'vendors' | 'kyc' =
-    canReviewKyc && searchParams.get('tab') === 'kyc' ? 'kyc' : 'vendors';
-  const selectView = (next: 'vendors' | 'kyc') => {
+  const view: VendorManagementView =
+    canReviewKyc && searchParams.get('tab') === 'kyc'
+      ? 'kyc'
+      : isSuperAdmin && searchParams.get('tab') === 'volume-limit'
+        ? 'volume-limit'
+        : 'vendors';
+  const selectView = (next: VendorManagementView) => {
     const params = new URLSearchParams(searchParams);
-    if (next === 'kyc') params.set('tab', 'kyc');
-    else params.delete('tab');
+    if (next === 'vendors') params.delete('tab');
+    else params.set('tab', next);
     setSearchParams(params, { replace: true });
   };
-  const [filter, setFilter] = useState<'all' | 'high-volume' | 'active'>('all');
+  const viewOptions: SegmentedTabOption<VendorManagementView>[] = [{ value: 'vendors', label: 'Vendors' }];
+  if (canReviewKyc) viewOptions.push({ value: 'kyc', label: 'KYC Applications' });
+  if (isSuperAdmin) viewOptions.push({ value: 'volume-limit', label: 'Volume Limit' });
+  const [filter, setFilter] = useState<'all' | 'high-volume'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStatus, setActiveStatus] = useState('all');
   const [vendors, setVendors] = useState<VendorUser[]>([]);
@@ -75,6 +97,32 @@ const VendorManagement: React.FC = () => {
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  // Rows with a status write in flight, so a row's own toggle disables without
+  // freezing the rest of the table.
+  const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
+  const [statusError, setStatusError] = useState('');
+
+  // Optimistic: the switch moves immediately and rolls back if the write fails,
+  // matching how Rider and Admin management handle the same toggle.
+  const toggleVendorStatus = async (vendor: VendorUser) => {
+    const nextStatus = vendor.status === 'active' ? 'inactive' : 'active';
+    setStatusError('');
+    setStatusSavingIds(prev => new Set(prev).add(vendor.id));
+    setVendors(prev => prev.map(v => (v.id === vendor.id ? { ...v, status: nextStatus } : v)));
+    try {
+      await updateUserStatus('vendor', vendor.id, nextStatus);
+    } catch (err) {
+      console.error('Failed to update vendor status:', err);
+      setVendors(prev => prev.map(v => (v.id === vendor.id ? { ...v, status: vendor.status } : v)));
+      setStatusError(`Failed to set ${vendorDisplayName(vendor)} ${nextStatus}. Please try again.`);
+    } finally {
+      setStatusSavingIds(prev => {
+        const next = new Set(prev);
+        next.delete(vendor.id);
+        return next;
+      });
+    }
+  };
 
   const loadVendors = useCallback(async () => {
     try {
@@ -82,6 +130,10 @@ const VendorManagement: React.FC = () => {
       const params: Record<string, string | number> = { page, pageSize: pageSizeChoice };
       if (searchQuery) params.search = searchQuery;
       if (activeStatus !== 'all') params.status = activeStatus;
+      // Order count lives on parcels, not vendors, so "high volume" can't be
+      // filtered on the page of vendors already fetched - the server resolves
+      // it against every matching vendor before paging.
+      if (filter === 'high-volume') params.highVolume = 'true';
 
       const res = await getVendors(params);
       if (res && res.success && Array.isArray(res.data)) {
@@ -99,7 +151,7 @@ const VendorManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSizeChoice, searchQuery, activeStatus]);
+  }, [page, pageSizeChoice, searchQuery, activeStatus, filter]);
 
   useEffect(() => {
     loadVendors();
@@ -110,15 +162,13 @@ const VendorManagement: React.FC = () => {
     setPage(1);
   }, [searchQuery, activeStatus, filter]);
 
-  // Client-side filter for tab (high-volume requires order count which comes from server)
-  const displayVendors = filter === 'high-volume'
-    ? vendors.filter(v => v.orders.total > 100)
-    : vendors;
-
   const columns = [
     { header: 'SN', accessor: 'sn' as keyof VendorUser, width: '50px' },
-    { header: 'CLIENT', accessor: 'client' as keyof VendorUser },
-    { header: 'COMPANY', accessor: 'company' as keyof VendorUser },
+    // Vendor name leads - it's the company staff actually deal with day to
+    // day. Owner name stays alongside it rather than folded into a subtext,
+    // since it's still a real column vendors are searched and sorted by.
+    { header: 'VENDOR NAME', accessor: (item: VendorUser) => vendorDisplayName(item) },
+    { header: 'OWNER NAME', accessor: 'client' as keyof VendorUser },
     { header: 'EMAIL', accessor: 'email' as keyof VendorUser },
     { header: 'PHONE', accessor: 'phone' as keyof VendorUser },
     { header: 'LOCATION', accessor: 'location' as keyof VendorUser },
@@ -138,11 +188,29 @@ const VendorManagement: React.FC = () => {
     },
     {
       header: 'STATUS',
-      accessor: (item: VendorUser) => (
-        <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
-          {item.status}
-        </StatusChip>
-      )
+      accessor: (item: VendorUser) => {
+        // Admin-only, deliberately. updateManagedUser stamps sales_edited_at
+        // whenever a pure-sales actor writes to a vendor, and refuses outright
+        // once it is set - so giving sales this switch would either spend their
+        // one-time vendor edit on a status flip or 403 after they'd already
+        // used it. That budget is meant for changing a vendor's details.
+        const canToggle = isAdmin;
+        return (
+          <div className="vendor-status-cell">
+            {canToggle && (
+              <ToggleSwitch
+                checked={item.status === 'active'}
+                disabled={statusSavingIds.has(item.id)}
+                onChange={() => toggleVendorStatus(item)}
+                ariaLabel={`Set ${vendorDisplayName(item)} ${item.status === 'active' ? 'inactive' : 'active'}`}
+              />
+            )}
+            <StatusChip variant="solid" tone={item.status === 'active' ? 'success' : 'danger'}>
+              {item.status}
+            </StatusChip>
+          </div>
+        );
+      }
     },
     // The API sends these as AD "YYYY-MM-DD"; every date shown in this app is BS.
     { header: 'JOINED', accessor: (v: VendorUser) => toBsDate(v.joined) || '—' },
@@ -185,7 +253,22 @@ const VendorManagement: React.FC = () => {
                       }
                     : undefined
                 }
-              />
+              >
+                {/* KYC verification lives here, not on the Vouchers page: it
+                    shows only while this vendor still needs it — verified
+                    vendors and queued ones get no button. Review access gates
+                    it, matching the server's KYC_ACCESS check. */}
+                {canReviewKyc && item.kycStatus === 'needed' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`/vendors/${item.id}/kyc-start`)}
+                  >
+                    <ShieldCheck size={14} />
+                    Start KYC
+                  </Button>
+                )}
+              </TableRowActions>
             );
           },
           width: '220px',
@@ -197,17 +280,12 @@ const VendorManagement: React.FC = () => {
     <div className="vendor-management-container">
       <PageHeader
         title="VENDOR MANAGEMENT"
-        subtitle={
-          view === 'kyc'
-            ? 'Review and approve vendor onboarding applications.'
-            : 'Oversee client accounts, delivery statistics, and financial tracking.'
-        }
         actionLabel={canCreate && view === 'vendors' ? 'Add new' : undefined}
         actionIcon={canCreate && view === 'vendors' ? <Plus size={16} /> : undefined}
         onAction={canCreate && view === 'vendors' ? () => navigate('/vendors/new') : undefined}
       />
 
-      {canReviewKyc && (
+      {(canReviewKyc || isSuperAdmin) && (
         <div className="vendor-views">
           <SegmentedTabs
             ariaLabel="Vendor management view"
@@ -215,14 +293,17 @@ const VendorManagement: React.FC = () => {
             value={view}
             onChange={selectView}
             options={[
-              { value: 'vendors', label: 'Vendors' },
-              { value: 'kyc', label: 'KYC Applications' },
+              { value: 'vendors' as const, label: 'Vendors' },
+              ...(canReviewKyc ? [{ value: 'kyc' as const, label: 'KYC Applications' }] : []),
+              ...(isSuperAdmin ? [{ value: 'volume-limit' as const, label: 'Volume Limit' }] : []),
             ]}
           />
         </div>
       )}
 
-      {view === 'kyc' ? (
+      {view === 'volume-limit' ? (
+        <VendorVolumeLimitPanel />
+      ) : view === 'kyc' ? (
         <KycManagement embedded />
       ) : (
       <>
@@ -234,8 +315,7 @@ const VendorManagement: React.FC = () => {
           onChange={setFilter}
           options={[
             { value: 'all', label: 'All' },
-            { value: 'high-volume', label: 'High volume client' },
-            { value: 'active', label: 'Active client' },
+            { value: 'high-volume', label: 'High volume vendor' },
           ]}
         />
 
@@ -244,7 +324,7 @@ const VendorManagement: React.FC = () => {
             <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
             <input
               type="text"
-              placeholder="Search client, phone, email, company..."
+              placeholder="Search vendor name, owner name, phone, email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -265,7 +345,8 @@ const VendorManagement: React.FC = () => {
         <div className="loading-state">Loading vendors...</div>
       ) : (
         <>
-          <Table columns={columns} data={displayVendors} selectable={false} />
+          {statusError && <p className="vendor-status-error">{statusError}</p>}
+          <Table columns={columns} data={vendors} selectable={false} />
           <Pagination
             page={page}
             totalPages={totalPages}
@@ -285,7 +366,7 @@ const VendorManagement: React.FC = () => {
       <UserDocumentsModal
         isOpen={Boolean(documentsVendor)}
         userType="vendor"
-        target={documentsVendor ? { id: documentsVendor.id, name: documentsVendor.client } : null}
+        target={documentsVendor ? { id: documentsVendor.id, name: vendorDisplayName(documentsVendor) } : null}
         onClose={() => setDocumentsVendor(null)}
       />
 

@@ -295,3 +295,11 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* On a phone the action buttons wrap instead of running off the card. */
+@media (max-width: 640px) {
+  .di-actions,
+  .di-result-actions {
+    flex-wrap: wrap;
+  }
+}

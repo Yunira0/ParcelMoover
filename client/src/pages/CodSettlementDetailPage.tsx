@@ -11,9 +11,12 @@ import {
   type CodDetailBucket,
   type CodDetailRow,
 } from '../services/orders.service';
+import { ACCOUNTANT_HOME, isAccountantUser } from '../utils/auth';
 import { COD_BUCKET_META } from '../utils/codBuckets';
 import { downloadExcel } from '../utils/excel';
 import { formatCurrency, formatDate } from '../utils/format';
+import { toBsDateTimeCell } from '../utils/nepaliDate';
+import { useSessionState } from '../hooks/useSessionState';
 import './CodSettlementDetailPage.css';
 
 const PAGE_SIZE = 10;
@@ -24,41 +27,47 @@ const isCodBucket = (value: string | undefined): value is CodDetailBucket =>
 const CodSettlementDetailPage: React.FC = () => {
   const { bucket } = useParams<{ bucket: string }>();
   const navigate = useNavigate();
-  const [rows, setRows] = useState<CodDetailRow[]>([]);
-  const [capped, setCapped] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  // Where the COD Settlement card that linked here lives.
+  const cardHome = isAccountantUser() ? ACCOUNTANT_HOME : '/dashboard';
+  // One result per bucket; while the shown bucket has none yet, it is loading.
+  // Keyed this way so switching buckets needs no reset inside the effect.
+  const [result, setResult] = useState<{ bucket: string; rows: CodDetailRow[]; capped: boolean; error: string } | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [pageFor, setPageFor] = useState(bucket);
+  if (pageFor !== bucket) {
+    setPageFor(bucket);
+    setPage(1);
+  }
+  // Kept for the browser tab, so coming back keeps the chosen page size.
+  const [pageSize, setPageSize] = useSessionState('cod-bucket:pageSize', PAGE_SIZE);
 
   const validBucket = isCodBucket(bucket) ? bucket : null;
   const meta = validBucket ? COD_BUCKET_META[validBucket] : null;
 
   useEffect(() => {
     if (!validBucket) {
-      // Unknown bucket in the URL - bounce back to the dashboard.
-      navigate('/dashboard', { replace: true });
+      // Unknown bucket in the URL - bounce back to the card.
+      navigate(cardHome, { replace: true });
       return;
     }
     const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    setPage(1);
     getCodSettlementDetail(validBucket, controller.signal)
       .then((res) => {
-        setRows(res.rows);
-        setCapped(res.capped);
+        setResult({ bucket: validBucket, rows: res.rows, capped: res.capped, error: '' });
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        setError('Failed to load COD settlement detail.');
+        setResult({ bucket: validBucket, rows: [], capped: false, error: 'Failed to load COD settlement detail.' });
         console.error(err);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [validBucket, navigate]);
+  }, [validBucket, navigate, cardHome]);
+
+  const current = result?.bucket === validBucket ? result : null;
+  const rows = useMemo(() => current?.rows ?? [], [current]);
+  const capped = current?.capped ?? false;
+  const error = current?.error ?? '';
+  const loading = current === null;
 
   // Deliberately summed over every row, not the visible page: this is the
   // figure the dashboard card showed, and seeing it reconcile is the reason
@@ -132,7 +141,7 @@ const CodSettlementDetailPage: React.FC = () => {
     ];
   }, [meta?.amountHeader, validBucket, currentPage, pageSize, pagedRows]);
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!validBucket || !meta) return;
     const headers = [
       '#',
@@ -155,21 +164,21 @@ const CodSettlementDetailPage: React.FC = () => {
       r.vendorName,
       r.receiverName,
       r.riderName ?? '',
-      formatDate(r.deliveredAt),
+      toBsDateTimeCell(r.deliveredAt) || '',
       r.collectedAmount,
       r.remittedAmount,
       r.riderRemittedAmount,
       r.deliveryCharge,
       r.bucketAmount,
     ]);
-    downloadExcel(`cod-${validBucket}.xlsx`, meta.title.slice(0, 31), headers, exportRows);
+    await downloadExcel(`cod-${validBucket}.xlsx`, meta.title.slice(0, 31), headers, exportRows);
   };
 
   if (!meta) return null;
 
   return (
     <div className="cod-detail-page">
-      <PageHeader title={meta.title} subtitle={meta.description} onBack={() => navigate('/dashboard')}>
+      <PageHeader title={meta.title} onBack={() => navigate(cardHome)}>
         <Button variant="secondary" onClick={handleExport} disabled={loading || rows.length === 0}>
           <Download size={14} /> Download
         </Button>

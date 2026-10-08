@@ -13,7 +13,9 @@ import {
 } from '../../services/orders.service';
 import { toBsDate } from '../../utils/nepaliDate';
 import { formatCurrency } from '../../utils/format';
+import { getCurrentUserRoles, hasStaffPermission } from '../../utils/auth';
 import './VendorMetricDetail.css';
+import ReceiverPhones from '../../components/ReceiverPhones';
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
@@ -65,6 +67,13 @@ const IN_DELIVERY_STATUSES: ParcelStatus[] = [
   'ready_to_deliver',
   'sent_for_delivery',
 ];
+// The "In Transit" card: the two statuses that actually mean the parcel is
+// moving - Transit (oov) and In Transit (dispatched). Mirrors
+// IN_TRANSIT_STATUSES in order.service.ts, which is what the card's number
+// counts. Kept separate from IN_DELIVERY_STATUSES above: that wider bucket also
+// holds parcels sitting at a hub or already out for delivery, and listing it
+// behind the In Transit card is exactly the mismatch this page had.
+const IN_TRANSIT_STATUSES: ParcelStatus[] = ['oov', 'dispatched'];
 const PENDING_PICKUP_STATUSES: ParcelStatus[] = ['pickup_ordered', 'rider_assigned'];
 // Return-workflow stages still in progress, i.e. not yet back with the
 // vendor (compare 'rtv-delivered', which is the terminal returned_to_vendor
@@ -95,8 +104,15 @@ export const METRICS: Record<string, MetricConfig> = {
     description: 'Orders returned to vendor.',
     status: ['returned_to_vendor'],
   },
+  'in-transit': {
+    label: 'In Transit',
+    description: 'Orders on the move between hubs — in transit or out on a dispatch.',
+    status: IN_TRANSIT_STATUSES,
+  },
+  // No longer linked from a card (the strip shows In Transit instead), but kept
+  // so bookmarks and older links to the wider in-progress bucket still resolve.
   'in-delivery': {
-    label: 'In Progress',
+    label: 'In Process',
     description: 'Orders picked up and moving through the network towards the customer.',
     status: IN_DELIVERY_STATUSES,
   },
@@ -214,6 +230,7 @@ const VendorMetricDetail: React.FC = () => {
     })();
   }, [metricId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const canSeeCod = !getCurrentUserRoles().includes('vendor_staff') || hasStaffPermission('FINANCE_ACCESS');
   const totalCod = useMemo(() => orders.reduce((sum, o) => sum + o.codAmount, 0), [orders]);
 
   const totalPages = Math.max(1, Math.ceil(orders.length / pageSizeChoice));
@@ -239,7 +256,7 @@ const VendorMetricDetail: React.FC = () => {
       accessor: (order: Order) => (
         <div className="vmd-receiver-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
       width: '180px',
@@ -252,9 +269,11 @@ const VendorMetricDetail: React.FC = () => {
       ),
       width: '150px',
     },
-    { header: 'COD AMOUNT', accessor: (order: Order) => formatCurrency(order.codAmount, 0), width: '110px' },
+    ...(canSeeCod
+      ? [{ header: 'COD AMOUNT', accessor: (order: Order) => formatCurrency(order.codAmount, 0), width: '110px' }]
+      : []),
     { header: 'CREATED', accessor: (order: Order) => toBsDate(order.createdAtRaw), width: '110px' },
-  ], [currentPage, pageSizeChoice, pagedOrders]);
+  ], [currentPage, pageSizeChoice, pagedOrders, canSeeCod]);
 
   if (!config) return <Navigate to="/dashboard" replace />;
 
@@ -278,10 +297,12 @@ const VendorMetricDetail: React.FC = () => {
           <span className="vmd-stat-value">{loading ? '—' : `${orders.length.toLocaleString()}${capped ? '+' : ''}`}</span>
           <span className="vmd-stat-label">Orders</span>
         </div>
-        <div className="vmd-stat">
-          <span className="vmd-stat-value">{loading ? '—' : formatCurrency(totalCod, 0)}</span>
-          <span className="vmd-stat-label">Total COD</span>
-        </div>
+        {canSeeCod && (
+          <div className="vmd-stat">
+            <span className="vmd-stat-value">{loading ? '—' : formatCurrency(totalCod, 0)}</span>
+            <span className="vmd-stat-label">Total COD</span>
+          </div>
+        )}
       </div>
 
       {loadError && <p className="vmd-error">{loadError}</p>}

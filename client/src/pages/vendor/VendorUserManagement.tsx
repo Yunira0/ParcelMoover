@@ -261,7 +261,6 @@ const VendorUserManagement: React.FC = () => {
     <div className="vendor-user-page">
       <PageHeader
         title="Staff List"
-        subtitle="Create staff accounts and control what each member can access."
         actionLabel="Create New Staff"
         actionIcon={<UserPlus size={16} />}
         onAction={openCreate}

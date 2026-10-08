@@ -86,8 +86,8 @@ export const createOrderSchema = z.object({
   codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
   itemValue: z.number().min(0, "itemValue cannot be negative").optional(),
   deliveryCharge: z.number().min(0, "deliveryCharge cannot be negative").optional(),
-  packageType: z.string().max(50).optional(),
-  deliveryInstruction: z.string().max(500).optional(),
+  packageType: z.string().max(100).optional(),
+  deliveryInstruction: z.string().max(100).optional(),
   remarks: z.string().max(1000).optional(),
   pickupAddress: z.string().max(255).optional(),
   scheduledPickupAt: z.string().datetime({ offset: true }).optional(),
@@ -98,6 +98,15 @@ export const createOrderSchema = z.object({
   // Places the order even though the vendor's account is past its block
   // threshold. Honoured for super_admin only — see assertVendorCanCreateOrder.
   overrideBillingBlock: z.boolean().optional(),
+  // Daraz-style voucher: a claimed voucher's id, or its code (MOVE100).
+  // Mutually exclusive (enforced in _createOrderImpl so every entry point —
+  // dashboard, bulk, partner API — shares the check); resolved to this
+  // vendor's claim inside _createOrderImpl.
+  voucherClaimId: optionalUuidSchema,
+  voucherCode: z.string().trim().min(3).max(32)
+    .transform(v => v.toUpperCase())
+    .refine(v => /^[A-Z0-9][A-Z0-9_-]{2,31}$/.test(v), 'Voucher code is invalid')
+    .optional(),
 });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
@@ -116,8 +125,8 @@ export const updateOrderDetailsSchema = z
     weightKg: z.number().positive("weightKg must be a positive number").optional(),
     codAmount: z.number().min(0, "codAmount cannot be negative").optional(),
     itemValue: z.number().min(0, "itemValue cannot be negative").optional(),
-    packageType: z.string().max(50).optional(),
-    deliveryInstruction: z.string().max(500).optional(),
+    packageType: z.string().max(100).optional(),
+    deliveryInstruction: z.string().max(100).optional(),
   })
   .refine((data) => Object.values(data).some((v) => v !== undefined), {
     message: "At least one field must be provided",
@@ -140,6 +149,21 @@ export const redirectOrderSchema = z.object({
 });
 
 export type RedirectOrderInput = z.infer<typeof redirectOrderSchema>;
+
+// ── Forwarding charge on a delivered order ────────────────────────────────────
+// A delivered parcel was forwarded on to another destination. Status stays
+// delivered; the destination changes and a manual forwarding charge is added.
+
+export const forwardOrderSchema = z.object({
+  destinationLocationId: uuidSchema,
+  forwardingCharge: z
+    .number({ error: "Forwarding charge is required" })
+    .positive("Forwarding charge must be more than 0")
+    .max(1_000_000, "Forwarding charge is unrealistically large"),
+  reason: z.string().trim().max(500).optional(),
+});
+
+export type ForwardOrderInput = z.infer<typeof forwardOrderSchema>;
 
 // ── Update single order status ────────────────────────────────────────────────
 
@@ -223,6 +247,19 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
     }, z.array(z.enum(PARCEL_STATUSES)).optional())
     .optional(),
   orderType: z.enum(ORDER_TYPES).optional(),
+  // Paired with secondaryStatus to express "status IN (...) OR (order_type = X
+  // AND status IN (Y))" in one query - e.g. Return Operations' ready_to_return
+  // tab, which holds both a true RTO parcel (by status alone) and a reverse-
+  // shipment order still working through its own delivery leg (by order_type +
+  // a different status set). No-op unless secondaryStatus is also given.
+  secondaryOrderType: z.enum(ORDER_TYPES).optional(),
+  secondaryStatus: z
+    .preprocess((val) => {
+      if (!val) return undefined;
+      const raw = Array.isArray(val) ? val : String(val).split(",");
+      return raw.map((s) => String(s).trim()).filter(Boolean);
+    }, z.array(z.enum(PARCEL_STATUSES)).optional())
+    .optional(),
   // Multi-select vendor filter, sent as a comma-separated list of vendor ids
   // (or repeated params). Intersected with the actor's scope server-side.
   vendorId: z
@@ -234,12 +271,26 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
     }, z.array(uuidSchema).max(100).optional())
     .optional(),
   // A barcode scanner builds this up as a comma-separated list of full
-  // tracking ids (~27 chars each incl. separator) - 100 chars only fit ~3
-  // scans before every further scan gets rejected outright. Sized for the
-  // client's 100-term scan batch cap (scannerInput.ts MAX_SCANNED_TERMS).
-  search: z.string().max(3000).optional(),
+  // tracking ids (~26 chars each incl. separator). Sized for the client's
+  // 500-term scan batch cap (scannerInput.ts MAX_SCANNED_TERMS) with margin.
+  search: z.string().max(15000).optional(),
+  // Narrows the list to parcels whose vendor is assigned to this sales user
+  // (an admin in the Sales department). Joined through vendors.sales_user_id
+  // server-side and intersected with the caller's own scope.
+  salesUserId: optionalUuidSchema,
   // Narrows the list to parcels carried by one delivery rider.
   deliveryRiderId: optionalUuidSchema,
+  // Rider Overview's filter: parcels this rider has ever handled, pickup or
+  // delivery leg — broader than deliveryRiderId, which is only the current
+  // delivery leg.
+  riderId: optionalUuidSchema,
+  // Origin/destination hub filters from the orders list page. Single-value,
+  // matching the dropdown's single-select UI; the service already supports a
+  // multi-value form (originLocationIds/destinationLocationIds) for internal
+  // branch scoping, which the controller feeds this single id into as a
+  // one-element array rather than duplicating that AND-condition logic here.
+  originLocationId: optionalUuidSchema,
+  destinationLocationId: optionalUuidSchema,
   // Keyset pagination: opaque cursor + walk direction. A malformed cursor is
   // treated as "no cursor" by the service, so only the length is bounded here.
   cursor: z.string().max(400).optional(),
@@ -254,12 +305,22 @@ export const listOrdersQuerySchema = paginationQuerySchema.extend({
   // Narrows to parcels delivered since local midnight, matching the
   // "Delivered today" dashboard card's own count (getDashboardSummary).
   deliveredToday: booleanFlagSchema,
+  // Narrows to parcels that went through transit (ever moved to oov).
+  viaTransit: booleanFlagSchema,
   // Inclusive Nepal-local day range, compared against whichever date
   // `dateField` names. Server-side (not filtered over the fetched page) so a
   // range and its pagination totals describe the same set of orders.
   dateField: z.enum(["createdAt", "lastUpdatedAt"]).optional(),
   dateFrom: dayStringSchema,
   dateTo: dayStringSchema,
+  // Merchant overview settlement filter: deposited = delivered parcels that are
+  // in a settled vendor settlement (via settlement_items), pending = delivered
+  // parcels not yet in a settled settlement. Authentic — excludes settlements
+  // with no items (e.g. STL-2024-001).
+  settlement: z.enum(["settled", "pending"]).optional(),
+  // Whose statements `settlement` refers to. Defaults to the vendor's; Rider
+  // Overview passes "rider" so its COD cards and table agree.
+  settlementPayee: z.enum(["vendor", "rider"]).optional(),
 });
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;
@@ -269,6 +330,42 @@ export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>;
 // doesn't use.
 export const orderFilterOptionsQuerySchema = z.object({
   status: listOrdersQuerySchema.shape.status,
+});
+
+// GET /orders/status-counts — the per-status totals behind the orders list
+// page's tab badges. Takes every non-status filter listOrdersQuerySchema
+// declares, so the counts describe the same set of orders the list does; it
+// deliberately omits `status` (it counts every status in one pass) and the
+// pagination/sort fields (it returns totals, not rows).
+export const orderCountByStatusQuerySchema = z.object({
+  orderType: listOrdersQuerySchema.shape.orderType,
+  vendorId: listOrdersQuerySchema.shape.vendorId,
+  salesUserId: listOrdersQuerySchema.shape.salesUserId,
+  search: listOrdersQuerySchema.shape.search,
+  deliveryRiderId: listOrdersQuerySchema.shape.deliveryRiderId,
+  originLocationId: listOrdersQuerySchema.shape.originLocationId,
+  destinationLocationId: listOrdersQuerySchema.shape.destinationLocationId,
+  deliveredToday: listOrdersQuerySchema.shape.deliveredToday,
+  dateField: listOrdersQuerySchema.shape.dateField,
+  dateFrom: listOrdersQuerySchema.shape.dateFrom,
+  dateTo: listOrdersQuerySchema.shape.dateTo,
+});
+
+export type OrderCountsByStatusQuery = z.infer<typeof orderCountByStatusQuerySchema>;
+
+// GET /orders/trash — the same shape as the live list (so the trash table gets
+// search, sorting and paging for free). `trashed` is set by the controller, not
+// accepted from the client: listOrdersQuerySchema deliberately doesn't declare
+// it, which is what stops ?trashed=true reaching the service on GET /orders.
+export const trashedOrdersQuerySchema = listOrdersQuerySchema;
+
+// POST /orders/:id/restore — the stage the order re-enters the workflow at.
+// Only pickup_ordered: restoring is the one path allowed past STATUS_TRANSITIONS
+// (see TRASH_RESTORE_STAGES), so the set it can reach stays deliberately tiny.
+export const restoreOrderSchema = z.object({
+  restoreTo: z.enum(["pickup_ordered"], {
+    error: "restoreTo must be pickup_ordered",
+  }),
 });
 
 // ── Rider run sheet (query params) ───────────────────────────────────────────

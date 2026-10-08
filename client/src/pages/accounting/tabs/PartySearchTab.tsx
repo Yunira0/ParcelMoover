@@ -17,7 +17,7 @@ import '../Accounting.css';
 // own; this tab only picks who it is about.
 
 const PARTY_ICON = { rider: Bike, vendor: Store, user: UserRound } as const;
-const PARTY_LABEL = { rider: 'Rider', vendor: 'Vendor', user: 'Staff' } as const;
+const PARTY_LABEL = { rider: 'Rider', vendor: 'Vendor', user: 'Admin / staff' } as const;
 
 const PartySearchTab: React.FC = () => {
   const navigate = useNavigate();
@@ -53,9 +53,8 @@ const PartySearchTab: React.FC = () => {
   // The typed name rides along so the person page can send you back to the same
   // list you picked from.
   const open = (result: PartySearchResult) => {
-    const q = query.trim();
     navigate(
-      `/accounting/people/${result.partyType}/${result.partyId}${q ? `?q=${encodeURIComponent(q)}` : ''}`,
+      `/finance/ledger/${result.partyType}/${result.partyId}`,
     );
   };
 
@@ -91,7 +90,7 @@ const PartySearchTab: React.FC = () => {
           <div className="acc-panel-head">
             <div>
               <h2>{searching ? 'Searching…' : `${results.length} match${results.length === 1 ? '' : 'es'}`}</h2>
-              <p>Riders, vendors and staff</p>
+              <p>Riders, vendors and admin / staff</p>
             </div>
           </div>
           <Table

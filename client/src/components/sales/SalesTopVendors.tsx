@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Table from '../Table';
 import StatusChip from '../StatusChip';
-import { getVendors } from '../../services/users.service';
+import { getAllVendors } from '../../services/users.service';
 import './SalesTopVendors.css';
 
 interface VendorRow {
@@ -24,7 +24,7 @@ const SalesTopVendors: React.FC = () => {
 
   useEffect(() => {
     let active = true;
-    getVendors()
+    getAllVendors()
       .then((res) => {
         if (!active) return;
         const data: VendorRow[] = res?.success && Array.isArray(res.data) ? res.data : [];
@@ -46,8 +46,8 @@ const SalesTopVendors: React.FC = () => {
   }, []);
 
   const columns = [
-    { header: 'CLIENT', accessor: 'client' as const },
-    { header: 'COMPANY', accessor: 'company' as const },
+    { header: 'VENDOR NAME', accessor: (v: VendorRow) => v.company || v.client },
+    { header: 'OWNER NAME', accessor: 'client' as const },
     { header: 'TOTAL ORDERS', accessor: (v: VendorRow) => v.orders.total.toLocaleString() },
     { header: 'DELIVERED', accessor: (v: VendorRow) => v.orders.delivered.toLocaleString() },
     { header: 'COD DUE', accessor: (v: VendorRow) => formatMoney(v.codDue) },

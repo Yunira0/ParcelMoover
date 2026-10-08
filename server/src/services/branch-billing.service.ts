@@ -1,0 +1,697 @@
+import { Prisma } from "../generated/prisma/client";
+import prisma from "../lib/prisma";
+import { AppError } from "../utils/AppError";
+import { hasOfficeFinanceAuthority, isFinanceStaff } from "../utils/financeRoles";
+import { clearBlockAmount, getBillingSettings, type BillingThresholds } from "./billing.service";
+import { BRANCH_COD_SLA_KEY, getSlaSettings } from "./sla.service";
+import { syncBranchSettlementPostings } from "./accounting/sync";
+import { ACCOUNT } from "./accounting/accounts";
+import { branchCodParcelSql } from "./orders/branchCod";
+import { notifyFinanceStaff } from "./orders/notifications";
+
+type Actor = { id: string; roles: string[] };
+const money = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
+// Office-wide branch billing authority: super_admin or the finance accountant.
+const isSuperAdmin = (actor: Actor) => hasOfficeFinanceAuthority(actor);
+const isOfficeReviewer = (actor: Actor) => isFinanceStaff(actor);
+
+export type BranchBillingState = "ok" | "warned" | "blocked";
+export type BranchPaymentStatusFilter = "pending" | "verified" | "rejected";
+
+export interface BranchAccountBalance {
+  /**
+   * COD the branch still owes the office: the outstanding balance of its
+   * non-cancelled statements PLUS collected COD on delivered parcels destined
+   * to the branch that are not yet on any statement (net of the branch's
+   * commission per parcel). The unstatemented portion is an estimate — the
+   * final commission is fixed when the statement is cut.
+   */
+  unsettledCod: number;
+  paymentsReceived: number;
+  /** Negative means the branch still has COD to remit to the office. */
+  balance: number;
+  /**
+   * Portion of unsettledCod whose parcel was delivered more than codSlaHours
+   * ago and is still unstatemented - COD the branch is late remitting.
+   */
+  overdueCod: number;
+}
+
+export interface BranchBillingStatus extends BranchAccountBalance, BillingThresholds {
+  branchId: string;
+  branchName: string;
+  state: BranchBillingState;
+  amountToClearBlock: number;
+  pendingPaymentAmount: number;
+  /** Hours a branch has, after delivery, to submit collected COD (SLA settings); null if disabled. */
+  codSlaHours: number | null;
+}
+
+export interface BranchPaymentItem {
+  id: string;
+  branchId: string;
+  branchName: string;
+  settlementId: string | null;
+  statementNo: string | null;
+  amount: number;
+  method: string;
+  reference: string | null;
+  proofPath: string | null;
+  status: BranchPaymentStatusFilter;
+  note: string | null;
+  reviewRemark: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+async function ownBranchContext(actor: Actor): Promise<{ locationId: string; branchScoped: boolean }> {
+  const admin = await prisma.admins.findUnique({ where: { user_id: actor.id }, select: { location_id: true, branch_scoped: true } });
+  if (!admin?.location_id) throw new AppError(403, "Your admin account is not assigned to a branch");
+  return { locationId: admin.location_id, branchScoped: admin.branch_scoped };
+}
+
+async function ownBranchId(actor: Actor): Promise<string> {
+  return (await ownBranchContext(actor)).locationId;
+}
+
+/**
+ * Soft variant for the read/review path: an office reviewer with tracking
+ * permission but no assigned hub must still reach the master queue, so a
+ * missing location_id is not an error here (unlike the submit path, where
+ * ownBranchId still requires one).
+ */
+async function ownBranchScope(actor: Actor): Promise<{ locationId: string | null; branchScoped: boolean }> {
+  const admin = await prisma.admins.findUnique({ where: { user_id: actor.id }, select: { location_id: true, branch_scoped: true } });
+  return { locationId: admin?.location_id ?? null, branchScoped: admin?.branch_scoped ?? false };
+}
+
+async function resolveBranchId(actor: Actor, suppliedId?: string): Promise<string> {
+  if (isSuperAdmin(actor)) {
+    if (!suppliedId) throw new AppError(400, "branchId is required");
+    return suppliedId;
+  }
+  return ownBranchId(actor);
+}
+
+function thresholdsForBranch(
+  branch: { branch_billing_warn_threshold: Prisma.Decimal | null; branch_billing_block_threshold: Prisma.Decimal | null },
+  // Branch fallbacks come from the branch-level settings, not the vendor
+  // ones: the two scales are intentionally separate (see billing_settings),
+  // and the old vendor block threshold no longer exists.
+  defaults: { warnThreshold: number; blockThreshold: number },
+): BillingThresholds {
+  return {
+    warnThreshold: branch.branch_billing_warn_threshold === null ? defaults.warnThreshold : money(branch.branch_billing_warn_threshold),
+    blockThreshold: branch.branch_billing_block_threshold === null ? defaults.blockThreshold : money(branch.branch_billing_block_threshold),
+  };
+}
+
+export function branchStateForBalance(balance: number, thresholds: BillingThresholds): BranchBillingState {
+  if (balance <= thresholds.blockThreshold) return "blocked";
+  if (balance <= thresholds.warnThreshold) return "warned";
+  return "ok";
+}
+
+async function computeBranchBalance(branchId: string, codSlaHours: number | null): Promise<BranchAccountBalance> {
+  // A disabled SLA (null) means nothing is ever overdue.
+  const overdueCondition = codSlaHours === null
+    ? Prisma.sql`false`
+    : Prisma.sql`delivered_at IS NOT NULL AND delivered_at < now() - make_interval(hours => ${codSlaHours})`;
+
+  // branch_locs mirrors resolveBranchLocationIds (branch.service): the branch's
+  // own id, its active covered areas, and — one level only — each virtually
+  // covered branch plus that branch's own active covered areas. Kept inline as
+  // SQL to avoid a branch.service <-> branch-billing.service import cycle.
+  const rows = await prisma.$queryRaw<Array<{ outstanding: string; unstatemented: string; overdue: string; payments: string }>>(Prisma.sql`
+    WITH branch_locs AS (
+      SELECT ${branchId}::uuid AS id
+      UNION SELECT l.id FROM locations l WHERE l.parent_id = ${branchId}::uuid AND l.is_active
+      UNION SELECT vc.covered_branch_id FROM branch_virtual_coverage vc WHERE vc.branch_id = ${branchId}::uuid
+      UNION SELECT l.id FROM locations l
+        JOIN branch_virtual_coverage vc ON vc.branch_id = ${branchId}::uuid
+        WHERE l.parent_id = vc.covered_branch_id AND l.is_active
+    ), unstatemented_parcels AS (
+      SELECT p.delivered_at,
+        GREATEST(
+          0::numeric,
+          COALESCE(cc.collected_amount, p.cod_amount)
+            - COALESCE((SELECT commission_per_parcel FROM locations WHERE id = ${branchId}::uuid), 0)
+        ) AS net_cod
+      FROM parcels p
+      LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
+      WHERE p.deleted_at IS NULL
+        AND p.status::text IN ('delivered', 'partially_delivered')
+        AND p.destination_location_id IN (SELECT id FROM branch_locs)
+        AND NOT EXISTS (SELECT 1 FROM branch_settlement_items bsi WHERE bsi.parcel_id = p.id)
+        ${branchCodParcelSql("p.")}
+    )
+    SELECT
+      COALESCE((
+        SELECT SUM(bs.net_payable - bs.paid_amount)
+        FROM branch_settlements bs
+        WHERE bs.from_branch_id = ${branchId}::uuid
+          AND bs.status <> 'cancelled'
+      ), 0) AS outstanding,
+      COALESCE((SELECT SUM(net_cod) FROM unstatemented_parcels), 0) AS unstatemented,
+      COALESCE((
+        SELECT SUM(net_cod) FROM unstatemented_parcels WHERE ${overdueCondition}
+      ), 0) AS overdue,
+      COALESCE((
+        SELECT SUM(bp.amount)
+        FROM branch_payments bp
+        WHERE bp.branch_id = ${branchId}::uuid AND bp.status = 'verified' AND bp.settlement_id IS NULL
+      ), 0) AS payments
+  `);
+  const unsettledCod = money(money(rows[0]?.outstanding) + money(rows[0]?.unstatemented));
+  const paymentsReceived = money(rows[0]?.payments);
+  const overdueCod = money(rows[0]?.overdue);
+  return { unsettledCod, paymentsReceived, overdueCod, balance: money(paymentsReceived - unsettledCod) };
+}
+
+export async function getBranchBillingStatus(branchId: string): Promise<BranchBillingStatus> {
+  const [branch, settings, slaSettings, pending] = await Promise.all([
+    prisma.locations.findFirst({
+      where: { id: branchId, parent_id: null, is_hub: true },
+      select: { id: true, name: true, branch_billing_warn_threshold: true, branch_billing_block_threshold: true },
+    }),
+    getBillingSettings(),
+    getSlaSettings(),
+    prisma.branch_payments.aggregate({ where: { branch_id: branchId, status: "pending" }, _sum: { amount: true } }),
+  ]);
+  if (!branch) throw new AppError(404, "Branch not found");
+  const codSlaHours = slaSettings[BRANCH_COD_SLA_KEY] ?? null;
+  const balance = await computeBranchBalance(branchId, codSlaHours);
+  const thresholds = thresholdsForBranch(branch, {
+    warnThreshold: settings.branchWarnThreshold,
+    blockThreshold: settings.branchBlockThreshold,
+  });
+  return {
+    branchId: branch.id,
+    branchName: branch.name,
+    ...balance,
+    ...thresholds,
+    state: branchStateForBalance(balance.balance, thresholds),
+    amountToClearBlock: clearBlockAmount(balance.balance, thresholds),
+    pendingPaymentAmount: money(pending._sum.amount),
+    codSlaHours,
+  };
+}
+
+/**
+ * Set one branch's credit limit — the balance it is blocked at, stored as the
+ * negative block threshold override. Mirrors updateVendorCreditLimit, except a
+ * branch keeps an explicit threshold pair rather than a positive limit column,
+ * so the sign is applied here and the caller speaks in plain rupees.
+ */
+export async function updateBranchCreditLimit(
+  actorId: string,
+  branchId: string,
+  creditLimit: number,
+): Promise<BranchBillingStatus> {
+  const rounded = money(creditLimit);
+  if (!Number.isFinite(rounded) || rounded <= 0) {
+    throw new AppError(400, "creditLimit must be greater than zero");
+  }
+  if (rounded > 100_000_000) {
+    throw new AppError(400, "creditLimit is unrealistically large");
+  }
+  const branch = await prisma.locations.findFirst({
+    where: { id: branchId, parent_id: null, is_hub: true },
+    select: { id: true, name: true, branch_billing_block_threshold: true },
+  });
+  if (!branch) throw new AppError(404, "Branch not found");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.locations.update({
+      where: { id: branchId },
+      data: { branch_billing_block_threshold: -rounded },
+    });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actorId,
+        entity_type: "location",
+        entity_id: branchId,
+        action: "UPDATE_BRANCH_CREDIT_LIMIT",
+        old_data: {
+          creditLimit:
+            branch.branch_billing_block_threshold === null
+              ? null
+              : -money(branch.branch_billing_block_threshold),
+        },
+        new_data: { creditLimit: rounded },
+      },
+    });
+  });
+
+  // A raise must lift a block in the same breath, as on the vendor side.
+  await evaluateBranchBilling(branchId);
+  return getBranchBillingStatus(branchId);
+}
+
+/** The authoritative server-side transit gate. */
+export async function assertBranchCanReceiveTransit(branchId: string): Promise<void> {
+  const status = await getBranchBillingStatus(branchId);
+  if (status.state !== "blocked") return;
+  throw new AppError(
+    403,
+    `${status.branchName} cannot receive transit: Rs. ${Math.abs(status.balance).toFixed(2)} in COD is outstanding. ` +
+      `Verify at least Rs. ${status.amountToClearBlock.toFixed(2)} in branch payment credit to resume transit.`,
+    "BRANCH_BILLING_BLOCKED",
+  );
+}
+
+export async function evaluateBranchBilling(branchId: string): Promise<BranchBillingState | null> {
+  try {
+    const status = await getBranchBillingStatus(branchId);
+    const branch = await prisma.locations.findUnique({ where: { id: branchId }, select: { branch_billing_alert_state: true } });
+    if (!branch || branch.branch_billing_alert_state === status.state) return branch?.branch_billing_alert_state ?? null;
+    await prisma.locations.updateMany({
+      where: { id: branchId, branch_billing_alert_state: branch.branch_billing_alert_state },
+      data: { branch_billing_alert_state: status.state, branch_billing_alert_at: new Date() },
+    });
+    return status.state;
+  } catch (error) {
+    console.error("[Branch billing] Failed to evaluate branch credit state:", error);
+    return null;
+  }
+}
+
+function mapPayment(row: any): BranchPaymentItem {
+  return {
+    id: row.id, branchId: row.branch_id, branchName: row.branch.name, amount: money(row.amount), method: row.method,
+    settlementId: row.settlement_id, statementNo: row.settlement?.statement_no ?? null,
+    reference: row.reference, proofPath: row.proof_path, status: row.status, note: row.note,
+    reviewRemark: row.review_remark, reviewedAt: row.reviewed_at?.toISOString() ?? null,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
+export async function submitBranchPayment(
+  actor: Actor,
+  input: { branchId?: string; settlementId?: string; amount: number; method?: string; reference?: string; note?: string; proofPath?: string | null },
+): Promise<BranchPaymentItem> {
+  const branchId = await resolveBranchId(actor, input.branchId);
+  if (!Number.isFinite(input.amount) || input.amount <= 0) throw new AppError(400, "amount must be greater than zero");
+  if (!input.proofPath) throw new AppError(400, "A payment screenshot or receipt is required");
+  const branch = await prisma.locations.findFirst({ where: { id: branchId, parent_id: null, is_hub: true, is_active: true }, select: { id: true } });
+  if (!branch) throw new AppError(404, "Branch not found or inactive");
+  if (input.settlementId) {
+    const statement = await prisma.branch_settlements.findFirst({ where: { id: input.settlementId, from_branch_id: branchId, status: { in: ["pending", "partially_paid"] } }, select: { net_payable: true, paid_amount: true } });
+    if (!statement) throw new AppError(404, "Pending settlement not found for this branch");
+    // Receipts already awaiting review count against the balance too, or two
+    // full-amount receipts could be filed and the second would only fail later
+    // at verification.
+    const pending = await prisma.branch_payments.aggregate({
+      where: { settlement_id: input.settlementId, status: "pending" },
+      _sum: { amount: true },
+    });
+    const unclaimed = money(money(statement.net_payable) - money(statement.paid_amount) - money(pending._sum.amount));
+    if (money(input.amount) > unclaimed) {
+      throw new AppError(400, unclaimed > 0
+        ? `Receipt amount exceeds the Rs. ${unclaimed} not yet paid or awaiting verification on this settlement`
+        : "This settlement's balance is already covered by receipts awaiting verification");
+    }
+  }
+
+  const created = await prisma.branch_payments.create({
+    data: {
+      branch_id: branchId, amount: input.amount, method: input.method?.trim() || "fonepay",
+      reference: input.reference?.trim() || null, note: input.note?.trim() || null,
+      proof_path: input.proofPath ?? null, settlement_id: input.settlementId ?? null, submitted_by: actor.id,
+    },
+    include: { branch: { select: { name: true } }, settlement: { select: { statement_no: true } } },
+  });
+  await prisma.audit_logs.create({ data: {
+    actor_id: actor.id, entity_type: "branch_payment", entity_id: created.id, action: "SUBMIT_BRANCH_PAYMENT",
+    new_data: { branchId, settlementId: input.settlementId ?? null, amount: input.amount, reference: created.reference },
+  } });
+  await notifyFinanceStaff(
+    "Branch deposit to verify",
+    `${created.branch.name} submitted Rs. ${input.amount.toLocaleString()}${created.settlement ? ` against ${created.settlement.statement_no}` : ""}.`,
+    created.id,
+    "branch_billing",
+    "/branches/billing",
+    actor.id,
+  );
+  return mapPayment(created);
+}
+
+export async function listBranchPayments(
+  actor: Actor,
+  filters: { branchId?: string; status?: BranchPaymentStatusFilter; page?: number; pageSize?: number },
+) {
+  const ownScope = isSuperAdmin(actor) ? null : await ownBranchScope(actor);
+  if (ownScope?.branchScoped && !ownScope.locationId) {
+    throw new AppError(403, "Your branch account is not assigned to a branch");
+  }
+  // A restricted branch sees only payments it submitted. An unrestricted
+  // head-office admin works the master verification queue across branches.
+  const branchId = isSuperAdmin(actor) || !ownScope?.branchScoped ? filters.branchId : ownScope.locationId;
+  const take = Math.min(500, Math.max(1, filters.pageSize || 20));
+  const page = Math.max(1, filters.page || 1);
+  const where = { ...(branchId ? { branch_id: branchId } : {}), ...(filters.status ? { status: filters.status } : {}) };
+  const [total, rows] = await Promise.all([
+    prisma.branch_payments.count({ where }),
+    prisma.branch_payments.findMany({ where, include: { branch: { select: { name: true } }, settlement: { select: { statement_no: true } } }, orderBy: { created_at: "desc" }, skip: (page - 1) * take, take }),
+  ]);
+  return { data: rows.map(mapPayment), meta: { page, pageSize: take, total, totalPages: Math.max(1, Math.ceil(total / take)) } };
+}
+
+/**
+ * Apply already-verified branch money against one open COD statement: record a
+ * branch_settlement_payments line, roll the running payment-method breakdown
+ * forward, and flip the statement to `settled` once its balance reaches zero
+ * (`partially_paid` while a balance remains). Returns how much was absorbed.
+ */
+async function applyVerifiedCreditToSettlement(
+  tx: Prisma.TransactionClient,
+  settlement: { id: string; statement_no: string; net_payable: Prisma.Decimal; paid_amount: Prisma.Decimal; payments: unknown },
+  credit: number,
+  actorId: string,
+  opts: { method: string; remark: string },
+): Promise<{ applied: number; settled: boolean; statementNo: string }> {
+  const outstanding = money(money(settlement.net_payable) - money(settlement.paid_amount));
+  const applied = Math.min(money(credit), outstanding);
+  if (applied <= 0) return { applied: 0, settled: false, statementNo: settlement.statement_no };
+  const paidAmount = money(money(settlement.paid_amount) + applied);
+  const settled = Math.round((money(settlement.net_payable) - paidAmount) * 100) === 0;
+  await tx.branch_settlement_payments.create({ data: {
+    settlement_id: settlement.id, amount: applied, method: opts.method,
+    breakdown: [{ method: opts.method, amount: applied }] as unknown as Prisma.InputJsonValue,
+    remark: opts.remark, recorded_by: actorId,
+  } });
+  const mergedByMethod = new Map<string, number>();
+  if (Array.isArray(settlement.payments)) {
+    for (const line of settlement.payments as Array<{ method?: unknown; amount?: unknown }>) {
+      if (line && typeof line.method === "string" && Number.isFinite(Number(line.amount))) {
+        mergedByMethod.set(line.method, money((mergedByMethod.get(line.method) ?? 0) + Number(line.amount)));
+      }
+    }
+  }
+  mergedByMethod.set(opts.method, money((mergedByMethod.get(opts.method) ?? 0) + applied));
+  const mergedLines = Array.from(mergedByMethod, ([method, amount]) => ({ method, amount }));
+  await tx.branch_settlements.update({ where: { id: settlement.id }, data: {
+    paid_amount: paidAmount, status: settled ? "settled" : "partially_paid",
+    payment_method: mergedLines.map((line) => line.method).join(", "),
+    payments: mergedLines as unknown as Prisma.InputJsonValue,
+    ...(settled ? { settled_by: actorId, settled_at: new Date() } : {}),
+  } });
+  await syncBranchSettlementPostings(tx, [settlement.id], { actorId, reason: "branch deposit applied" });
+  return { applied, settled, statementNo: settlement.statement_no };
+}
+
+export interface DepositAllocation {
+  settlementId: string;
+  statementNo: string;
+  amount: number;
+  settled: boolean;
+  /** Set only when the statement was already settled and this deposit was
+   *  linked to it for balance purposes without moving paid_amount. */
+  linkOnly?: true;
+}
+
+/**
+ * Waterfall an already-verified, statement-less branch deposit onto that
+ * branch's COD statements, oldest first, re-pointing the branch_payments row so
+ * the branch balance nets out (its floating credit drops by the same amount the
+ * statements absorb). Shared by the live verify path and the
+ * repoint-branch-deposits backfill.
+ *
+ * A `pending` / `partially_paid` statement is paid down for real via
+ * applyVerifiedCreditToSettlement — balance-neutral, it only moves the money
+ * from "floating credit" to "recorded against the statement". With
+ * `includeSettled`, an already-`settled` statement instead absorbs the deposit
+ * as a *link only*: no branch_settlement_payments line, no paid_amount change,
+ * capped at net_payable minus the deposits already pointing at it. That path
+ * lowers the branch balance, and exists to clean up deposits that predate this
+ * waterfall (verified while the office settled the same statement by hand, so
+ * the money got counted twice).
+ */
+export async function waterfallVerifiedDeposit(
+  tx: Prisma.TransactionClient,
+  deposit: {
+    id: string; branch_id: string; amount: Prisma.Decimal | number; method: string;
+    reference: string | null; proof_path: string | null; note: string | null;
+    submitted_by: string | null;
+  },
+  actorId: string,
+  opts: { remark?: string | null; includeSettled?: boolean } = {},
+): Promise<{ allocations: DepositAllocation[]; leftoverCredit: number; consumed: number }> {
+  const statuses: Array<"pending" | "partially_paid" | "settled"> = opts.includeSettled
+    ? ["pending", "partially_paid", "settled"]
+    : ["pending", "partially_paid"];
+  const statements = await tx.branch_settlements.findMany({
+    where: { from_branch_id: deposit.branch_id, status: { in: statuses } },
+    orderBy: [{ settlement_date: "asc" }, { created_at: "asc" }],
+  });
+
+  const depositAmount = money(deposit.amount);
+  const refSuffix = deposit.reference ? ` · ${deposit.reference}` : "";
+  const allocations: DepositAllocation[] = [];
+  let credit = depositAmount;
+  let firstTouched: string | null = null;
+
+  for (const statement of statements) {
+    if (credit <= 0) break;
+
+    if (statement.status === "settled") {
+      const linked = await tx.branch_payments.aggregate({
+        where: { settlement_id: statement.id, status: "verified" }, _sum: { amount: true },
+      });
+      const capacity = money(money(statement.net_payable) - money(linked._sum.amount));
+      const applied = Math.min(credit, capacity);
+      if (applied <= 0) continue;
+      credit = money(credit - applied);
+      firstTouched ??= statement.id;
+      allocations.push({
+        settlementId: statement.id, statementNo: statement.statement_no,
+        amount: applied, settled: true, linkOnly: true,
+      });
+      continue;
+    }
+
+    const applied = await applyVerifiedCreditToSettlement(tx, statement, credit, actorId, {
+      method: deposit.method, remark: `Verified deposit${refSuffix}`,
+    });
+    if (applied.applied <= 0) continue;
+    credit = money(credit - applied.applied);
+    firstTouched ??= statement.id;
+    allocations.push({
+      settlementId: statement.id, statementNo: applied.statementNo,
+      amount: applied.applied, settled: applied.settled,
+    });
+  }
+
+  const consumed = money(depositAmount - credit);
+  if (consumed > 0 && firstTouched) {
+    if (credit <= 0) {
+      await tx.branch_payments.update({ where: { id: deposit.id }, data: { settlement_id: firstTouched } });
+    } else {
+      await tx.branch_payments.update({ where: { id: deposit.id }, data: { amount: credit } });
+      await tx.branch_payments.create({ data: {
+        branch_id: deposit.branch_id, settlement_id: firstTouched, amount: consumed,
+        method: deposit.method, reference: deposit.reference, proof_path: deposit.proof_path,
+        note: deposit.note, submitted_by: deposit.submitted_by, status: "verified",
+        reviewed_by: actorId, reviewed_at: new Date(), review_remark: opts.remark ?? null,
+      } });
+    }
+  }
+
+  return { allocations, leftoverCredit: credit, consumed };
+}
+
+export async function reviewBranchPayment(
+  actor: Actor, paymentId: string, decision: "verified" | "rejected", remark?: string,
+): Promise<BranchPaymentItem> {
+  if (!isOfficeReviewer(actor)) throw new AppError(403, "Not authorized to review branch payments");
+  if (!isSuperAdmin(actor) && (await ownBranchScope(actor)).branchScoped) {
+    throw new AppError(403, "A paying branch cannot verify branch payments");
+  }
+  const existing = await prisma.branch_payments.findFirst({ where: { id: paymentId }, include: { branch: { select: { name: true } }, settlement: { select: { statement_no: true } } } });
+  if (!existing) throw new AppError(404, "Payment not found");
+  if (existing.status !== "pending") throw new AppError(400, `This payment has already been ${existing.status}`);
+  if (decision === "rejected" && !remark?.trim()) throw new AppError(400, "A remark is required when rejecting a payment");
+  if (!isSuperAdmin(actor) && existing.submitted_by === actor.id) throw new AppError(403, "You cannot review your own branch payment");
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.branch_payments.updateMany({
+      where: { id: paymentId, status: "pending" },
+      data: { status: decision, reviewed_by: actor.id, reviewed_at: new Date(), review_remark: remark?.trim() || null },
+    });
+    if (!claimed.count) throw new AppError(409, "This payment was already reviewed by someone else");
+
+    const allocations: DepositAllocation[] = [];
+    let leftoverCredit = 0;
+
+    if (decision === "verified" && existing.settlement_id) {
+      const settlement = await tx.branch_settlements.findUnique({ where: { id: existing.settlement_id } });
+      if (!settlement || settlement.status === "cancelled" || settlement.status === "settled") throw new AppError(409, "The linked settlement is no longer payable");
+      const outstanding = money(money(settlement.net_payable) - money(settlement.paid_amount));
+      if (money(existing.amount) > outstanding) throw new AppError(409, "Receipt amount now exceeds the settlement balance");
+      const applied = await applyVerifiedCreditToSettlement(tx, settlement, money(existing.amount), actor.id, {
+        method: existing.method, remark: `Verified receipt${existing.reference ? ` · ${existing.reference}` : ""}`,
+      });
+      allocations.push({ settlementId: settlement.id, statementNo: applied.statementNo, amount: applied.applied, settled: applied.settled });
+    } else if (decision === "verified") {
+      // A branch "Add money" deposit that named no statement: waterfall the
+      // verified amount onto that branch's open COD statements, oldest first.
+      // A statement it fully covers is marked settled; a short one goes
+      // partially_paid with the balance still outstanding; any remainder stays
+      // as general branch credit. The applied portion is re-pointed at a
+      // statement so the branch balance still nets out (credit down by the same
+      // amount the statements' outstanding drops).
+      const result = await waterfallVerifiedDeposit(tx, existing, actor.id, { remark: remark?.trim() || null });
+      allocations.push(...result.allocations);
+      leftoverCredit = result.leftoverCredit;
+    }
+
+    await tx.audit_logs.create({ data: {
+      actor_id: actor.id, entity_type: "branch_payment", entity_id: paymentId,
+      action: decision === "verified" ? "VERIFY_BRANCH_PAYMENT" : "REJECT_BRANCH_PAYMENT",
+      old_data: { status: "pending" },
+      new_data: {
+        status: decision, amount: money(existing.amount), remark: remark?.trim() || null,
+        ...(allocations.length ? { allocations } : {}),
+        ...(leftoverCredit > 0 ? { leftoverCredit } : {}),
+      } as unknown as Prisma.InputJsonValue,
+    } });
+    return tx.branch_payments.findFirstOrThrow({ where: { id: paymentId }, include: { branch: { select: { name: true } }, settlement: { select: { statement_no: true } } } });
+  });
+  if (decision === "verified") await evaluateBranchBilling(existing.branch_id);
+  return mapPayment(updated);
+}
+
+export interface BranchCodOutstanding {
+  branchId: string;
+  branchName: string;
+  outstanding: number;
+  statements: number;
+}
+
+/** Branches with COD still open on their statements — who a receipt can be from. */
+export async function listBranchCodOutstanding(): Promise<BranchCodOutstanding[]> {
+  const rows = await prisma.$queryRaw<Array<{ branch_id: string; name: string; outstanding: string; statements: bigint }>>(Prisma.sql`
+    SELECT s.from_branch_id AS branch_id, l.name,
+           SUM(s.net_payable - s.paid_amount) AS outstanding,
+           COUNT(*) AS statements
+      FROM branch_settlements s
+      JOIN locations l ON l.id = s.from_branch_id
+     WHERE s.status IN ('pending', 'partially_paid')
+     GROUP BY s.from_branch_id, l.name
+    HAVING SUM(s.net_payable - s.paid_amount) > 0
+     ORDER BY lower(l.name)
+  `);
+  return rows.map((row) => ({
+    branchId: row.branch_id,
+    branchName: row.name,
+    outstanding: money(row.outstanding),
+    statements: Number(row.statements),
+  }));
+}
+
+/**
+ * Head office receives COD from a branch on a Receipt voucher.
+ *
+ * Not a hand-written entry: COD with Branch is driven by the branch's
+ * statements, so the money pays those down — oldest first, the same waterfall a
+ * verified "Add money" deposit uses — and each statement re-posts its own entry
+ * (Dr the cash/bank account, Cr what the branch still owed). A manual credit to
+ * 1015 would leave the statements showing unpaid and count the money twice.
+ *
+ * The cash/bank account is turned back into the payment method that owns it,
+ * because that is what a statement's posting routes the money by. More than
+ * the open statements total is refused: a surplus would have no statement to
+ * post through, so the cash would never reach the books.
+ */
+export async function receiveBranchCod(
+  actor: Actor,
+  input: { branchId: string; amount: number; accountCode: string; reference?: string; narration?: string },
+) {
+  if (!hasOfficeFinanceAuthority(actor)) {
+    throw new AppError(403, "Only a super admin or accountant can receive branch COD");
+  }
+  const amount = money(input.amount);
+  if (!(amount > 0)) throw new AppError(400, "Amount must be greater than zero");
+
+  const method = await prisma.payment_methods.findFirst({
+    where: { is_active: true, ledger_account: { code: input.accountCode } },
+    select: { name: true },
+  });
+  const methodName = method?.name ?? (input.accountCode === ACCOUNT.CASH_IN_HAND ? "Cash" : null);
+  if (!methodName) {
+    throw new AppError(400, `Account ${input.accountCode} has no active payment method, so branch COD cannot be received into it`);
+  }
+
+  const remark = ["Receipt voucher", input.reference?.trim() && `Ref ${input.reference.trim()}`, input.narration?.trim()]
+    .filter(Boolean)
+    .join(" · ");
+
+  const allocations = await prisma.$transaction(async (tx) => {
+    // Locked so two receipts entered at once can't both pay the same balance.
+    await tx.$queryRaw(Prisma.sql`
+      SELECT id FROM branch_settlements
+       WHERE from_branch_id = ${input.branchId}::uuid AND status IN ('pending', 'partially_paid')
+       FOR UPDATE
+    `);
+    const statements = await tx.branch_settlements.findMany({
+      where: { from_branch_id: input.branchId, status: { in: ["pending", "partially_paid"] } },
+      orderBy: [{ settlement_date: "asc" }, { created_at: "asc" }],
+    });
+    const outstanding = money(statements.reduce((sum, s) => sum + money(s.net_payable) - money(s.paid_amount), 0));
+    if (amount > outstanding) {
+      throw new AppError(400, outstanding > 0
+        ? `Rs. ${amount} is more than the Rs. ${outstanding} this branch owes on open COD statements`
+        : "This branch has no open COD statements to receive against");
+    }
+
+    let credit = amount;
+    const applied: DepositAllocation[] = [];
+    for (const statement of statements) {
+      if (credit <= 0) break;
+      const result = await applyVerifiedCreditToSettlement(tx, statement, credit, actor.id, { method: methodName, remark });
+      if (result.applied <= 0) continue;
+      credit = money(credit - result.applied);
+      applied.push({ settlementId: statement.id, statementNo: result.statementNo, amount: result.applied, settled: result.settled });
+    }
+
+    await tx.audit_logs.create({ data: {
+      actor_id: actor.id, entity_type: "location", entity_id: input.branchId, action: "RECEIVE_BRANCH_COD",
+      new_data: { amount, accountCode: input.accountCode, method: methodName, remark, allocations: applied } as unknown as Prisma.InputJsonValue,
+    } });
+    return applied;
+  }, { maxWait: 10_000, timeout: 20_000 });
+
+  await evaluateBranchBilling(input.branchId);
+
+  // The statements' own entries, so the voucher screen can link to what posted.
+  const entries = await prisma.journal_entries.findMany({
+    where: { source_type: "branch_settlement", source_id: { in: allocations.map((a) => a.settlementId) }, status: "posted" },
+    select: { id: true, entry_no: true },
+    orderBy: { created_at: "desc" },
+  });
+  return { branchId: input.branchId, amount, allocations, entries: entries.map((e) => ({ id: e.id, entryNo: e.entry_no })) };
+}
+
+export async function getBranchBillingForActor(actor: Actor, branchId?: string) {
+  return getBranchBillingStatus(await resolveBranchId(actor, branchId));
+}
+
+/** Imadol is the master branch every other branch settles COD *to*, so it has
+ *  no branch balance of its own — there is no settlement it could raise
+ *  against itself. Matched the same way as branch.service's master lookup,
+ *  inline to avoid a branch.service <-> branch-billing.service import cycle. */
+const isMasterBranch = (b: { code: string | null; name: string }) =>
+  (b.code || "").trim().toUpperCase() === "IMADOL" ||
+  (!b.code?.trim() && b.name.trim().toLowerCase() === "imadol");
+
+export async function listBranchBalances(actor: Actor): Promise<BranchBillingStatus[]> {
+  if (!isSuperAdmin(actor)) throw new AppError(403, "Only the office (super admin or accountant) can view every branch balance");
+  const branches = await prisma.locations.findMany({
+    where: { parent_id: null, is_hub: true, is_active: true },
+    select: { id: true, code: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  return Promise.all(
+    branches.filter((branch) => !isMasterBranch(branch)).map((branch) => getBranchBillingStatus(branch.id)),
+  );
+}

@@ -1,0 +1,74 @@
+.trash-page {
+  padding: var(--space-6, 24px);
+}
+
+.trash-page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 16px);
+  margin: var(--space-4, 16px) 0;
+  flex-wrap: wrap;
+}
+
+
+.trash-error,
+.trash-notice {
+  margin: 0 0 var(--space-3, 12px);
+  padding: 10px 12px;
+  border-radius: var(--border-radius-default, 6px);
+  font-size: var(--font-size-sm, 13px);
+}
+
+.trash-error {
+  background: var(--color-danger-surface);
+  color: var(--color-danger-text);
+}
+
+.trash-notice {
+  background: var(--color-success-surface);
+  color: var(--color-success-default);
+}
+
+/* Matches the orders list's tracking column (.tracking-cell / .tracking-id-link
+   in OrderManagement.css). Restated here rather than imported because that
+   stylesheet only loads with the orders page, so relying on it would leave the
+   trash column unstyled whenever this page is opened directly. */
+.trash-tracking-cell {
+  color: var(--color-text-primary) !important;
+}
+
+.trash-tracking-link {
+  color: inherit;
+  cursor: pointer;
+  font-weight: var(--font-weight-semi-bold);
+  text-decoration: none;
+  /* Tracking ids are one long unbroken token; let them wrap inside the column
+     instead of forcing the table wider. */
+  overflow-wrap: anywhere;
+}
+
+.trash-tracking-link:hover {
+  text-decoration: underline;
+}
+
+.trash-subtle {
+  margin-top: 2px;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--color-text-caption);
+}
+
+.trash-actions {
+  display: flex;
+  gap: var(--space-2, 8px);
+}
+
+.trash-actions-column {
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .trash-actions {
+    flex-direction: column;
+  }
+}

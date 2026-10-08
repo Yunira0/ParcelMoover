@@ -2,9 +2,46 @@
 // Pending COD, Delivery Charges), which previously each redefined their own
 // slightly-diverging copy of the same currency/date formatting.
 
-/** `decimals` defaults to 2 (matches Pending COD / Delivery Charges); pass 0 for whole-rupee display. */
+/**
+ * The canonical way to render money. Two decimals, always.
+ *
+ * The columns are Decimal(12,2) and partial deliveries and return-percent
+ * charges produce real paise, so rounding for display lies on exactly the rows
+ * people dispute. It also means a vendor and an admin looking at the same
+ * statement read the same number, which they did not while each screen chose
+ * its own precision.
+ */
+export function formatMoney(value: number): string {
+  return `Rs. ${formatAmount(value)}`;
+}
+
+/** The figure alone, for the Tally-style Finance sheets, which carry no currency sign. */
+export function formatAmount(value: number): string {
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * Whole rupees, for aggregates only - dashboard stat cards and rollups, where
+ * the figure is an indication rather than a number anyone will tie out.
+ *
+ * Never use this on a statement, an invoice, a ledger row or anything else that
+ * has to reconcile. If two screens can show the same amount, both use
+ * formatMoney.
+ */
+export function formatMoneyCompact(value: number): string {
+  return `Rs. ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+/**
+ * @deprecated Use formatMoney, or formatMoneyCompact for aggregates.
+ *
+ * The `decimals` parameter is why the same amount renders four different ways
+ * across the app: it let each screen quietly pick its own precision, and vendor
+ * pages aliased it to 0 while admin pages left it at 2. Callers should say
+ * which they mean by choosing a function, not by passing a number.
+ */
 export function formatCurrency(value: number, decimals: 0 | 2 = 2): string {
-  return `Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+  return decimals === 0 ? formatMoneyCompact(value) : formatMoney(value);
 }
 
 import { toBsDate } from './nepaliDate';
@@ -14,4 +51,44 @@ export function formatDate(value?: string | null): string {
   if (!value) return '-';
   const bs = toBsDate(value);
   return bs || '-';
+}
+
+/**
+ * A ledger balance: the figure, then the side it sits on.
+ *
+ * `debitNormal` says which sign is a debit for that account — a rider's balance
+ * is a debit when positive, a vendor's when negative — so the suffix follows
+ * the account rather than the arithmetic.
+ */
+export function drCr(value: number, debitNormal: boolean): string {
+  if (value === 0) return formatAmount(0);
+  const isDebit = debitNormal ? value > 0 : value < 0;
+  return `${formatAmount(Math.abs(value))} ${isDebit ? 'Dr' : 'Cr'}`;
+}
+
+/**
+ * The receiver's phone and, when the order has one, their alternate number -
+ * de-duplicated and blank-free, one entry per display line. Just the numbers,
+ * no "Alt" prefix.
+ */
+export function receiverPhoneLines(phone?: string | null, alternate?: string | null): string[] {
+  const main = phone?.trim() || '';
+  const alt = alternate?.trim() || '';
+  return [main, alt !== main ? alt : ''].filter(Boolean);
+}
+
+/**
+ * Both numbers as one line of text, for places that can't break lines: search
+ * haystacks and tooltips. On screen and on printed sheets each number goes on
+ * its own line instead (ReceiverPhones / receiverPhonesHtml).
+ */
+export function formatReceiverPhones(phone?: string | null, alternate?: string | null): string {
+  return receiverPhoneLines(phone, alternate).join(', ');
+}
+
+/** Printed-sheet version: each number HTML-escaped, one per line. */
+export function receiverPhonesHtml(phone?: string | null, alternate?: string | null): string {
+  const esc = (v: string) =>
+    v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return receiverPhoneLines(phone, alternate).map(esc).join('<br>');
 }

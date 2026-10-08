@@ -46,6 +46,7 @@
 
   /* ── Typography tokens ───────────────────────────────────────────────────── */
   --typography-font-family-default: Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+  --typography-font-family-mono: ui-monospace, Consolas, monospace;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semi-bold: 600;

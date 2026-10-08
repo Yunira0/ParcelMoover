@@ -4,9 +4,10 @@
 // equity, 4xxx revenue, 5xxx expense - so a reader who has seen any other set
 // of books can find their way around this one.
 //
-// Two of these are *control* accounts: their balance is only meaningful broken
+// Three of these are *control* accounts: their balance is only meaningful broken
 // down per party. 1010 answers "how much of our cash is in which rider's
-// pocket right now", and 2000 answers "what is our position with each vendor".
+// pocket right now", 1015 "how much COD does each branch still owe head
+// office", and 2000 "what is our position with each vendor".
 // Everything else is a plain account.
 import { ledger_account_type, ledger_normal_side, ledger_party_type } from "../../generated/prisma/enums";
 import type { Prisma } from "../../generated/prisma/client";
@@ -18,6 +19,9 @@ type Db = Prisma.TransactionClient | typeof prisma;
 export const ACCOUNT = {
   CASH_IN_HAND: "1000",
   CASH_WITH_RIDER: "1010",
+  COD_WITH_BRANCH: "1015",
+  COD_WITH_CARRIER: "1020",
+  COD_HELD: "2005",
   VENDOR_CONTROL: "2000",
   OPENING_BALANCE_EQUITY: "3000",
   RETAINED_EARNINGS: "3900",
@@ -25,6 +29,8 @@ export const ACCOUNT = {
   REDIRECT_REVENUE: "4010",
   RETURN_REVENUE: "4020",
   RIDER_COMMISSION: "5000",
+  BRANCH_COMMISSION: "5010",
+  CARRIER_CHARGE: "5020",
   FUEL_AND_VEHICLE: "5100",
   VEHICLE_MAINTENANCE: "5110",
   OFFICE_RENT: "5200",
@@ -64,12 +70,38 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
     description:
       "COD a rider has collected but not yet remitted. Still ours, just not in our hands - the per-rider balance is the cash that rider owes the office right now.",
   },
+  {
+    code: ACCOUNT.COD_WITH_BRANCH,
+    name: "COD with Branch",
+    type: "asset",
+    normalSide: "debit",
+    isControl: true,
+    subledgerType: "location",
+    description:
+      "COD a branch has put on a statement to head office but not yet paid. Debited when the statement is raised, cleared as its instalments land - the per-branch balance is what that branch owes head office right now.",
+  },
+  {
+    code: ACCOUNT.COD_WITH_CARRIER,
+    name: "COD with 3PL",
+    type: "asset",
+    normalSide: "debit",
+    description:
+      "COD a 3PL carrier (NCM, Upaya) has put on a statement to us but not yet paid. Debited when the statement is raised, cleared as its instalments land.",
+  },
   // Every other place money sits - Prabhu Bank, Kumari Bank, a wallet - is an
   // account created with its payment method, not one listed here. There are no
   // "Bank" or "Digital Wallet" family accounts to fall into: a method either has
   // its own account or its payments do not post at all.
 
   // ── Liabilities ───────────────────────────────────────────────────────────
+  {
+    code: ACCOUNT.COD_HELD,
+    name: "COD to Pay to Vendor",
+    type: "liability",
+    normalSide: "credit",
+    description:
+      "COD taken in from riders but not yet passed on to vendors. Credited when a rider settles their collections to the office, debited when a vendor statement hands that money on. The balance is the float the office is sitting on: cash in our hands that is not ours. Deliberately not a control account - a rider remits one pooled sum that no single vendor can be named against.",
+  },
   {
     code: ACCOUNT.VENDOR_CONTROL,
     name: "Vendor",
@@ -78,7 +110,7 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
     isControl: true,
     subledgerType: "vendor",
     description:
-      "Net position with each vendor. Credited with COD collected on their behalf and payments they send us, debited with delivery charges earned and payouts made. A credit balance is money we owe them; a debit balance is money they owe us.",
+      "Direct position with each vendor, outside the COD cycle: credited with payments they send the office. A credit balance is money we owe them; a debit balance is money they owe us. Note that day-to-day COD and delivery charges do not pass through here - they are recognised on the statement that settles them, against COD to Pay to Vendor.",
   },
 
   // ── Equity ────────────────────────────────────────────────────────────────
@@ -129,6 +161,20 @@ export const CHART_OF_ACCOUNTS: AccountDefinition[] = [
     type: "expense",
     normalSide: "debit",
     description: "Per-delivery commission and incentives paid to riders.",
+  },
+  {
+    code: ACCOUNT.BRANCH_COMMISSION,
+    name: "Branch Commission",
+    type: "expense",
+    normalSide: "debit",
+    description: "Per-parcel commission a branch keeps out of the COD it remits to head office.",
+  },
+  {
+    code: ACCOUNT.CARRIER_CHARGE,
+    name: "3PL Delivery Charge",
+    type: "expense",
+    normalSide: "debit",
+    description: "Per-order delivery charge a 3PL carrier keeps out of the COD it remits to us.",
   },
   {
     code: ACCOUNT.FUEL_AND_VEHICLE,

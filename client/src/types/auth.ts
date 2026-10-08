@@ -11,5 +11,9 @@ export interface AuthResponse {
     email: string;
     fullName: string;
     roles: string[];
+    permissions?: string[];
+    locationId?: string | null;
+    locationName?: string | null;
+    branchScoped?: boolean;
   };
 }

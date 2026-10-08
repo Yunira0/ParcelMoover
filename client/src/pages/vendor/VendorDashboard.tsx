@@ -1,18 +1,18 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React from 'react';
 import DashboardHeader from '../../components/DashboardHeader';
+import VendorNoticeBanner from '../../components/vendor/VendorNoticeBanner';
 import VendorQuickActions from '../../components/vendor/VendorQuickActions';
+import VendorAnnouncements from '../../components/vendor/VendorAnnouncements';
 import VendorOverviewCards from '../../components/vendor/VendorOverviewCards';
 import OrdersTrendDonut from '../../components/vendor/OrdersTrendDonut';
 import VendorOrdersTrendChart from '../../components/vendor/VendorOrdersTrendChart';
 import VendorCodCard from '../../components/vendor/VendorCodCard';
 import VendorTodayPanel from '../../components/vendor/VendorTodayPanel';
 import VendorOrderDetails from '../../components/vendor/VendorOrderDetails';
-import { getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
-import { subscribeToRemarkStatusChanged } from '../../services/remarks.service';
-import { getCurrentUser } from '../../utils/auth';
+import { EMPTY_VALLEY_SPLIT, type DashboardSummary } from '../../services/orders.service';
+import { getCurrentUser, getCurrentUserRoles, hasStaffPermission } from '../../utils/auth';
+import { useDashboardSummary } from '../../queries/dashboard';
 import './VendorDashboard.css';
-
-const REFRESH_INTERVAL_MS = 15_000;
 
 const EMPTY_SUMMARY: DashboardSummary = {
   overview: {
@@ -52,6 +52,9 @@ const EMPTY_SUMMARY: DashboardSummary = {
     overdueDelivery: 0,
     overdueTransit: 0,
     overdueRemarks: 0,
+    overdueBranchCod: 0,
+    overdueBranchCodAmount: 0,
+    branchCodHours: null,
     overdueReturn: 0,
     pickupHours: null,
     deliveryHours: null,
@@ -62,6 +65,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     deliveryBreaches: [],
     transitBreaches: [],
     returnBreaches: [],
+    deliveryByValley: EMPTY_VALLEY_SPLIT,
   },
   codSettlement: {
     totalCod: 0,
@@ -71,6 +75,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     codFromPmRider: 0,
     codFromNcm: 0,
     codFromUpaya: 0,
+    codFromBranches: 0,
     pendingDeliveryCharge: 0,
     deliveryCharge: 0,
     progressPercent: 0,
@@ -83,61 +88,31 @@ const EMPTY_SUMMARY: DashboardSummary = {
 };
 
 const VendorDashboard: React.FC = () => {
-  const [summary, setSummary] = useState<DashboardSummary>(EMPTY_SUMMARY);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  const loadSummary = useCallback(async () => {
-    try {
-      const res = await getDashboardSummary();
-      if (res?.success && res.data) {
-        setSummary(res.data);
-        setError('');
-      } else {
-        setError('Dashboard data is unavailable.');
-      }
-    } catch {
-      setError('Dashboard data is unavailable.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadSummary();
-    const intervalId = window.setInterval(() => loadSummary(), REFRESH_INTERVAL_MS);
-    const handleVisibilityChange = () => {
-      if (!document.hidden) loadSummary();
-    };
-    // Closing/reopening a remark elsewhere in this tab has to land here at
-    // once - otherwise Today's activity keeps showing the stale count until
-    // the next poll while the nav badge (same event) has already dropped.
-    const unsubscribeRemarks = subscribeToRemarkStatusChanged(loadSummary);
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      window.clearInterval(intervalId);
-      unsubscribeRemarks();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [loadSummary]);
+  const summaryQuery = useDashboardSummary();
+  const summary: DashboardSummary =
+    summaryQuery.data?.success && summaryQuery.data.data ? summaryQuery.data.data : EMPTY_SUMMARY;
+  const loading = summaryQuery.isPending;
+  const error = summaryQuery.isError || (summaryQuery.data && !summaryQuery.data.success)
+    ? 'Dashboard data is unavailable.'
+    : '';
 
   const { overview, today, codSettlement, weeklyTrend } = summary;
+  const canSeeCod = !getCurrentUserRoles().includes('vendor_staff') || hasStaffPermission('FINANCE_ACCESS');
 
   return (
     <div className="vendor-dashboard">
       <DashboardHeader
         user={getCurrentUser()?.fullName || ''}
-        subtitle="Your orders, deliveries and payouts across the Parcel Moover network."
       />
 
+      <VendorNoticeBanner />
       <VendorQuickActions />
 
       {error && <p className="vendor-dashboard-error">{error}</p>}
 
       <div className="vendor-dashboard-card">
 
-        {/* 8 coloured metric cards */}
+        {/* 7 coloured metric cards */}
         <VendorOverviewCards
           totalOrders={overview.totalOrders}
           totalOrderAmount={overview.totalOrderAmount}
@@ -145,13 +120,16 @@ const VendorDashboard: React.FC = () => {
           deliveredAmount={overview.totalDeliveredAmount}
           rtvDelivered={overview.totalReturnedToVendor}
           rtvDeliveredAmount={overview.totalReturnedToVendorAmount}
-          inDelivery={overview.inDelivery}
-          inDeliveryAmount={overview.inDeliveryAmount}
+          inTransit={overview.inTransit}
+          inTransitAmount={overview.inTransitAmount}
+          inProgress={overview.inDelivery}
+          inProgressAmount={overview.inDeliveryAmount}
           pendingPickup={overview.awaitingPickup}
           pendingPickupAmount={overview.awaitingPickupAmount}
           returnProcess={overview.pendingReturns}
           returnProcessAmount={overview.pendingReturnsAmount}
           loading={loading}
+          showAmounts={canSeeCod}
         />
 
         {/* Charts + side panel */}
@@ -163,6 +141,7 @@ const VendorDashboard: React.FC = () => {
               loading={loading}
             />
             <VendorOrdersTrendChart data={weeklyTrend} loading={loading} />
+            <VendorAnnouncements />
           </div>
 
           <div className="vendor-dashboard-side-col">
@@ -173,7 +152,7 @@ const VendorDashboard: React.FC = () => {
               remarks={today.remarks}
               loading={loading}
             />
-            <VendorCodCard data={codSettlement} loading={loading} />
+            {canSeeCod && <VendorCodCard data={codSettlement} loading={loading} />}
           </div>
         </div>
 

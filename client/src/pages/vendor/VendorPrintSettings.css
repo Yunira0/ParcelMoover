@@ -140,7 +140,7 @@
 
 .print-settings-success {
   align-items: center;
-  color: var(--color-success-text, #1a7f37);
+  color: var(--color-success-default);
   display: flex;
   font-size: var(--font-size-sm);
   gap: var(--space-1);

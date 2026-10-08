@@ -33,6 +33,8 @@ export interface RegisterUserInput {
     extraWeightPercent?: string | number;
     returnInsideValleyPercent?: string | number;
     returnOutsideValleyPercent?: string | number;
+    branchReturnInsideValleyPercent?: string | number;
+    branchReturnOutsideValleyPercent?: string | number;
     branchFlatInsideValley?: string | number;
     branchFlatOutsideValley?: string | number;
     branchFlatOutsideRingRoad?: string | number;
@@ -76,11 +78,13 @@ export interface RegisterUserInput {
 
     // --- Document paths (set by the controller from uploaded files) ---
     idDocumentPath?: string;        // admin (type chosen via idDocumentType)
-    citizenshipDocPath?: string;
+    citizenshipDocPath?: string;      // front side
+    citizenshipDocBackPath?: string;  // back side
     panDocPath?: string;            // admin
     panVatDocPath?: string;         // rider, vendor
     experienceLetterDocPath?: string; // admin
     licenceDocPath?: string;        // rider
     bluebookDocPath?: string;       // rider
     businessCertDocPath?: string;   // vendor
+    agreementDocPath?: string;      // all three - PDF or DOCX
 }

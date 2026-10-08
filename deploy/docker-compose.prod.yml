@@ -37,7 +37,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  app:
+  app: &app
     image: ${APP_IMAGE:-parcelmoover:latest}
     restart: always
     depends_on:
@@ -52,8 +52,16 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       NODE_ENV: production
+      # Two release slots share Postgres; leave room for migrations/admin.
+      DB_POOL_MAX: ${DB_POOL_MAX:-30}
+      # Code deployments do not authorize rewriting existing business records.
+      # Explicit maintenance may opt back into the existing one-time repairs.
+      SKIP_STARTUP_DATA_REPAIRS: ${SKIP_STARTUP_DATA_REPAIRS:-true}
       TRUST_PROXY: "true"
-      TRUSTED_PROXIES: 127.0.0.1
+      # Nginx reaches the container through Docker's private gateway, not the
+      # container's loopback interface. Trust only local/private proxy hops;
+      # the first public address is then treated as the client.
+      TRUSTED_PROXIES: loopback,linklocal,uniquelocal
     # Bound to localhost only — Nginx on the same box terminates TLS on
     # 80/443 and reverse-proxies to this. The app port is never reachable
     # directly from the internet.
@@ -66,6 +74,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  app-green:
+    <<: *app
+    profiles: [deployment]
+    ports:
+      - "127.0.0.1:3001:3000"
 
 volumes:
   # The live production data was created by earlier compose runs under the

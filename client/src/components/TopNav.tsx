@@ -12,7 +12,8 @@ import {
 } from '../services/notifications.service';
 import { getUnclosedRemarksCounts, subscribeToRemarkStatusChanged } from '../services/remarks.service';
 import { useMobileNav } from '../context/MobileNavContext';
-import { isVendorSide } from '../utils/auth';
+import { useStaffPermissions } from '../context/StaffPermissionsContext';
+import { isAccountantUser, isBranchWorkspaceUser, isVendorSide } from '../utils/auth';
 import { toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TopNav.css';
 
@@ -25,10 +26,16 @@ const formatTime = (iso: string) => {
 const POLL_INTERVAL_MS = 30_000;
 
 const TopNav: React.FC = () => {
+  // Re-render when /me refreshes plain-admin scope in localStorage.
+  useStaffPermissions();
   const navigate = useNavigate();
   const { toggleMobile } = useMobileNav();
+  const isBranchWorkspace = isBranchWorkspaceUser();
+  // The finance-only accountant has no remark queues (it can search orders).
+  const isAccountant = isAccountantUser();
+  const hideRemarks = isBranchWorkspace || isAccountant;
   // Rider remarks are an internal queue - vendors only work their own comments.
-  const showRiderCmt = !isVendorSide();
+  const showRiderCmt = !isVendorSide() && !hideRemarks;
   const [query, setQuery] = useState('');
   // Below the breakpoint the search field is collapsed to an icon; this
   // expands it to take over the bar, same pattern as most mobile search UIs.
@@ -66,7 +73,7 @@ const TopNav: React.FC = () => {
 
   useEffect(() => {
     refreshUnreadCount();
-    refreshUnclosedCount();
+    if (!hideRemarks) refreshUnclosedCount();
 
     const unsubscribe = subscribeToNotificationStream((notification) => {
       sseConnectedRef.current = true;
@@ -76,14 +83,16 @@ const TopNav: React.FC = () => {
 
     // Remarks have no SSE stream - refetch immediately whenever a remark is
     // closed/reopened anywhere in this tab (Remarks/UnclosedRemarks/RemarkDetail).
-    const unsubscribeRemarks = subscribeToRemarkStatusChanged(refreshUnclosedCount);
+    const unsubscribeRemarks = hideRemarks
+      ? () => {}
+      : subscribeToRemarkStatusChanged(refreshUnclosedCount);
 
     // Polling fallback: catches changes made in other tabs/by other users, and
     // covers the notification SSE stream missing events (tab backgrounded,
     // connection drop).
     const pollTimer = setInterval(() => {
       refreshUnreadCount();
-      refreshUnclosedCount();
+      if (!hideRemarks) refreshUnclosedCount();
     }, POLL_INTERVAL_MS);
 
     // Coming back to a backgrounded tab, refetch instead of waiting out the
@@ -92,7 +101,7 @@ const TopNav: React.FC = () => {
     const handleVisibilityChange = () => {
       if (document.hidden) return;
       refreshUnreadCount();
-      refreshUnclosedCount();
+      if (!hideRemarks) refreshUnclosedCount();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -102,7 +111,7 @@ const TopNav: React.FC = () => {
       clearInterval(pollTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [refreshUnreadCount, refreshUnclosedCount]);
+  }, [hideRemarks, refreshUnreadCount, refreshUnclosedCount]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -148,6 +157,8 @@ const TopNav: React.FC = () => {
         return '/dispatch-operations';
       case 'cod_settlement':
         return '/finance';
+      case 'branch_settlement':
+        return '/branches/billing?tab=statements';
       case 'ticket':
       case 'ticket_reply':
       case 'ticket_status':
@@ -197,6 +208,9 @@ const TopNav: React.FC = () => {
       case 'delivery_failed':
         return <AlertCircle size={14} className="notification-icon notification-icon-failed" />;
       case 'cod_settlement':
+      case 'branch_settlement':
+      case 'billing':
+      case 'branch_billing':
         return <Banknote size={14} className="notification-icon notification-icon-cod" />;
       case 'ticket':
       case 'ticket_reply':
@@ -219,9 +233,13 @@ const TopNav: React.FC = () => {
       </button>
 
       <div className="top-nav-logo">
-        {/* Logo removed as requested */}
+        <img src="/brand/logo-icon.png" alt="" className="top-nav-logo-mark" />
+        <span className="top-nav-logo-text">
+          Parcel<span className="top-nav-logo-accent">Moover</span>
+        </span>
       </div>
 
+      <>
       <form
         className="top-nav-search"
         onSubmit={(event) => { event.preventDefault(); runSearch(); }}
@@ -259,9 +277,11 @@ const TopNav: React.FC = () => {
       >
         <Search size={20} />
       </button>
+      </>
 
       <div className="top-nav-profile">
-        <Button
+        {!hideRemarks && (
+          <Button
           variant="outline"
           className="cmt-button"
           onClick={() => navigate('/unclosed-remarks')}
@@ -274,7 +294,8 @@ const TopNav: React.FC = () => {
               {vendorCmtCount > 99 ? '99+' : vendorCmtCount}
             </span>
           )}
-        </Button>
+          </Button>
+        )}
 
         {showRiderCmt && (
           <Button

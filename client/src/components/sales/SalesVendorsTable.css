@@ -1,0 +1,144 @@
+/* A sales rep's vendors on Sales Overview - same plane as the orders table
+   below it, so it separates by spacing and the table's own border, not a shadow. */
+.sales-vendors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sales-vendors-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.sales-vendors-title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semi-bold);
+  color: var(--color-text-default);
+}
+
+.sales-vendors-count {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.sales-vendors-hint {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-caption);
+}
+
+.sales-vendors-hint strong {
+  color: var(--color-text-default);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+/* Paging to the next set keeps the current rows on screen, dimmed, rather
+   than flashing to a skeleton. */
+.sales-vendors .sales-vendors-table {
+  transition: opacity 150ms ease-out;
+}
+
+.sales-vendors.is-refreshing .sales-vendors-table {
+  opacity: 0.55;
+}
+
+/* Vendor name - the row's pick control, styled like the rust drill-down
+   links in the order tables (TRACKING ID) so it reads as clickable. */
+.sales-vendor-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  /* The deeper rust: the brand rust is under 4:1 on white at this size;
+     this one holds 4.5:1 even on the selected row's tint. */
+  color: var(--color-primary-hover);
+  font: inherit;
+  font-weight: var(--font-weight-semi-bold);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sales-vendor-pick span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-vendor-pick:hover span {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.sales-vendor-pick:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.sales-vendor-pick svg {
+  flex-shrink: 0;
+}
+
+.sales-vendor-email {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Phone, money and dates line up digit for digit down the column. */
+.sales-vendors-table .sales-vendors-figure {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sales-vendors-table .sales-vendors-money {
+  text-align: right;
+}
+
+.sales-vendor-nil {
+  color: var(--color-text-caption);
+}
+
+/* Total / Delivered / Returned as label-value pairs with the numbers aligned. */
+.sales-vendor-orders {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.sales-vendor-orders dt {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+}
+
+.sales-vendor-orders dd {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  text-align: right;
+  color: var(--color-text-default);
+}
+
+.sales-vendor-orders dt:first-of-type,
+.sales-vendor-orders dd:first-of-type {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+  color: var(--color-text-default);
+}

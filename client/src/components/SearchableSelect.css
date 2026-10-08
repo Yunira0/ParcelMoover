@@ -192,11 +192,24 @@
 }
 
 .searchable-select-more {
+  background: transparent;
+  border: none;
+  cursor: pointer;
   color: var(--color-text-caption);
+  display: block;
+  font-family: var(--typography-font-family-default);
   font-size: var(--font-size-sm);
   margin: 0;
   padding: var(--space-2);
   text-align: center;
+  width: 100%;
+}
+
+.searchable-select-more:hover,
+.searchable-select-more:focus-visible {
+  background: var(--color-background-primary-invert-default);
+  color: var(--color-text-primary);
+  outline: none;
 }
 
 @keyframes searchable-select-spin {

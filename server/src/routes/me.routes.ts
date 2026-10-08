@@ -16,6 +16,7 @@ const meReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("me-read"),
   keyGenerator: actorOrIpKey,
 });
@@ -27,6 +28,7 @@ const meWriteLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   passOnStoreError: true,
+  validate: false,
   store: createRedisRateLimitStore("me-write"),
   keyGenerator: actorOrIpKey,
 });

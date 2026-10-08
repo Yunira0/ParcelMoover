@@ -59,7 +59,7 @@
 }
 
 .pickup-slots-error {
-  color: var(--color-text-danger, #dc2626);
+  color: var(--color-danger-text);
   font-size: 0.85rem;
   margin: 0;
 }

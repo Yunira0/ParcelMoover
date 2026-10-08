@@ -8,6 +8,7 @@ import {
   getJournalEntry,
   getOverview,
   getPartyLedger,
+  getPartySettlementLedger,
   getProfitAndLoss,
   getTrialBalance,
   listAccounts,
@@ -18,12 +19,15 @@ import {
   listTransactions,
   reverseEntry,
   searchParties,
+  searchPartiesPage,
   getPartyStatement,
   setPeriodStatus,
   voidExpense,
   type RangeQuery,
   type TransactionQuery,
 } from "../services/accounting/accounting.service";
+import { createAccount, listChart, setOpeningBalance, updateAccount } from "../services/accounting/masters.service";
+import { listBranchCodOutstanding, receiveBranchCod } from "../services/branch-billing.service";
 
 function fail(res: Response, error: any, fallback: string) {
   return res.status(error?.statusCode || 500).json({
@@ -88,9 +92,9 @@ export async function getOverviewController(req: Request, res: Response) {
   }
 }
 
-export async function listAccountsController(_req: Request, res: Response) {
+export async function listAccountsController(req: Request, res: Response) {
   try {
-    return ok(res, await listAccounts());
+    return ok(res, await listAccounts(req.query.scope === "cash_bank" ? "cash_bank" : undefined));
   } catch (error) {
     return fail(res, error, "Failed to load the chart of accounts");
   }
@@ -125,7 +129,14 @@ export async function getJournalEntryController(req: Request, res: Response) {
 
 export async function getAccountLedgerController(req: Request, res: Response) {
   try {
-    return ok(res, await getAccountLedger(req.params.code as string, rangeOf(req)));
+    return ok(
+      res,
+      await getAccountLedger(req.params.code as string, {
+        ...rangeOf(req),
+        page: Number(req.query.page) || undefined,
+        pageSize: Number(req.query.pageSize) || undefined,
+      }),
+    );
   } catch (error) {
     return fail(res, error, "Failed to load the account ledger");
   }
@@ -174,9 +185,29 @@ export async function getPartyLedgerController(req: Request, res: Response) {
   }
 }
 
+export async function getPartySettlementLedgerController(req: Request, res: Response) {
+  try {
+    return ok(
+      res,
+      await getPartySettlementLedger(partyTypeOf(req), partyIdOf(req), {
+        ...rangeOf(req),
+        page: Number(req.query.page) || undefined,
+        pageSize: Number(req.query.pageSize) || undefined,
+      }),
+    );
+  } catch (error) {
+    return fail(res, error, "Failed to load the settlement ledger");
+  }
+}
+
 export async function searchPartiesController(req: Request, res: Response) {
   try {
-    return ok(res, await searchParties(String(req.query.q ?? "")));
+    const query = String(req.query.q ?? "");
+    if (req.query.paged === "true") {
+      const types = String(req.query.types ?? "rider,vendor,user").split(",") as Array<"rider" | "vendor" | "user">;
+      return ok(res, await searchPartiesPage(query, types, Number(req.query.offset ?? 0), Number(req.query.limit ?? 30)));
+    }
+    return ok(res, await searchParties(query));
   } catch (error) {
     return fail(res, error, "Search failed");
   }
@@ -274,10 +305,73 @@ export async function createManualEntryController(req: Request, res: Response) {
   }
 }
 
+export async function listBranchCodOutstandingController(_req: Request, res: Response) {
+  try {
+    return ok(res, await listBranchCodOutstanding());
+  } catch (error) {
+    return fail(res, error, "Failed to load branch COD balances");
+  }
+}
+
+export async function receiveBranchCodController(req: Request, res: Response) {
+  try {
+    return res.status(201).json({ success: true, data: await receiveBranchCod(req.user!, req.body) });
+  } catch (error) {
+    return fail(res, error, "Failed to receive branch COD");
+  }
+}
+
 export async function reverseEntryController(req: Request, res: Response) {
   try {
     return ok(res, await reverseEntry(req.user!, req.params.id as string, req.body.reason ?? ""));
   } catch (error) {
     return fail(res, error, "Failed to reverse the journal entry");
+  }
+}
+
+// ── Masters ─────────────────────────────────────────────────────────────────
+
+export async function listChartController(_req: Request, res: Response) {
+  try {
+    return ok(res, await listChart());
+  } catch (error) {
+    return fail(res, error, "Failed to load the chart of accounts");
+  }
+}
+
+export async function createAccountController(req: Request, res: Response) {
+  try {
+    return res.status(201).json({ success: true, data: await createAccount(req.body) });
+  } catch (error) {
+    return fail(res, error, "Failed to create the account");
+  }
+}
+
+export async function setOpeningBalanceController(req: Request, res: Response) {
+  try {
+    const { accountCode, amount, asOf, partyType, partyId, reference } = req.body;
+    return res.status(201).json({
+      success: true,
+      data: await setOpeningBalance(
+        {
+          accountCode,
+          amount,
+          asOf: new Date(asOf),
+          ...(partyType && partyId ? { party: { type: partyType, id: partyId } } : {}),
+          reference,
+        },
+        req.user?.id ?? null,
+      ),
+    });
+  } catch (error) {
+    return fail(res, error, "Failed to record the opening balance");
+  }
+}
+
+export async function updateAccountController(req: Request, res: Response) {
+  try {
+    return ok(res, await updateAccount(req.params.code as string, req.body));
+  } catch (error) {
+    return fail(res, error, "Failed to update the account");
   }
 }

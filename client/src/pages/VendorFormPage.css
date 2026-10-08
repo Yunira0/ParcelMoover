@@ -91,23 +91,23 @@
 .vfp-rate-option {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--space-2-5);
   text-align: left;
-  padding: 14px;
+  padding: var(--space-3);
   border: 1px solid var(--color-border-default);
-  border-radius: 10px;
+  border-radius: var(--border-radius-lg);
   background: var(--color-background-surface);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .vfp-rate-option:hover {
-  border-color: var(--color-primary, #4f46e5);
+  border-color: var(--color-primary);
 }
 
 .vfp-rate-option.selected {
-  border-color: var(--color-primary, #4f46e5);
-  box-shadow: 0 0 0 1px var(--color-primary, #4f46e5);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 
 .vfp-rate-radio {
@@ -120,9 +120,9 @@
 }
 
 .vfp-rate-option.selected .vfp-rate-radio {
-  border-color: var(--color-primary, #4f46e5);
+  border-color: var(--color-primary);
   background:
-    radial-gradient(circle, var(--color-primary, #4f46e5) 0 4px, transparent 5px);
+    radial-gradient(circle, var(--color-primary) 0 4px, transparent 5px);
 }
 
 .vfp-rate-text {
@@ -132,12 +132,12 @@
 }
 
 .vfp-rate-text strong {
-  font-size: 0.9rem;
+  font-size: var(--font-size-sm);
   color: var(--color-text-default);
 }
 
 .vfp-rate-text small {
-  font-size: 0.78rem;
+  font-size: var(--font-size-xs);
   color: var(--color-text-caption);
 }
 
@@ -150,30 +150,47 @@
 
 .vfp-rate-note {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   color: var(--color-text-caption);
+}
+
+/* Subhead for a rate sub-group (branch rate, return rate) that isn't
+   anchored to anything above it the way the primary rate fields are
+   anchored to the type selector — needs its own label to scan. */
+.vfp-rate-subhead {
+  margin: 0;
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.vfp-rate-subhead + .vfp-rate-note {
+  margin-top: 2px;
 }
 
 /* Optional "second rate" add-on, styled as a card to match the rate options. */
 .vfp-inside-valley-block {
   margin-top: var(--space-3);
-  padding: 14px;
+  padding: var(--space-3);
   border: 1px solid var(--color-border-default);
-  border-radius: 10px;
+  border-radius: var(--border-radius-lg);
   background: var(--color-background-surface);
   gap: var(--space-3);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .vfp-inside-valley-block.is-on {
-  border-color: var(--color-primary, #4f46e5);
-  box-shadow: 0 0 0 1px var(--color-primary, #4f46e5);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 
 .vfp-inside-valley-toggle {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--space-2-5);
   cursor: pointer;
 }
 
@@ -182,7 +199,7 @@
   flex-shrink: 0;
   width: 16px;
   height: 16px;
-  accent-color: var(--color-primary, #4f46e5);
+  accent-color: var(--color-primary);
   cursor: pointer;
 }
 
@@ -203,9 +220,9 @@
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--color-primary, #4f46e5);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semi-bold);
+  color: var(--color-primary);
 }
 
 .vfp-rate-config-link:hover {
@@ -263,9 +280,9 @@
 
 .vfp-rate-notice {
   color: var(--color-text-caption);
-  font-size: 12px;
-  line-height: 16px;
-  margin: 0 0 12px;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
+  margin: 0 0 var(--space-3);
 }
 
 /* Document upload fields */
@@ -282,25 +299,25 @@
 }
 
 .vfp-file-label {
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-default);
 }
 
 .vfp-required {
-  color: var(--color-danger-default);
+  color: var(--color-danger-text);
 }
 
 .vfp-file-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 14px;
+  padding: var(--space-2-5) var(--space-3);
   border: 1.5px dashed var(--color-border-default);
   border-radius: var(--border-radius-default);
   background: var(--color-background-surface);
   color: var(--color-text-caption);
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
   cursor: pointer;
   transition: border-color 150ms ease, color 150ms ease;
   width: 100%;
@@ -312,6 +329,11 @@
   color: var(--color-border-primary);
 }
 
+.vfp-file-field.has-error .vfp-file-btn {
+  border-color: var(--color-danger-text);
+  color: var(--color-danger-text);
+}
+
 .vfp-file-chip {
   display: flex;
   align-items: center;
@@ -319,7 +341,7 @@
   padding: 8px 12px;
   background: var(--color-background-primary-invert-default);
   border-radius: var(--border-radius-default);
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   color: var(--color-border-primary);
   overflow: hidden;
 }
@@ -343,15 +365,20 @@
 }
 
 .vfp-file-hint {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-caption);
+}
+
+.vfp-file-error {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger-default);
 }
 
 /* Hint */
 .vfp-hint {
   color: var(--color-text-caption);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-xs);
   margin: 0;
 }
 
@@ -390,21 +417,21 @@
 }
 
 .vfp-success-card h3 {
-  font-size: 1.4rem;
-  font-weight: 700;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 var(--space-3) 0;
 }
 
 .vfp-success-card p {
-  font-size: 0.9rem;
+  font-size: var(--font-size-sm);
   color: var(--color-text-caption);
   line-height: 1.6;
   margin: 0 0 var(--space-2);
 }
 
 .vfp-success-hint {
-  font-size: 0.85rem !important;
+  font-size: var(--font-size-sm) !important;
 }
 
 .vfp-success-actions {
@@ -425,7 +452,7 @@
   .vfp-section {
     padding: var(--space-4);
   }
-}
+}
 
 /* Document slot status (edit mode): what is already on file for this slot */
 .vfp-doc-status {
@@ -438,7 +465,7 @@
 }
 
 .vfp-doc-onfile {
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   font-weight: 600;
   text-decoration: none;
 }

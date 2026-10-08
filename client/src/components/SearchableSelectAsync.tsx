@@ -31,6 +31,7 @@ interface SearchableSelectAsyncProps {
    * e.g. a value set from a prefilled record rather than a user search.
    */
   initialLabel?: string;
+  ariaLabel?: string;
 }
 
 const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
@@ -44,6 +45,7 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
   minChars = 0,
   debounceMs = 300,
   initialLabel,
+  ariaLabel,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -51,6 +53,7 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
@@ -69,6 +72,7 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
         return;
       }
       const callId = ++abortRef.current;
+      setLoadError(false);
       if (append) {
         setLoadingMore(true);
       } else {
@@ -88,6 +92,7 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
           if (callId === abortRef.current) {
             if (!append) setOptions([]);
             setHasMore(false);
+            setLoadError(true);
             setLoading(false);
             setLoadingMore(false);
           }
@@ -189,6 +194,7 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
       <button
         type="button"
         className="searchable-select-trigger"
+        aria-label={ariaLabel}
         onClick={() => setIsOpen(open => !open)}
         disabled={disabled}
       >
@@ -204,6 +210,7 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
             <Search size={14} />
             <input
               autoFocus
+              aria-label={ariaLabel ? `Search ${ariaLabel}` : 'Search options'}
               value={query}
               onChange={event => setQuery(event.target.value)}
               onKeyDown={handleSearchKeyDown}
@@ -216,7 +223,7 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
             ref={optionsRef}
             onScroll={handleScroll}
           >
-            {options.length === 0 && !loading ? (
+            {options.length === 0 && !loading && !loadError ? (
               <p className="searchable-select-empty">{emptyMessage}</p>
             ) : options.map((option, index) => (
               <button
@@ -230,6 +237,15 @@ const SearchableSelectAsync: React.FC<SearchableSelectAsyncProps> = ({
                 {option.description && <small>{highlight(option.description)}</small>}
               </button>
             ))}
+            {loadError && !loading && !loadingMore && (
+              <button
+                type="button"
+                className="searchable-select-option"
+                onClick={() => fetchOptions(query, options.length ? offsetRef.current : 0, options.length > 0)}
+              >
+                Could not load options. Try again.
+              </button>
+            )}
             {loadingMore && (
               <div className="searchable-select-loading-more">
                 <Loader2 size={14} className="searchable-select-spinner" />

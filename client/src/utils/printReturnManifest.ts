@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
 import type { ReturnManifestDetail } from '../services/returnManifests.service';
 import { toBsDate } from './nepaliDate';
+import { receiverPhonesHtml } from './format';
 
 const fmt = (n: number) => n.toFixed(2);
 
@@ -75,7 +76,7 @@ function manifestSection(manifest: ReturnManifestDetail, qrDataUrl: string): str
           <td class="num">${index + 1}</td>
           <td class="mono">${esc(parcel.trackingId)}</td>
           <td>${esc(parcel.receiverName)}</td>
-          <td>${esc(parcel.receiverPhone)}</td>
+          <td>${receiverPhonesHtml(parcel.receiverPhone, parcel.receiverAlternatePhone)}</td>
           <td>${esc(parcel.address || parcel.destination || '-')}</td>
           <td class="num">${fmt(parcel.codAmount)}</td>
           <td class="remark">${esc(parcel.remarks || '')}</td>

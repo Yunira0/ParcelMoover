@@ -1,0 +1,90 @@
+{
+  "capturedAt": "2026-10-06T07:54:00.153Z",
+  "scope": "Localhost, read-only service checks; no production deployment",
+  "checks": [
+    {
+      "name": "staff full-versus-lean list DTO and exact totals",
+      "passed": true,
+      "comparedRows": 20
+    },
+    {
+      "name": "staff legacy DISTINCT-versus-grouped filter options",
+      "passed": true
+    },
+    {
+      "name": "vendor full-versus-lean list DTO and exact totals",
+      "passed": true,
+      "comparedRows": 20
+    },
+    {
+      "name": "vendor legacy DISTINCT-versus-grouped filter options",
+      "passed": true
+    },
+    {
+      "name": "Vendor cannot widen scope with another vendor filter",
+      "passed": true
+    },
+    {
+      "name": "Business row counts unchanged during read-only verification",
+      "passed": true
+    }
+  ],
+  "sessionSettings": {
+    "read_only": "on",
+    "idle_transaction_timeout": "30s",
+    "statement_timeout": "15s"
+  },
+  "indexes": [
+    {
+      "name": "idx_notifications_user_created_id",
+      "valid": true,
+      "definition": "CREATE INDEX idx_notifications_user_created_id ON public.notifications USING btree (user_id, created_at DESC, id DESC)"
+    },
+    {
+      "name": "idx_parcel_history_status_created_parcel",
+      "valid": true,
+      "definition": "CREATE INDEX idx_parcel_history_status_created_parcel ON public.parcel_status_history USING btree (new_status, created_at, parcel_id)"
+    },
+    {
+      "name": "idx_parcels_vendor_order_number_id",
+      "valid": true,
+      "definition": "CREATE INDEX idx_parcels_vendor_order_number_id ON public.parcels USING btree (vendor_id, order_number DESC, id DESC)"
+    },
+    {
+      "name": "idx_settlement_items_cod_settlement",
+      "valid": true,
+      "definition": "CREATE INDEX idx_settlement_items_cod_settlement ON public.settlement_items USING btree (cod_collection_id, settlement_id)"
+    },
+    {
+      "name": "idx_settlements_rider_created_id",
+      "valid": true,
+      "definition": "CREATE INDEX idx_settlements_rider_created_id ON public.settlements USING btree (rider_id, created_at DESC, id DESC)"
+    },
+    {
+      "name": "idx_settlements_vendor_created_id",
+      "valid": true,
+      "definition": "CREATE INDEX idx_settlements_vendor_created_id ON public.settlements USING btree (vendor_id, created_at DESC, id DESC)"
+    }
+  ],
+  "catalog": {
+    "index_count": 244,
+    "invalid_index_count": 0,
+    "applied_migration_count": 125
+  },
+  "counts": {
+    "parcels": 113,
+    "parcel_status_history": 525,
+    "settlements": 17,
+    "settlement_items": 23,
+    "notifications": 62,
+    "locations": 6097
+  },
+  "originalAuditCounts": {
+    "parcels": 113,
+    "parcel_status_history": 523,
+    "settlements": 17,
+    "settlement_items": 23,
+    "notifications": 62,
+    "locations": 6097
+  }
+}

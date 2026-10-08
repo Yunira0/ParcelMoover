@@ -6,6 +6,7 @@ import SegmentedTabs from '../../components/SegmentedTabs';
 import Table from '../../components/Table';
 import Pagination from '../../components/Pagination';
 import Button from '../../components/Button';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import {
   createApiKey,
   getApiKeys,
@@ -72,6 +73,11 @@ const VendorDeveloper: React.FC = () => {
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [keyCopied, setKeyCopied] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  // One slot for whichever destructive action is awaiting confirmation. All
+  // three here are irreversible for a live integration, so none of them fire
+  // straight from a click.
+  const [pendingAction, setPendingAction] = useState<{ title: string; message: string; run: () => Promise<void> } | null>(null);
+  const [pendingBusy, setPendingBusy] = useState(false);
 
   const loadKeys = useCallback(async () => {
     setKeysLoading(true);
@@ -130,11 +136,14 @@ const VendorDeveloper: React.FC = () => {
     }
   };
 
+  const askRevokeKey = (key: ApiKey) =>
+    setPendingAction({
+      title: `Revoke "${key.name}" (${key.key_prefix}…)?`,
+      message: 'Integrations using this key will stop working immediately.',
+      run: () => handleRevokeKey(key),
+    });
+
   const handleRevokeKey = async (key: ApiKey) => {
-    const confirmed = window.confirm(
-      `Revoke "${key.name}" (${key.key_prefix}…)? Integrations using this key will stop working immediately.`,
-    );
-    if (!confirmed) return;
     setRevokingId(key.id);
     setKeysError('');
     try {
@@ -182,7 +191,7 @@ const VendorDeveloper: React.FC = () => {
             <button
               type="button"
               className="api-key-revoke-btn"
-              onClick={() => handleRevokeKey(key)}
+              onClick={() => askRevokeKey(key)}
               disabled={revokingId === key.id}
             >
               {revokingId === key.id ? 'Revoking…' : 'Revoke'}
@@ -273,11 +282,14 @@ const VendorDeveloper: React.FC = () => {
     }
   };
 
+  const askDeleteHook = (endpoint: WebhookEndpoint) =>
+    setPendingAction({
+      title: `Delete "${endpoint.name}"?`,
+      message: 'ParcelMoover will stop sending events to this URL immediately.',
+      run: () => handleDeleteHook(endpoint),
+    });
+
   const handleDeleteHook = async (endpoint: WebhookEndpoint) => {
-    const confirmed = window.confirm(
-      `Delete "${endpoint.name}"? ParcelMoover will stop sending events to this URL immediately.`,
-    );
-    if (!confirmed) return;
     setHookBusyId(endpoint.id);
     setEndpointsError('');
     try {
@@ -303,11 +315,15 @@ const VendorDeveloper: React.FC = () => {
     }
   };
 
+  const askRegenerate = (endpoint: WebhookEndpoint) =>
+    setPendingAction({
+      title: `Regenerate the secret for "${endpoint.name}"?`,
+      message:
+        'The old secret stops verifying signatures immediately — update your endpoint before confirming.',
+      run: () => handleRegenerate(endpoint),
+    });
+
   const handleRegenerate = async (endpoint: WebhookEndpoint) => {
-    const confirmed = window.confirm(
-      `Regenerate the secret for "${endpoint.name}"? The old secret stops verifying signatures immediately — update your endpoint before confirming.`,
-    );
-    if (!confirmed) return;
     setHookBusyId(endpoint.id);
     setEndpointsError('');
     try {
@@ -401,10 +417,10 @@ const VendorDeveloper: React.FC = () => {
             <button type="button" className="webhook-action-btn" onClick={() => handleToggleEnabled(e)} disabled={hookBusyId === e.id}>
               {e.enabled ? 'Pause' : 'Resume'}
             </button>
-            <button type="button" className="webhook-action-btn" onClick={() => handleRegenerate(e)} disabled={hookBusyId === e.id}>
+            <button type="button" className="webhook-action-btn" onClick={() => askRegenerate(e)} disabled={hookBusyId === e.id}>
               Roll secret
             </button>
-            <button type="button" className="webhook-action-btn danger" onClick={() => handleDeleteHook(e)} disabled={hookBusyId === e.id}>
+            <button type="button" className="webhook-action-btn danger" onClick={() => askDeleteHook(e)} disabled={hookBusyId === e.id}>
               Delete
             </button>
           </div>
@@ -436,7 +452,6 @@ const VendorDeveloper: React.FC = () => {
     <div className="api-keys-page">
       <PageHeader
         title="Developer"
-        subtitle="Manage your Partner API keys and webhook endpoints in one place."
         {...headerProps}
       >
         <a
@@ -595,7 +610,7 @@ const VendorDeveloper: React.FC = () => {
 
       {createKeyOpen && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '480px' }}>
+          <div className="modal-content" style={{ width: '480px' }}>
             <div className="modal-header">
               <h2>{createdKey ? 'Your new API key' : 'Generate API key'}</h2>
               <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeCreateKey}>
@@ -650,7 +665,7 @@ const VendorDeveloper: React.FC = () => {
 
       {createHookOpen && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '520px' }}>
+          <div className="modal-content" style={{ width: '520px' }}>
             <div className="modal-header">
               <h2>{revealedSecret ? 'Your webhook secret' : 'Add webhook endpoint'}</h2>
               <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeCreateHook}>
@@ -715,7 +730,7 @@ const VendorDeveloper: React.FC = () => {
 
       {deliveriesFor && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '720px' }}>
+          <div className="modal-content" style={{ width: '720px' }}>
             <div className="modal-header">
               <h2>Deliveries — {deliveriesFor.name}</h2>
               <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeDeliveries}>
@@ -755,6 +770,27 @@ const VendorDeveloper: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={pendingAction !== null}
+        danger
+        busy={pendingBusy}
+        title={pendingAction?.title ?? ''}
+        message={pendingAction?.message}
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={async () => {
+          if (!pendingAction) return;
+          setPendingBusy(true);
+          try {
+            await pendingAction.run();
+          } finally {
+            setPendingBusy(false);
+            setPendingAction(null);
+          }
+        }}
+        onCancel={() => setPendingAction(null)}
+      />
     </div>
   );
 };

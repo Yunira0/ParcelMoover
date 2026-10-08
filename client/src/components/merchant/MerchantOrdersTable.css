@@ -1,0 +1,42 @@
+.merchant-orders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.merchant-orders-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.merchant-orders-waybill {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.merchant-orders-link {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: var(--font-weight-medium);
+}
+
+.merchant-orders-link:hover {
+  text-decoration: underline;
+}
+
+.merchant-orders-subtext {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-caption);
+}
+
+.merchant-orders-finance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}

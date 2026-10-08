@@ -131,6 +131,14 @@ export function bsWeekday(year: number, monthIndex: number, day: number): number
   return (new (NepaliDate as any)(year, monthIndex, day).toJsDate() as Date).getDay();
 }
 
+/**
+ * Today as an AD "YYYY-MM-DD" in Nepal. `toISOString()` gives the UTC day,
+ * which is still yesterday until 05:45 NPT.
+ */
+export function todayNepalAd(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
+}
+
 /** Today's date as BS parts (monthIndex is 0-11). */
 export function todayBsParts(): BsDayParts {
   const AnyNepali = NepaliDate as any;
@@ -152,4 +160,23 @@ export function toNptTime(value?: string | Date | null, withSeconds = false): st
     minute: '2-digit',
     ...(withSeconds ? { second: '2-digit' as const } : {}),
   });
+}
+
+/**
+ * Spreadsheet variant of toBsDateTime: same value, but a wider gap between the
+ * date and the clock time so the two read as separate fields in a narrow Excel
+ * column instead of running together.
+ *
+ * Kept apart from toBsDateTime because that value is also rendered into HTML,
+ * where runs of whitespace collapse to one - widening it there would be
+ * invisible on screen while still padding every exported cell.
+ */
+export function toBsDateTimeCell(value?: string | Date | null): string {
+  const date = toBsDate(value);
+  const full = toBsDateTime(value);
+  // Widen only the join toBsDateTime added, never a space inside the date
+  // itself - out of the converter's range toBsDate falls back to the raw input,
+  // which can contain spaces of its own. Date-only values are returned as-is.
+  if (!date || !full.startsWith(`${date} `)) return full;
+  return `${date}   ${full.slice(date.length + 1)}`;
 }

@@ -74,7 +74,7 @@ const SummaryTab: React.FC = () => {
               label="Held by riders"
               value={money(data.cashWithRiders)}
               tone={cardTone(data.cashWithRiders)}
-              hint="Collected on delivery, not yet remitted"
+              hint="Collected on delivery, not yet received by the office"
             />
             <StatCard
               icon={Store}
@@ -101,6 +101,9 @@ const SummaryTab: React.FC = () => {
                   <h2>Cash &amp; bank accounts</h2>
                   <p>Balance in each account right now</p>
                 </div>
+                {/* The full picture — opening, movement and closing per
+                    account, ruled as a cash book — lives one level down. */}
+                <Link className="acc-link" to="/finance/cash-bank">View all</Link>
               </div>
               <Table
                 selectable={false}
@@ -150,7 +153,7 @@ const SummaryTab: React.FC = () => {
                     header: 'Rider',
                     accessor: (rider) => (
                       <>
-                        <Link className="acc-link" to={`/accounting/people/rider/${rider.partyId}?tab=ledger`}>
+                        <Link className="acc-link" to={`/finance/ledger/rider/${rider.partyId}`}>
                           {rider.name}
                         </Link>
                         {rider.subtitle && <span className="acc-sub">{rider.subtitle}</span>}

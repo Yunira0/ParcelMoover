@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import OverviewMetrics from '../components/OverviewMetrics';
 import CODSettlement from '../components/CODSettlement';
 import TodayOverview from '../components/TodayOverview';
@@ -8,12 +8,10 @@ import QuickActions from '../components/QuickActions';
 import RecentOrders from '../components/RecentOrders';
 import TopVendors from '../components/TopVendors';
 import NeedsAttention from '../components/NeedsAttention';
-import { getDashboardSummary, type DashboardSummary } from '../services/orders.service';
-import { subscribeToRemarkStatusChanged } from '../services/remarks.service';
-import { getCurrentUser } from '../utils/auth';
+import { EMPTY_VALLEY_SPLIT, type DashboardSummary } from '../services/orders.service';
+import { getCurrentUser, isBranchWorkspaceUser } from '../utils/auth';
+import { useDashboardSummary } from '../queries/dashboard';
 import './Dashboard.css';
-
-const REFRESH_INTERVAL_MS = 15_000;
 
 const EMPTY_SUMMARY: DashboardSummary = {
   overview: {
@@ -53,6 +51,9 @@ const EMPTY_SUMMARY: DashboardSummary = {
     overdueDelivery: 0,
     overdueTransit: 0,
     overdueRemarks: 0,
+    overdueBranchCod: 0,
+    overdueBranchCodAmount: 0,
+    branchCodHours: null,
     overdueReturn: 0,
     pickupHours: null,
     deliveryHours: null,
@@ -63,6 +64,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     deliveryBreaches: [],
     transitBreaches: [],
     returnBreaches: [],
+    deliveryByValley: EMPTY_VALLEY_SPLIT,
   },
   codSettlement: {
     totalCod: 0,
@@ -72,6 +74,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
     codFromPmRider: 0,
     codFromNcm: 0,
     codFromUpaya: 0,
+    codFromBranches: 0,
     pendingDeliveryCharge: 0,
     deliveryCharge: 0,
     progressPercent: 0,
@@ -90,77 +93,46 @@ const formatUpdatedAt = (value: string) => {
 };
 
 const Dashboard: React.FC = () => {
-  const [summary, setSummary] = useState<DashboardSummary>(EMPTY_SUMMARY);
-  // initialLoading only covers the very first fetch - it's what blanks the
-  // stat cards, COD Settlement, and Today's Overview to a loading state.
-  // chartLoading is scoped to the Weekly Stats period toggle, which refetches
-  // the whole summary just to get new trend data; without the split, that
-  // refetch used to blank the unrelated money/status widgets too.
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [chartLoading, setChartLoading] = useState(false);
-  const [error, setError] = useState('');
+  // A branch workspace gets a trimmed dashboard: no office-wide COD settlement
+  // panel (it tracks COD in Branch COD / Rider COD instead). The top-vendors
+  // panel is branch-scoped server-side, so it stays.
+  const isBranch = isBranchWorkspaceUser();
   const [trendPeriod, setTrendPeriod] = useState<7 | 30>(7);
 
-  const handlePeriodChange = useCallback((p: 7 | 30) => {
-    setChartLoading(true);
-    setTrendPeriod(p);
-  }, []);
+  // Switching the trend period keeps the previous summary on screen, so only
+  // the chart shows a loading state - the money/status widgets never blank.
+  const summaryQuery = useDashboardSummary(trendPeriod);
+  const summary: DashboardSummary =
+    summaryQuery.data?.success && summaryQuery.data.data ? summaryQuery.data.data : EMPTY_SUMMARY;
+  // initialLoading only covers the very first fetch - it's what blanks the
+  // stat cards, COD Settlement, and Today's Overview to a loading state.
+  const initialLoading = summaryQuery.isPending;
+  const chartLoading = summaryQuery.isPlaceholderData;
+  const error = summaryQuery.isError || (summaryQuery.data && !summaryQuery.data.success)
+    ? 'Dashboard data is unavailable.'
+    : '';
 
   // Real period-over-period delta for "Delivered today" from the daily trend
   // (last day vs the previous day). Snapshot metrics have no stored history, so
   // they show no delta until the backend supplies previous-period counts.
+  // Found by Nepal date rather than position, so a trend window that doesn't
+  // end today can't compare the wrong two days.
   const deltas = useMemo(() => {
     const t = summary.weeklyTrend;
-    if (t.length < 2) return undefined;
-    const prev = t[t.length - 2].delivered;
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
+    const todayIndex = t.findIndex((d) => d.date === today);
+    if (todayIndex < 1) return undefined;
+    const prev = t[todayIndex - 1].delivered;
     if (!prev) return undefined;
-    const pct = Math.round(((t[t.length - 1].delivered - prev) / prev) * 100);
+    const pct = Math.round(((t[todayIndex].delivered - prev) / prev) * 100);
     return { deliveredToday: pct } as const;
   }, [summary.weeklyTrend]);
-
-  const loadSummary = useCallback(async () => {
-    try {
-      const res = await getDashboardSummary(trendPeriod);
-      if (res?.success && res.data) {
-        setSummary(res.data);
-        setError('');
-      } else {
-        setError('Dashboard data is unavailable.');
-      }
-    } catch {
-      setError('Dashboard data is unavailable.');
-    } finally {
-      setInitialLoading(false);
-      setChartLoading(false);
-    }
-  }, [trendPeriod]);
-
-  useEffect(() => {
-    loadSummary();
-    const intervalId = window.setInterval(() => loadSummary(), REFRESH_INTERVAL_MS);
-    const handleVisibilityChange = () => {
-      if (!document.hidden) loadSummary();
-    };
-
-    // Closing/reopening a remark elsewhere in this tab has to land here at
-    // once - otherwise Today's activity keeps showing the stale count until
-    // the next poll while the nav badge (same event) has already dropped.
-    const unsubscribeRemarks = subscribeToRemarkStatusChanged(loadSummary);
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      window.clearInterval(intervalId);
-      unsubscribeRemarks();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [loadSummary]);
 
   return (
     <div className="dashboard-container">
 
       <DashboardHeader
         user={getCurrentUser()?.fullName || ''}
-        subtitle="Operational overview for Parcel Moover across the Nepal network."
       />
 
       <div className="overview-section">
@@ -182,38 +154,66 @@ const Dashboard: React.FC = () => {
 
       <QuickActions />
 
-      <div className="dashboard-row">
-        <div className="grid-left">
+      {isBranch ? (
+        <>
           <WeeklyStats
             data={summary.weeklyTrend}
             loading={initialLoading || chartLoading}
             period={trendPeriod}
-            onPeriodChange={handlePeriodChange}
+            onPeriodChange={setTrendPeriod}
           />
-        </div>
-        <CODSettlement data={summary.codSettlement} loading={initialLoading} />
-      </div>
 
-      <div className="dashboard-row">
-        <div className="dashboard-panel">
-          <RecentOrders />
-        </div>
-        <div className="dashboard-panel">
-          <TodayOverview today={summary.today} overview={summary.overview} loading={initialLoading} />
-        </div>
-      </div>
+          <div className="dashboard-row">
+            <div className="dashboard-panel">
+              <RecentOrders />
+            </div>
+            <div className="dashboard-panel">
+              <TodayOverview today={summary.today} overview={summary.overview} loading={initialLoading} />
+            </div>
+          </div>
 
-      <div className="dashboard-row dashboard-row-split">
-        <div className="dashboard-panel">
-          <TopVendors />
-        </div>
-        <div className="dashboard-panel">
-          <NeedsAttention
-            sla={summary.sla}
-            loading={initialLoading}
-          />
-        </div>
-      </div>
+          <div className="dashboard-row dashboard-row-split">
+            <div className="dashboard-panel">
+              <TopVendors />
+            </div>
+            <div className="dashboard-panel">
+              <NeedsAttention sla={summary.sla} loading={initialLoading} />
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="dashboard-row">
+            <div className="grid-left">
+              <WeeklyStats
+                data={summary.weeklyTrend}
+                loading={initialLoading || chartLoading}
+                period={trendPeriod}
+                onPeriodChange={setTrendPeriod}
+              />
+            </div>
+            <CODSettlement data={summary.codSettlement} loading={initialLoading} />
+          </div>
+
+          <div className="dashboard-row">
+            <div className="dashboard-panel">
+              <RecentOrders />
+            </div>
+            <div className="dashboard-panel">
+              <TodayOverview today={summary.today} overview={summary.overview} loading={initialLoading} />
+            </div>
+          </div>
+
+          <div className="dashboard-row dashboard-row-split">
+            <div className="dashboard-panel">
+              <TopVendors />
+            </div>
+            <div className="dashboard-panel">
+              <NeedsAttention sla={summary.sla} loading={initialLoading} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

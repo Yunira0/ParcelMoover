@@ -3,6 +3,7 @@ import { AppError } from "../utils/AppError";
 import { getDatePart, randomBase32 } from "../utils/trackingId";
 import { CreateTicketInput, ListTicketsParams, TicketStatus, TicketWorkflowStatus } from "../types/ticket.type";
 import { createNotification } from "./notification.service";
+import { adminBranchScopeIds } from "../lib/branchScope";
 import { notifyAdmins } from "./order.service";
 
 type Actor = { id: string; roles: string[] };
@@ -77,47 +78,6 @@ function mapTicket(
     // staff jump straight from the ticket to the order.
     trackingId: ticket.parcels?.tracking_id ?? null,
   };
-}
-
-// Batched counterpart to resolveTicketVendor, for list views where resolving
-// one vendor query per row would be N+1. A ticket's vendor is whichever
-// vendor its creator is the owner of (vendors.user_id) or staff on
-// (vendor_staff.user_id -> vendor_id) - both link columns are unique per user.
-async function resolveVendorNamesBulk(createdByIds: string[]): Promise<Map<string, string>> {
-  const ids = [...new Set(createdByIds)];
-  const result = new Map<string, string>();
-  if (ids.length === 0) return result;
-
-  const ownedVendors = await prisma.vendors.findMany({
-    where: { user_id: { in: ids }, deleted_at: null },
-    select: { user_id: true, business_name: true, client_name: true },
-  });
-  ownedVendors.forEach((v) => {
-    if (v.user_id) result.set(v.user_id, v.business_name || v.client_name);
-  });
-
-  const remaining = ids.filter((id) => !result.has(id));
-  if (remaining.length > 0) {
-    const staffRows = await prisma.vendor_staff.findMany({
-      where: { user_id: { in: remaining }, deleted_at: null },
-      select: { user_id: true, vendor_id: true },
-    });
-    const vendorIds = [...new Set(staffRows.map((s) => s.vendor_id))];
-    if (vendorIds.length > 0) {
-      const staffVendors = await prisma.vendors.findMany({
-        where: { id: { in: vendorIds }, deleted_at: null },
-        select: { id: true, business_name: true, client_name: true },
-      });
-      const vendorById = new Map(staffVendors.map((v) => [v.id, v.business_name || v.client_name]));
-      staffRows.forEach((s) => {
-        if (!s.user_id) return;
-        const name = vendorById.get(s.vendor_id);
-        if (name) result.set(s.user_id, name);
-      });
-    }
-  }
-
-  return result;
 }
 
 const TICKET_INCLUDE = {
@@ -201,7 +161,33 @@ async function vendorOrgCreatorIds(actor: Actor): Promise<string[]> {
 // touch any; sales see tickets tied to parcels owned by one of their vendors
 // (clients); riders see only their own.
 async function scopeWhere(actor: Actor, extra: Record<string, unknown> = {}) {
-  if (isStaff(actor)) return extra;
+  if (isStaff(actor)) {
+    // A branch-scoped admin sees tickets raised by their own branch's staff
+    // and by the vendors (owner and staff accounts) registered at their branch,
+    // since the branch onboards and supports those vendors. Tickets carry no
+    // parcel link (see the sales branch below), so creator is the only signal.
+    // Deleted vendors and disabled staff are kept so their older tickets stay
+    // visible.
+    const branchIds = await adminBranchScopeIds(actor);
+    if (!branchIds) return extra;
+    const [branchAdmins, branchVendors] = await Promise.all([
+      prisma.admins.findMany({
+        where: { location_id: { in: branchIds } },
+        select: { user_id: true },
+      }),
+      prisma.vendors.findMany({
+        where: { location_id: { in: branchIds } },
+        select: { user_id: true, vendor_staff: { select: { user_id: true } } },
+      }),
+    ]);
+    const vendorUserIds = branchVendors.flatMap((v) => [v.user_id, ...v.vendor_staff.map((s) => s.user_id)]);
+    const creatorIds = [
+      ...new Set(
+        [actor.id, ...branchAdmins.map((a) => a.user_id), ...vendorUserIds].filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    return { ...extra, created_by: { in: creatorIds } };
+  }
 
   if (actor.roles.includes("vendor") || actor.roles.includes("vendor_staff")) {
     const creatorIds = await vendorOrgCreatorIds(actor);

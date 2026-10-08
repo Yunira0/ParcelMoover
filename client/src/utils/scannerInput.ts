@@ -1,11 +1,11 @@
 import type { ClipboardEvent, KeyboardEvent } from 'react';
 
-// Scanned terms are joined into one comma-separated `search` string sent to
-// the server, which caps that param at 3000 chars (~27 chars per tracking id
-// incl. separator) - see order.schema.ts. Capping the batch here keeps every
-// scan under that ceiling instead of silently failing the whole search once
-// it's exceeded.
-export const MAX_SCANNED_TERMS = 100;
+// Scanned terms are joined into one comma-separated `search` string. A batch
+// this size (~26 chars per tracking id incl. separator, ~13000 chars at 500)
+// would blow past a GET request's practical URL-length ceiling, so orders.service
+// posts the batch as a request body instead of a query string once it gets
+// long - see getOrders/getStatusCounts and order.schema.ts's search field.
+export const MAX_SCANNED_TERMS = 500;
 
 // A handheld barcode scanner types each tracking id then sends Enter, with
 // virtually no gap before the next scan's characters start arriving.
@@ -46,7 +46,22 @@ export function handleScannerPaste(
   setBuffer: (value: string) => void,
 ) {
   const text = event.clipboardData.getData('text');
-  const tokens = text.split(/[\n\r\t,]+/).map(t => t.trim()).filter(Boolean);
+  // Split rows/cells first, then commas - except inside a number Excel shows
+  // with thousands separators ("9,800,000,011"), which is one value, not four.
+  const tokens = text
+    .split(/[\n\r\t]+/)
+    .flatMap(cell => (/^\s*\d{1,3}(,\d{3})+\s*$/.test(cell) ? [cell.replace(/,/g, '')] : cell.split(',')))
+    .map(t => t.replace(/[​-‍⁠﻿]/g, '').trim())
+    .filter(Boolean);
+  if (tokens.length === 1 && tokens[0] !== text.trim()) {
+    // A single value that still needed cleaning - insert the cleaned form.
+    event.preventDefault();
+    const input = event.currentTarget;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    setBuffer(input.value.slice(0, start) + tokens[0] + input.value.slice(end));
+    return;
+  }
   if (tokens.length <= 1) return;
 
   event.preventDefault();

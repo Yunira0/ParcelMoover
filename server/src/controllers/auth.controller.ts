@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import { Request, Response } from "express";
 import {
   changePassword,
   loginUser,
@@ -11,13 +11,16 @@ import {
   getManagedUserDocuments,
   getRootSuperAdminUserId,
 } from "../services/auth.service";
+import { rankHighVolumeVendors } from "../services/vendorVolume.service";
 import { AppError } from "../utils/AppError";
 import { sendSuccess } from "../utils/ApiResponse";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma";
+import { Prisma } from "../generated/prisma/client";
 import { revokeToken } from "../lib/tokenRevocation";
 import { ACCESS_TOKEN_AUDIENCE, CSRF_TOKEN_AUDIENCE, JWT_ALGORITHM, JWT_ISSUER } from "../utils/jwtConfig";
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
+import { adminBranchScopeIds } from "../lib/branchScope";
 
 const formatDate = (date?: Date | null) => date ? date.toISOString().slice(0, 10) : "";
 const managedUserTypes = ["admin", "vendor", "rider"] as const;
@@ -65,15 +68,17 @@ export const registerUserController = async (req: Request, res: Response) => {
       ...req.body,
       idDocumentPath: docPath(files?.idDocument?.[0]),
       citizenshipDocPath: docPath(files?.citizenshipDoc?.[0]),
+      citizenshipDocBackPath: docPath(files?.citizenshipDocBack?.[0]),
       panDocPath: docPath(files?.panDoc?.[0]),
       panVatDocPath: docPath(files?.panVatDoc?.[0]),
       experienceLetterDocPath: docPath(files?.experienceLetterDoc?.[0]),
       licenceDocPath: docPath(files?.licenceDoc?.[0]),
       bluebookDocPath: docPath(files?.bluebookDoc?.[0]),
       businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
+      agreementDocPath: docPath(files?.agreementDoc?.[0]),
     });
 
-    return sendSuccess(res, 201, `${result.role} registered successfully`, {
+return sendSuccess(res, 201, `${result.role} registered successfully`, {
       user: {
         id: result.user.id,
         fullName: result.user.full_name,
@@ -173,12 +178,14 @@ export const updateManagedUserController = async (req: Request, res: Response) =
       type,
       idDocumentPath: docPath(files?.idDocument?.[0]),
       citizenshipDocPath: docPath(files?.citizenshipDoc?.[0]),
+      citizenshipDocBackPath: docPath(files?.citizenshipDocBack?.[0]),
       panDocPath: docPath(files?.panDoc?.[0]),
       panVatDocPath: docPath(files?.panVatDoc?.[0]),
       experienceLetterDocPath: docPath(files?.experienceLetterDoc?.[0]),
       licenceDocPath: docPath(files?.licenceDoc?.[0]),
       bluebookDocPath: docPath(files?.bluebookDoc?.[0]),
       businessCertDocPath: docPath(files?.businessCertDoc?.[0]),
+      agreementDocPath: docPath(files?.agreementDoc?.[0]),
     });
 
     return sendSuccess(res, 200, "User updated successfully");
@@ -308,25 +315,30 @@ export const login = async (req: Request, res: Response) => {
       audience: CSRF_TOKEN_AUDIENCE,
     });
 
-    res.cookie("accessToken", result.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      // "none" is required for the frontend/backend to sit on different
-      // origins (e.g. two separate Railway services) - "lax" silently drops
-      // the cookie on cross-site XHR/fetch. Browsers only allow "none" when
-      // secure is also true, which holds in production (HTTPS).
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    // The rider app keeps its token for Authorization: Bearer. A cookie here
+    // would replace a staff dashboard session on the same host (ports do not
+    // isolate cookies), so Bearer-only logins must leave browser cookies alone.
+    if (req.header("X-Auth-Mode") !== "bearer") {
+      res.cookie("accessToken", result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        // "none" is required for the frontend/backend to sit on different
+        // origins (e.g. two separate Railway services) - "lax" silently drops
+        // the cookie on cross-site XHR/fetch. Browsers only allow "none" when
+        // secure is also true, which holds in production (HTTPS).
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
 
-    res.cookie("csrfToken", csrfToken, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+      res.cookie("csrfToken", csrfToken, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -391,6 +403,7 @@ export const getAdminsController = async (req: Request, res: Response) => {
         id: admin.id,
         userId: admin.user_id,
         sn: skip + index + 1,
+        employeeId: admin.employee_number ? `PM-${admin.employee_number}` : "",
         name: admin.users.full_name,
         email: admin.users.email || "",
         phone: admin.users.phone || "",
@@ -432,13 +445,21 @@ export const getVendorsController = async (req: Request, res: Response) => {
       });
       scope = { id: staffRecord?.vendor_id ?? "__none__" };
     }
-    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+    const branchIds = req.user ? await adminBranchScopeIds({ id: req.user.id, roles }) : undefined;
+    const where: Record<string, unknown> = {
+      deleted_at: null,
+      ...scope,
+      ...(branchIds ? { location_id: { in: branchIds } } : {}),
+    };
 
     // Optional server-side filters for the vendor management page.
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const statusFilter = typeof req.query.status === "string" ? req.query.status.trim() : "";
     const companyFilter = typeof req.query.company === "string" ? req.query.company.trim() : "";
     const locationFilter = typeof req.query.location === "string" ? req.query.location.trim() : "";
+    // One sales rep's book, for Sales Overview. Staff only: a sales actor is
+    // already pinned to their own vendors above and can't pick another rep.
+    const salesUserFilter = typeof req.query.salesUserId === "string" ? req.query.salesUserId.trim() : "";
 
     if (search) {
       // search_text (business_name + client_name + phone + email, lowercased)
@@ -455,19 +476,54 @@ export const getVendorsController = async (req: Request, res: Response) => {
     if (locationFilter) {
       where.locations = { name: locationFilter };
     }
+    if (salesUserFilter && isStaff) {
+      if (!UUID_RE.test(salesUserFilter)) {
+        return res.status(400).json({ success: false, message: "salesUserId must be a valid id" });
+      }
+      where.sales_user_id = salesUserFilter;
+    }
+
+    // "High volume" isn't a column on vendors - it's derived from a count
+    // over parcels, against a super-admin-configured threshold - so it can't
+    // join the where clause above like the other filters. Resolve it to a
+    // concrete, already-ranked set of vendor ids first, against every vendor
+    // the filters above already allow (not just one page of them), so
+    // pagination below counts and pages the filtered set correctly instead of
+    // re-filtering one already-paginated page client-side.
+    const highVolumeFilter = req.query.highVolume === "true";
+    let highVolumeRank: string[] | null = null;
+    if (highVolumeFilter) {
+      const candidates = await prisma.vendors.findMany({ where, select: { id: true } });
+      highVolumeRank = await rankHighVolumeVendors(candidates.map((v) => v.id));
+      where.id = { in: highVolumeRank };
+    }
 
     const { page, pageSize, skip } = paginationFromQuery(req);
 
-    const [total, vendors] = await Promise.all([
-      prisma.vendors.count({ where }),
-      prisma.vendors.findMany({
-        where,
+    type VendorWithLocation = Prisma.vendorsGetPayload<{ include: { locations: true } }>;
+    let total: number;
+    let vendors: VendorWithLocation[];
+    if (highVolumeRank) {
+      total = highVolumeRank.length;
+      const pageIds = highVolumeRank.slice(skip, skip + pageSize);
+      const rows = await prisma.vendors.findMany({
+        where: { id: { in: pageIds } },
         include: { locations: true },
-        orderBy: { created_at: "desc" },
-        skip,
-        take: pageSize,
-      }),
-    ]);
+      });
+      const byId = new Map(rows.map((v) => [v.id, v]));
+      vendors = pageIds.map((id) => byId.get(id)).filter((v): v is NonNullable<typeof v> => !!v);
+    } else {
+      [total, vendors] = await Promise.all([
+        prisma.vendors.count({ where }),
+        prisma.vendors.findMany({
+          where,
+          include: { locations: true },
+          orderBy: { created_at: "desc" },
+          skip,
+          take: pageSize,
+        }),
+      ]);
+    }
 
     const vendorIds = vendors.map(v => v.id);
 
@@ -482,8 +538,16 @@ export const getVendorsController = async (req: Request, res: Response) => {
           }),
           prisma.cod_collections.groupBy({
             by: ["vendor_id"],
-            where: { vendor_id: { in: vendorIds }, payment_status: "pending" },
-            _sum: { pending_amount: true },
+            // Same basis as the vendor's Pending COD bill: delivered/collected,
+            // not cancelled, not yet bundled into a vendor statement.
+            where: {
+              vendor_id: { in: vendorIds },
+              payment_status: "pending",
+              collected_at: { not: null },
+              settlement_items: { none: { settlements: { payee_type: "vendor" } } },
+              parcels: { status: { not: "cancelled" } },
+            },
+            _sum: { collected_amount: true },
           }),
           // last_ordered_at is never denormalised onto vendors, so derive the
           // most recent order date per vendor straight from their parcels.
@@ -509,13 +573,38 @@ export const getVendorsController = async (req: Request, res: Response) => {
     const codByVendor = new Map<string, number>();
     for (const row of codSums) {
       if (!row.vendor_id) continue;
-      codByVendor.set(row.vendor_id, Number(row._sum.pending_amount || 0));
+      codByVendor.set(row.vendor_id, Number(row._sum.collected_amount || 0));
     }
 
     const lastOrderByVendor = new Map<string, Date>();
     for (const row of lastOrders) {
       if (!row.vendor_id || !row._max.created_at) continue;
       lastOrderByVendor.set(row.vendor_id, row._max.created_at);
+    }
+
+    // KYC verification state per vendor, for the conditional "Start KYC"
+    // action: verified (an approved KYC_APPROVE audit behind them, the same
+    // gate voucher claiming reads), pending (a verification in the queue), or
+    // needed. Two bounded queries over the page's vendor ids — never N+1.
+    const approvedVendorIds = new Set<string>();
+    const pendingVendorIds = new Set<string>();
+    if (vendorIds.length) {
+      const [approvedRows, pendingApps] = await Promise.all([
+        prisma.$queryRaw<Array<{ vendor_id: string }>>`
+          SELECT DISTINCT a.new_data->>'createdVendorId' AS vendor_id
+          FROM audit_logs a
+          JOIN vendor_kyc_applications k ON k.id = a.entity_id
+          WHERE a.action = 'KYC_APPROVE'
+            AND a.entity_type = 'vendor_kyc_application'
+            AND k.status = 'approved'::kyc_status
+            AND a.new_data->>'createdVendorId' = ANY(${vendorIds}::text[])`,
+        prisma.vendor_kyc_applications.findMany({
+          where: { vendor_id: { in: vendorIds }, status: "pending" },
+          select: { vendor_id: true },
+        }),
+      ]);
+      for (const row of approvedRows) approvedVendorIds.add(row.vendor_id);
+      for (const app of pendingApps) if (app.vendor_id) pendingVendorIds.add(app.vendor_id);
     }
 
     return res.status(200).json({
@@ -542,6 +631,11 @@ export const getVendorsController = async (req: Request, res: Response) => {
         status: vendor.status,
         joined: formatDate(vendor.joined_at),
         lastOrderedDate: formatDate(lastOrderByVendor.get(vendor.id) ?? vendor.last_ordered_at),
+        kycStatus: approvedVendorIds.has(vendor.id)
+          ? "verified"
+          : pendingVendorIds.has(vendor.id)
+            ? "pending"
+            : "needed",
       })),
       meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
     });
@@ -553,7 +647,7 @@ export const getVendorsController = async (req: Request, res: Response) => {
   }
 };
 
-const TOP_VENDORS_LIMIT = 5;
+const TOP_VENDORS_LIMIT = 10;
 
 // Ranks vendors by real order volume, scoped the same way getVendorsController
 // is - unlike that endpoint (which pages "newest first" and leaves ranking to
@@ -575,7 +669,12 @@ export const getTopVendorsController = async (req: Request, res: Response) => {
       });
       scope = { id: staffRecord?.vendor_id ?? "__none__" };
     }
-    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+    const branchIds = req.user ? await adminBranchScopeIds({ id: req.user.id, roles }) : undefined;
+    const where: Record<string, unknown> = {
+      deleted_at: null,
+      ...scope,
+      ...(branchIds ? { location_id: { in: branchIds } } : {}),
+    };
 
     const scopedVendors = await prisma.vendors.findMany({ where, select: { id: true } });
     const scopedVendorIds = scopedVendors.map((v) => v.id);
@@ -674,7 +773,12 @@ export const getVendorsDropdownController = async (req: Request, res: Response) 
       ? Math.max(0, Number(req.query.offset))
       : 0;
 
-    const where: Record<string, unknown> = { deleted_at: null, ...scope };
+    const branchIds = req.user ? await adminBranchScopeIds({ id: req.user.id, roles }) : undefined;
+    const where: Record<string, unknown> = {
+      deleted_at: null,
+      ...scope,
+      ...(branchIds ? { location_id: { in: branchIds } } : {}),
+    };
 
     if (search) {
       // Same search_text fast-path as getVendorsController above - a plain
@@ -744,9 +848,16 @@ export const getRidersController = async (req: Request, res: Response) => {
     const statusWhere =
       statusFilter === "active" || statusFilter === "inactive" ? { status: statusFilter } : {};
 
+    // A branch-scoped admin manages only riders assigned to their branch's
+    // coverage; every other admin sees the whole roster as before.
+    const branchIds = req.user
+      ? await adminBranchScopeIds({ id: req.user.id, roles: req.user.roles })
+      : undefined;
+
     const where: Record<string, unknown> = {
       deleted_at: null,
       ...statusWhere,
+      ...(branchIds ? { location_id: { in: branchIds } } : {}),
     };
 
     if (search) {
@@ -827,6 +938,7 @@ export const getRidersController = async (req: Request, res: Response) => {
         id: rider.id,
         userId: rider.user_id,
         sn: skip + index + 1,
+        employeeId: rider.employee_number ? `PM-${rider.employee_number}` : "",
         name: rider.name,
         email: rider.users?.email || "",
         phone: rider.phone,
@@ -867,8 +979,11 @@ export const logoutController = async (req: Request, res: Response) => {
       }
     }
 
-    res.clearCookie("accessToken", { path: "/" });
-    res.clearCookie("csrfToken", { path: "/" });
+    // Revoking a Bearer token must not log out a separate cookie session.
+    if (!authHeader?.startsWith("Bearer ")) {
+      res.clearCookie("accessToken", { path: "/" });
+      res.clearCookie("csrfToken", { path: "/" });
+    }
 
     return sendSuccess(res, 200, "Logged out successfully");
   } catch (error: any) {
@@ -891,18 +1006,28 @@ export const changePasswordController = async (req: Request, res: Response) => {
 
     const { token } = await changePassword(userId, currentPassword, newPassword);
 
-    // Every other session (e.g. a stolen token) was just revoked - reissue a
-    // fresh cookie so this session, which just proved it holds the correct
-    // current password, keeps working.
-    res.cookie("accessToken", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    // Every other session was just revoked. Cookie clients need a new cookie;
+    // Bearer clients use the replacement token returned below.
+    // Bearer clients receive the replacement token in the response body.
+    // Do not overwrite an unrelated dashboard cookie on the same host.
+    if (!req.headers.authorization?.startsWith("Bearer ")) {
+      res.cookie("accessToken", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
 
-    return sendSuccess(res, 200, "Password changed successfully");
+    // Mirrors login's response shape (top-level accessToken) so Bearer-only
+    // clients (no cookies) can pick up the freshly-reissued token instead of
+    // being left holding one that revokeAllUserTokens just invalidated.
+    return res.status(200).json({
+      success: true,
+      message: "Password changed successfully",
+      accessToken: token,
+    });
   } catch (error: any) {
     return res.status(error.statusCode || 400).json({
       success: false,

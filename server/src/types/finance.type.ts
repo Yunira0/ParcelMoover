@@ -28,6 +28,7 @@ export interface PendingCodItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone: string;
   destination: string;
   codAmount: number;
   deliveryCharge: number;
@@ -42,6 +43,12 @@ export interface PendingCodBill {
     deliveryCharges: number;
     payableAmount: number;
   };
+  /**
+   * Orders leave this bill once they are put on a statement, but they are not
+   * paid until that statement is. What those open statements still owe (negative
+   * when the vendor owes us), so this page can account for the dashboard figure.
+   */
+  onStatements: { count: number; outstanding: number };
 }
 
 export interface OrderCodItem {
@@ -49,10 +56,14 @@ export interface OrderCodItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone: string;
   createdAt: string;
   deliveredAt: string | null;
   status: CodPaymentFilter;
   netPayable: number;
+  /** The open or paid vendor statement this order is bundled into, if any. `status` stays
+   *  "not_settled" while that statement is only partially_paid - see payForSettlement. */
+  statement: { statementId: string; status: SettlementStatus } | null;
 }
 
 export interface OrderCodListResult {
@@ -75,12 +86,28 @@ export interface SettlementListItem {
   bankAccountNo: string | null;
   bankAccountHolder: string | null;
   transferDate: string | null;
+  /**
+   * Day the statement was fully paid (Nepal date, YYYY-MM-DD) — the last
+   * instalment's paid_at. Null until the status is `settled`.
+   */
+  settledDate: string | null;
   createdAt: string;
   orderCount: number;
   amount: number;
   status: SettlementStatus;
   /** Total recorded against the statement so far — non-zero and below `amount` while partially_paid. */
   paidAmount: number;
+  /**
+   * What was actually paid, per method, totalled across every instalment —
+   * `[{ method: "Cash", amount: 1000 }, { method: "Bank", amount: 1000 }]`.
+   *
+   * Totalled here rather than handed over raw because `settlements.payments`
+   * accumulates one line per instalment, so a statement part-paid in cash twice
+   * arrives as two Cash lines. The list wants "Cash 2,000", not the history.
+   *
+   * Empty until something is paid.
+   */
+  paymentBreakdown: Array<{ method: string; amount: number }>;
   remark: string | null;
 }
 
@@ -180,6 +207,7 @@ export interface UnsettledOrderItem {
   trackingId: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone: string;
   receiverAddress: string | null;
   destination: string;
   // Pickup or delivery location for this rider's leg of the parcel - null
@@ -204,6 +232,10 @@ export interface UnsettledOrdersResult {
   totalCod: number;
   totalDeliveryCharge: number;
   totalNetPayable: number;
+  /** Vendor leg only: prepaid delivery charges a new statement would hand back. */
+  availableCredit: number;
+  /** True when the eligible set exceeded UNSETTLED_ORDERS_CAP and was trimmed. */
+  capped: boolean;
 }
 
 export interface SettlementDetailItem {
@@ -213,7 +245,9 @@ export interface SettlementDetailItem {
   reference: string | null;
   receiverName: string;
   receiverPhone: string;
+  receiverAlternatePhone: string;
   receiverAddress: string | null;
+  destination: string;
   // Whose money this line is. Null for parcels booked without a vendor
   // (walk-in / direct orders). Mainly useful on rider statements, where
   // every line can belong to a different vendor.
@@ -252,6 +286,14 @@ export interface SettlementDetailResult {
   createdAt: string;
   amount: number;
   payableAmount: number;
+  /** Delivery charges the vendor prepaid through Billing, handed back here. Included in payableAmount. */
+  vendorCreditApplied: number;
+  /**
+   * VAT % already included in each delivery charge. Staff only - never sent to
+   * a vendor or over the Partner API - and absent on statements created before
+   * VAT was shown.
+   */
+  vatRate?: number;
   /** Total recorded so far across every instalment. */
   paidAmount: number;
   /** ABS(payableAmount) - paidAmount — what the payee is still owed. */

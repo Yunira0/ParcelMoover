@@ -90,6 +90,43 @@ export function displayRemarkText(remark: string): string {
   return remark;
 }
 
+// "…— order #X → Place" plus NCM's " (Door2Door)"-style delivery type.
+const HANDOFF_DETAIL_RE = /^Parcel dispatched (?:to destination|via Upaya)\s*—\s*order #\S+\s*→\s*(.+?)(?:\s*\((?:Door2Door|Branch2Door|Branch2Branch|Door2Branch)\))?$/;
+
+/**
+ * Display text for someone outside the office: a handoff line keeps only its
+ * destination ("Parcel dispatched to destination — Damauli"), so the carrier's
+ * order number never reaches a vendor. Everything else as displayRemarkText.
+ */
+export function publicRemarkText(remark: string): string {
+  const match = remark.match(HANDOFF_DETAIL_RE);
+  return match ? `${HANDOFF_REMARK_PREFIX} — ${match[1]}` : displayRemarkText(remark);
+}
+
+/**
+ * Handoff notes are the parcel -> carrier-order mapping, not conversation: the
+ * timeline already shows the handoff, so remark threads and "latest remark"
+ * columns skip them. "[NCM] Handed off" is the wording older rows used.
+ */
+export const HANDOFF_NOTE_PREFIXES = [HANDOFF_REMARK_PREFIX, UPAYA_HANDOFF_REMARK_PREFIX, "[NCM] Handed off"] as const;
+
+export const isHandoffNote = (remark: string): boolean =>
+  HANDOFF_NOTE_PREFIXES.some((prefix) => remark.startsWith(prefix));
+
+/** A stored remark as a given viewer should read it. */
+export function remarkTextFor(remark: string, isStaff: boolean): string {
+  const text = stripCarrierStaffTag(remark).text;
+  return isStaff ? text : publicRemarkText(text);
+}
+
+/** Which 3PL a stored handoff remark belongs to, or null if it isn't one. */
+export function handoffCarrier(remark: string | null | undefined): "NCM" | "Upaya" | null {
+  if (!remark) return null;
+  if (remark.startsWith(UPAYA_HANDOFF_REMARK_PREFIX)) return "Upaya";
+  if (remark.startsWith(HANDOFF_REMARK_PREFIX)) return "NCM";
+  return null;
+}
+
 export type StrippedRemark = { text: string; isCarrierStaff: boolean };
 
 export function stripCarrierStaffTag(remark: string): StrippedRemark {

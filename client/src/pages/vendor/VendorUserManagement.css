@@ -127,11 +127,11 @@
 }
 
 .staff-switch.on {
-  background: #16a34a;
+  background: var(--color-success-default);
 }
 
 .staff-switch-knob {
-  background: #fff;
+  background: var(--color-background-surface);
   border-radius: 50%;
   height: 18px;
   left: 2px;
@@ -156,7 +156,7 @@
 }
 
 .staff-status-label.active {
-  color: #16a34a;
+  color: var(--color-success-default);
 }
 
 .staff-status-label.inactive {
@@ -219,4 +219,11 @@
 .staff-password-btn:hover {
   border-color: var(--color-border-primary);
   color: var(--color-text-primary);
+}
+
+/* On a phone the search and its actions stack instead of overflowing. */
+@media (max-width: 640px) {
+  .vendor-user-search {
+    flex-wrap: wrap;
+  }
 }

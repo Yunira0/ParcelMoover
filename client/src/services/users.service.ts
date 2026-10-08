@@ -55,6 +55,8 @@ export interface RegisterUserInput {
   insideValleyFlatRate?: string;
   returnInsideValleyPercent?: string;
   returnOutsideValleyPercent?: string;
+  branchReturnInsideValleyPercent?: string;
+  branchReturnOutsideValleyPercent?: string;
   branchFlatInsideValley?: string;
   branchFlatOutsideValley?: string;
   branchFlatOutsideRingRoad?: string;
@@ -69,13 +71,16 @@ export interface RegisterUserInput {
 
   // Documents (field names must match the server's multer config)
   idDocument?: File | null;
-  citizenshipDoc?: File | null;
+  citizenshipDoc?: File | null; // front side
+  citizenshipDocBack?: File | null;
   panDoc?: File | null;
   panVatDoc?: File | null;
   experienceLetterDoc?: File | null;
   licenceDoc?: File | null;
   bluebookDoc?: File | null;
   businessCertDoc?: File | null;
+  /** Signed agreement - PDF or DOCX only. */
+  agreementDoc?: File | null;
 }
 
 export interface UpdateUserProfileInput {
@@ -118,6 +123,8 @@ export interface UpdateUserProfileInput {
   insideValleyFlatRate?: string;
   returnInsideValleyPercent?: string;
   returnOutsideValleyPercent?: string;
+  branchReturnInsideValleyPercent?: string;
+  branchReturnOutsideValleyPercent?: string;
   branchFlatInsideValley?: string;
   branchFlatOutsideValley?: string;
   branchFlatOutsideRingRoad?: string;
@@ -140,14 +147,21 @@ export interface UpdateUserProfileInput {
   // to fill a slot the account was created without, or to replace an
   // unreadable scan — omitting one leaves the stored document untouched.
   idDocument?: File | null;
-  citizenshipDoc?: File | null;
+  citizenshipDoc?: File | null; // front side
+  citizenshipDocBack?: File | null;
   panDoc?: File | null;
   panVatDoc?: File | null;
   experienceLetterDoc?: File | null;
   licenceDoc?: File | null;
   bluebookDoc?: File | null;
   businessCertDoc?: File | null;
+  /** Signed agreement - PDF or DOCX only. */
+  agreementDoc?: File | null;
 }
+
+// File-picker filter for the agreement slot; the server accepts only these.
+export const AGREEMENT_FILE_ACCEPT =
+  '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 export const getManagedUser = async (type: 'admin' | 'vendor' | 'rider', id: string) => {
   const response = await api.get(`/auth/users/${type}/${id}`);
@@ -198,6 +212,9 @@ export const getVendors = async (params?: {
   status?: string;
   company?: string;
   location?: string;
+  highVolume?: string;
+  /** One sales rep's vendors (staff only - a sales account always gets its own). */
+  salesUserId?: string;
 }) => {
   const response = await api.get('/auth/users/vendors', { params });
   return response.data;
@@ -304,9 +321,11 @@ export const ADMIN_PERMISSIONS = [
   { code: 'SETTINGS_ACCESS', label: 'Settings', description: 'Access the Settings section: destinations, rate setup and delivery rates.' },
   { code: 'KYC_ACCESS', label: 'KYC Applications', description: 'Review, approve and reject vendor KYC applications.' },
   { code: 'SYSTEM_LOGS_ACCESS', label: 'System Logs', description: 'Read the system audit logs, including who changed what across the app.' },
-  { code: 'EDIT_SETTLEMENTS', label: 'Edit COD Statements', description: 'Correct an unsettled COD statement (add/remove orders) before it is paid out.' },
-  { code: 'ACCOUNTING_ACCESS', label: 'Finance', description: 'The whole Finance section: the books, party balances and reports, plus recording expenses, posting journal entries and closing a month. This is the full financial picture of the business.' },
-  { code: 'EDIT_COD_LOCKED', label: 'Edit COD (any status)', description: 'Correct the COD amount on a delivered, returned-to-vendor, or RTO parcel, as long as it hasn’t been settled to the vendor yet.' },
+  { code: 'EDIT_SETTLEMENTS', label: 'Correct COD & statements', description: 'Edit, cancel or revert COD statements, and correct the COD on a delivered or returned parcel that is not yet on a statement.' },
+  { code: 'ACCOUNTING_ACCESS', label: 'Finance', description: 'The whole Finance section: the books, party balances and reports, plus recording expenses, posting journal entries, closing a month and editing the chart of accounts (Masters). This is the full financial picture of the business.' },
+  { code: 'BRANCH_TRACKING_READ', label: 'Branch Tracking (read-only)', description: 'View other branches — their overview figures and settlement position — without making any change. Own branch stays the only one they can edit.' },
+  { code: 'BRANCH_TRACKING_WRITE', label: 'Branch Tracking (read & write)', description: 'View other branches and act on their orders and settlements, the same as a super_admin would. Includes everything Branch Tracking (read-only) grants.' },
+  { code: 'FORCE_STATUS_CHANGE', label: 'Force Status Change', description: 'Force an order into any status, skipping the normal status flow — including out of delivered, returned or cancelled.' },
 ] as const;
 
 export type AdminPermissionCode = (typeof ADMIN_PERMISSIONS)[number]['code'];
@@ -322,3 +341,70 @@ export const updateAdminRole = async (adminId: string, superAdmin: boolean) => {
   const response = await api.patch(`/auth/users/admins/${adminId}/role`, { superAdmin });
   return response.data;
 };
+
+/** Mirrors the server's LIST_MAX_PAGE_SIZE; a larger ask is clamped to this. */
+const MAX_PAGE_SIZE = 500;
+
+/** Hard stop on the page walk, so a bad `meta` can't turn a dropdown into a request storm. */
+const MAX_PAGES = 20;
+
+interface PagedListResponse {
+  success?: boolean;
+  // `any` rather than `unknown`, matching the raw responses these wrap - the
+  // call sites annotate their own row shapes.
+  data?: any[];
+  meta?: { page: number; pageSize: number; total: number; totalPages: number };
+  [key: string]: unknown;
+}
+
+type PagedFetcher = (params: Record<string, unknown>) => Promise<PagedListResponse>;
+
+/**
+ * Walk every page of one of the paged user lists and return a single combined
+ * response. Pickers need the whole list: these endpoints default to 20 rows
+ * ordered newest-first, so a one-shot request silently drops everyone older
+ * than the 20 most recent records - they never appear in the dropdown, with
+ * nothing to show they were left out.
+ */
+const fetchAllPages = async (
+  fetchPage: PagedFetcher,
+  params: Record<string, unknown> = {},
+): Promise<PagedListResponse> => {
+  const first = await fetchPage({ ...params, page: 1, pageSize: MAX_PAGE_SIZE });
+  if (!first?.success || !Array.isArray(first.data)) return first;
+
+  const totalPages = Math.min(first.meta?.totalPages ?? 1, MAX_PAGES);
+  if (totalPages <= 1) return first;
+
+  const rest = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, i) =>
+      fetchPage({ ...params, page: i + 2, pageSize: MAX_PAGE_SIZE }).catch(() => null),
+    ),
+  );
+
+  // A failed page is skipped rather than failing the whole list - a dropdown
+  // missing a later page still beats one that renders empty.
+  const data = rest.reduce<any[]>(
+    (acc, res) => (res?.success && Array.isArray(res.data) ? acc.concat(res.data) : acc),
+    first.data,
+  );
+
+  return { ...first, data, meta: { page: 1, pageSize: data.length, total: data.length, totalPages: 1 } };
+};
+
+/** Every admin, for the Sales/assignee dropdowns that have to list them all. */
+export const getAllAdmins = (params?: { search?: string; status?: string }) =>
+  fetchAllPages(getAdmins as PagedFetcher, params ?? {});
+
+/** Every rider, for the rider pickers that have to list them all. */
+export const getAllRiders = (params?: { search?: string; status?: string }) =>
+  fetchAllPages(getRiders as PagedFetcher, params ?? {});
+
+/** Every vendor, for the vendor lists that rank or filter across the whole set. */
+export const getAllVendors = (params?: {
+  search?: string;
+  status?: string;
+  company?: string;
+  location?: string;
+  highVolume?: string;
+}) => fetchAllPages(getVendors as PagedFetcher, params ?? {});

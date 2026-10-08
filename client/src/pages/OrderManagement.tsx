@@ -1,18 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
   Copy,
   Download,
   Edit,
-  MoreVertical,
   Plus,
   Printer,
+  Repeat,
+  RotateCcw,
   Search,
   Shuffle,
+  Forward,
+  Trash2,
   X,
 } from 'lucide-react';
 import RedirectOrderModal from '../components/RedirectOrderModal';
+import ForwardOrderModal from '../components/ForwardOrderModal';
+import ConfirmDialog from '../components/ConfirmDialog';
+import '../components/Modal.css';
+import '../components/FormField.css';
 import Table from '../components/Table';
 import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
@@ -24,14 +32,18 @@ import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import { toBsDate, toBsDateTime } from '../utils/nepaliDate';
-import { downloadExcel } from '../utils/excel';
+import { CARRIER_LABELS } from '../utils/orderStatus';
+import { downloadOrdersExcel } from '../utils/orderExport';
 import NepaliDatePicker from '../components/NepaliDatePicker';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
   getOrders,
   getOrderFilterOptions,
+  getOrderCountsByStatus,
   redirectOrder,
-  subscribeToOrderStatusChanged,
+  forwardOrder,
+  trashOrder,
+  updateOrderStatus,
   ORDER_SORT_FIELDS,
   MAX_ORDER_PAGE_SIZE,
   type CreateOrderInput,
@@ -41,12 +53,17 @@ import {
   type OrderSortField,
   type ParcelStatus,
 } from '../services/orders.service';
-import { searchVendors } from '../services/users.service';
+import { getAllAdmins, searchVendors } from '../queries/lookups';
+import { queryKeys } from '../queries/keys';
 import { printLabels } from '../utils/printLabels';
-import { getCurrentUserRoles } from '../utils/auth';
+import { getCurrentUserRoles, hasAdminPermission, isAccountantUser } from '../utils/auth';
+import { apiErrorMessage } from '../utils/serverValidation';
+import { FAILED_RECOVERY_LABEL, isRecoverableFailure, recoveryTargetFor } from '../utils/failedRecovery';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OrderManagement.css';
+import { formatReceiverPhones } from '../utils/format';
+import ReceiverPhones from '../components/ReceiverPhones';
 
 // Mirrors REDIRECT_ALLOWED_STATUSES in order.service.ts — once a parcel is
 // delivered, cancelled or in the RTO chain, its destination is history.
@@ -63,6 +80,16 @@ const REDIRECTABLE_STATUSES: ParcelStatus[] = [
   'hold',
   'failed_delivery',
   'follow_up',
+];
+
+// Mirrors OVERRIDE_EXCLUDED in OrderDetailPage.tsx — statuses whose transition
+// needs structured extra data (a rider pick, COD amounts, a destination hub)
+// keep their dedicated ops flows and are left out of the raw super_admin
+// override dropdown.
+const OVERRIDE_EXCLUDED: ParcelStatus[] = [
+  'rider_assigned',
+  'sent_for_delivery',
+  'partially_delivered',
 ];
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
@@ -102,12 +129,13 @@ const TAB_GROUPS: Record<FilterTab, ParcelStatus[]> = {
   all: [],
   // Everything still waiting to be picked up: ordered + rider assigned.
   ready_to_pick: ['pickup_ordered', 'rider_assigned'],
-  inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold', 'failed_delivery'],
+  // Tabs partition the statuses: every order sits under exactly one tab.
+  inprogress: ['picked_up', 'arrived', 'ready_to_deliver', 'sent_for_delivery', 'oov', 'dispatched', 'arrived_at_branch', 'hold'],
   delivered: ['delivered', 'partially_delivered'],
   failed: ['failed_pickup', 'failed_delivery', 'loss_and_damage'],
   // Returns still being worked: not yet handed back to the vendor.
   return_process: ['follow_up', 'ready_to_return', 'sent_to_vendor'],
-  rtv: ['follow_up', 'ready_to_return', 'sent_to_vendor', 'returned_to_vendor'],
+  rtv: ['returned_to_vendor'],
   cancelled: ['cancelled'],
 };
 
@@ -123,6 +151,8 @@ const TAB_LABELS: Record<FilterTab, string> = {
 };
 
 const PAGE_SIZE = 10;
+const NO_ORDERS: Order[] = [];
+const NO_FILTER_OPTIONS: OrderFilterOptions = { origins: [], destinations: [], riders: [] };
 const SEARCH_DEBOUNCE_MS = 300;
 
 const uniqueValues = (values: string[]) =>
@@ -156,7 +186,9 @@ interface SecondaryFilters {
   dateTo: string;
   /** Multi-select vendor ids; pushed to the server, empty = all. */
   vendor: string[];
-  operationDept: string;
+  /** Single sales-user id; pushed to the server (an order carries no sales
+   *  field of its own, so it can't be re-checked client-side). Empty = all. */
+  salesUserId: string;
 }
 
 // Case-insensitive substring match of the keyword against the order's names
@@ -170,7 +202,7 @@ const matchesKeyword = (order: Order, keyword: string) => {
     order.receiverName,
     order.riderName,
     order.senderPhone,
-    order.receiverPhone,
+    formatReceiverPhones(order.receiverPhone, order.receiverAlternatePhone),
     order.trackingId,
     `#${order.orderNumber}`,
     String(order.orderNumber),
@@ -178,28 +210,27 @@ const matchesKeyword = (order: Order, keyword: string) => {
   return haystack.some(field => (field || '').toLowerCase().includes(needle));
 };
 
-// Filters the backend doesn't have a query param for (origin/rider/keyword/
-// destination/department) - applied client-side on top of whatever page the
-// server already returned for the active tab + search. Status, vendor and the
-// date range are also re-checked here, but only as a no-op safety net: all
-// three are pushed down to the query, so the rows are already narrowed
-// server-side.
+// Filters the backend doesn't have a query param for (rider/keyword) -
+// applied client-side on top of whatever page the server already returned
+// for the active tab + search. Status, vendor, origin/destination hub and the
+// date range are also re-checked here, but only as a no-op safety net: all of
+// those are pushed down to the query, so the rows are already narrowed
+// server-side. The sales filter is push-down only (an order carries no sales
+// field to re-check), so it isn't part of the match below.
+//
+// originHub/destinationHub hold a location id (see OrderFilterOptions), so
+// they're compared against the order's own originLocationId/
+// destinationLocationId - not the display name, which two different
+// locations can share.
 
 const matchesSecondaryFilters = (order: Order, filters: SecondaryFilters) => {
-  const matchesOperation =
-    !filters.operationDept ||
-    (filters.operationDept === 'pickup' && ['pickup_ordered', 'rider_assigned', 'picked_up'].includes(order.status)) ||
-    (filters.operationDept === 'delivery' && ['ready_to_deliver', 'sent_for_delivery', 'delivered', 'partially_delivered', 'failed_delivery'].includes(order.status)) ||
-    (filters.operationDept === 'returns' && order.orderType === 'return');
-
-  return (!filters.originHub || order.origin === filters.originHub) &&
+  return (!filters.originHub || order.originLocationId === filters.originHub) &&
     (!filters.riderName || order.riderName === filters.riderName) &&
     matchesKeyword(order, filters.keyword) &&
-    (!filters.destinationHub || order.destination === filters.destinationHub) &&
+    (!filters.destinationHub || order.destinationLocationId === filters.destinationHub) &&
     (filters.currentStatus.length === 0 || filters.currentStatus.includes(order.status)) &&
     (!filters.orderType || order.orderType === filters.orderType) &&
-    (filters.vendor.length === 0 || (!!order.vendorId && filters.vendor.includes(order.vendorId))) &&
-    matchesOperation;
+    (filters.vendor.length === 0 || (!!order.vendorId && filters.vendor.includes(order.vendorId)));
 };
 
 const orderToCreateInput = (order: Order): CreateOrderInput => ({
@@ -234,11 +265,12 @@ const OrderManagement: React.FC = () => {
   // One-shot success notice from the edit flow's redirect.
   const [notice, setNotice] = useState<string>(() => (location.state as { notice?: string } | null)?.notice || '');
   const [searchParams, setSearchParams] = useSearchParams();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
-  const [filterOptionsData, setFilterOptionsData] = useState<OrderFilterOptions>({ origins: [], destinations: [], riders: [] });
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  // The failed order awaiting recovery confirmation; null when closed.
+  const [recoverOrder, setRecoverOrder] = useState<Order | null>(null);
+  const [recovering, setRecovering] = useState(false);
+  // The order awaiting trash confirmation; null when the dialog is closed.
+  const [trashTarget, setTrashTarget] = useState<Order | null>(null);
+  const [trashing, setTrashing] = useState(false);
   const [filter, setFilter] = useState<FilterTab>(() => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_GROUPS ? (fromUrl as FilterTab) : 'all';
@@ -247,7 +279,17 @@ const OrderManagement: React.FC = () => {
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
   // other (see utils/scannerInput.ts). Rendered as chips beside the input.
-  const [scannedIds, setScannedIds] = useState<string[]>([]);
+  // A bulk import's "View orders" button lands here with the created tracking
+  // ids: filter to them and pre-select the lot once they load.
+  const importedTrackingIds = useMemo(
+    () => (location.state as { importedTrackingIds?: string[] } | null)?.importedTrackingIds ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const pendingImportSelectRef = useRef<Set<string> | null>(
+    importedTrackingIds.length ? new Set(importedTrackingIds) : null,
+  );
+  const [scannedIds, setScannedIds] = useState<string[]>(importedTrackingIds);
   const combinedSearch = useMemo(
     () => [...scannedIds, trackingSearch.trim()].filter(Boolean).join(', '),
     [scannedIds, trackingSearch],
@@ -270,7 +312,12 @@ const OrderManagement: React.FC = () => {
   const [dateFrom, setDateFrom] = useState(() => searchParams.get('dateFrom') || '');
   const [dateTo, setDateTo] = useState(() => searchParams.get('dateTo') || '');
   const [vendor, setVendor] = useState<string[]>(() => searchParams.getAll('vendor'));
-  const [operationDept, setOperationDept] = useState(() => searchParams.get('operationDept') || '');
+  const [salesUserId, setSalesUserId] = useState(() => searchParams.get('salesUserId') || '');
+  // Sales-department admins, for the SALES filter. Staff-only: the /users/admins
+  // endpoint behind it is super_admin/admin, and a sales/vendor actor's list is
+  // already scoped to their own vendors, so the filter would be a no-op anyway.
+  const canFilterBySales = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r));
+  const [salesOptions, setSalesOptions] = useState<Array<{ value: string; label: string }>>([]);
   const pager = useCursorPagination();
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [sortBy, setSortBy] = useState<OrderSortField | undefined>(() => {
@@ -279,7 +326,6 @@ const OrderManagement: React.FC = () => {
   });
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('sortDir') === 'asc' ? 'asc' : 'desc'));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
   const [printWorking, setPrintWorking] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(
@@ -308,7 +354,7 @@ const OrderManagement: React.FC = () => {
   };
 
   const secondaryFilters: SecondaryFilters = {
-    originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept,
+    originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, salesUserId,
   };
   // Arrays are truthy even when empty, so check length for the multi-select filters.
   // dateField is a mode toggle (not itself a filter), so it never counts as active.
@@ -331,69 +377,79 @@ const OrderManagement: React.FC = () => {
     return () => clearTimeout(handle);
   }, [combinedSearch]);
 
-  // Scanning several parcels in a row fires one debounced search per scan -
-  // without this, a slower-to-resolve earlier request can land after a later
-  // one and stomp its results, making an already-scanned parcel vanish again.
-  const loadRequestIdRef = useRef(0);
+  const ordersParams = useMemo(() => {
+    // A scanner builds up a comma-separated list of tracking ids - fetch
+    // enough rows in one page to fit the whole scanned batch, instead of
+    // silently cutting it off at the default page size.
+    const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
+    const pageSize = scannedTermCount > 1 ? Math.min(MAX_ORDER_PAGE_SIZE, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
 
-  const loadOrders = useCallback(async () => {
-    const requestId = ++loadRequestIdRef.current;
-    setLoading(true);
-    try {
-      // A scanner builds up a comma-separated list of tracking ids - fetch
-      // enough rows in one page to fit the whole scanned batch, instead of
-      // silently cutting it off at the default page size.
-      const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
-      const pageSize = scannedTermCount > 1 ? Math.min(MAX_ORDER_PAGE_SIZE, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
+    // The status set actually sent to the server. A `currentStatus` selection
+    // is pushed down to the query (not just filtered client-side over one
+    // page) so pagination stays correct and card drill-downs can target
+    // statuses that span tabs (e.g. Pending deliveries includes
+    // failed_delivery). Within a concrete tab it's intersected with that
+    // tab's group; on "all" it's used directly.
+    const effectiveStatus: ParcelStatus[] = currentStatus.length
+      ? (TAB_GROUPS[filter].length
+          ? TAB_GROUPS[filter].filter((s) => currentStatus.includes(s))
+          : (currentStatus as ParcelStatus[]))
+      : TAB_GROUPS[filter];
+    return {
+      status: effectiveStatus,
+      // Pushed down for the same reason as `currentStatus` and `vendorId`:
+      // filtered client-side it only ever narrowed the page already fetched,
+      // so a range whose orders sat on a later page came back empty while the
+      // pager still counted the unfiltered total.
+      ...(dateFrom || dateTo ? { dateField } : {}),
+      ...(dateFrom ? { dateFrom } : {}),
+      ...(dateTo ? { dateTo } : {}),
+      search: debouncedSearch || undefined,
+      // Pushed down for the same reason as `currentStatus`: filtering vendors
+      // client-side only ever narrowed the page already fetched, so picking a
+      // vendor with no parcels on the current page showed an empty table.
+      vendorId: vendor.length ? vendor : undefined,
+      // Server joins this through vendors.sales_user_id — the order rows carry
+      // no sales field, so it has to be a push-down filter.
+      salesUserId: salesUserId || undefined,
+      // Pushed down for the same reason as `vendorId`: filtered client-side
+      // it only ever narrowed the page already fetched (see
+      // matchesSecondaryFilters), so a hub with no parcels on the current
+      // page silently showed an empty table instead of its real matches.
+      originLocationId: originHub || undefined,
+      destinationLocationId: destinationHub || undefined,
+      pageSize,
+      cursor: pager.request.cursor,
+      dir: pager.request.dir,
+      sortBy,
+      sortDir,
+    };
+  }, [filter, currentStatus, vendor, salesUserId, originHub, destinationHub, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice, dateField, dateFrom, dateTo]);
 
-      // The status set actually sent to the server. A `currentStatus` selection
-      // is pushed down to the query (not just filtered client-side over one
-      // page) so pagination stays correct and card drill-downs can target
-      // statuses that span tabs (e.g. Pending deliveries includes
-      // failed_delivery). Within a concrete tab it's intersected with that
-      // tab's group; on "all" it's used directly.
-      const effectiveStatus: ParcelStatus[] = currentStatus.length
-        ? (TAB_GROUPS[filter].length
-            ? TAB_GROUPS[filter].filter((s) => currentStatus.includes(s))
-            : (currentStatus as ParcelStatus[]))
-        : TAB_GROUPS[filter];
-      const res = await getOrders({
-        status: effectiveStatus,
-        // Pushed down for the same reason as `currentStatus` and `vendorId`:
-        // filtered client-side it only ever narrowed the page already fetched,
-        // so a range whose orders sat on a later page came back empty while the
-        // pager still counted the unfiltered total.
-        ...(dateFrom || dateTo ? { dateField } : {}),
-        ...(dateFrom ? { dateFrom } : {}),
-        ...(dateTo ? { dateTo } : {}),
-        search: debouncedSearch || undefined,
-        // Pushed down for the same reason as `currentStatus`: filtering vendors
-        // client-side only ever narrowed the page already fetched, so picking a
-        // vendor with no parcels on the current page showed an empty table.
-        vendorId: vendor.length ? vendor : undefined,
-        pageSize,
-        cursor: pager.request.cursor,
-        dir: pager.request.dir,
-        sortBy,
-        sortDir,
-      });
-      if (requestId !== loadRequestIdRef.current) return;
-      if (res?.success && Array.isArray(res.data)) {
-        setOrders(res.data);
-        setMeta(res.meta ?? null);
-        setLoadError('');
-      }
-    } catch {
-      if (requestId !== loadRequestIdRef.current) return;
-      setLoadError('Failed to load orders. Showing the last loaded data, if any.');
-    } finally {
-      if (requestId === loadRequestIdRef.current) setLoading(false);
-    }
-  }, [filter, currentStatus, vendor, debouncedSearch, pager.request, sortBy, sortDir, pageSizeChoice, dateField, dateFrom, dateTo]);
+  // Results are cached per filter set, so a revisit (Back, the sidebar) paints
+  // the last rows at once while a background refetch runs, and the previous
+  // page stays on screen while a new filter/page loads. Scanning several
+  // parcels in a row fires one debounced search per scan; because each result
+  // is keyed by its own params, a slower earlier response can never stomp a
+  // later one. Status changes anywhere refetch it (queryClient.ts).
+  const ordersQuery = useQuery({
+    queryKey: queryKeys.orders.list(ordersParams),
+    queryFn: ({ signal }) => getOrders(ordersParams, signal),
+    placeholderData: keepPreviousData,
+  });
+  const orders: Order[] =
+    ordersQuery.data?.success && Array.isArray(ordersQuery.data.data) ? ordersQuery.data.data : NO_ORDERS;
+  const meta: OrdersPageMeta | null = ordersQuery.data?.meta ?? null;
+  const loading = ordersQuery.isFetching;
+  // An action failure stays up until the list next loads, like a fetch error.
+  const [actionError, setActionError] = useState<{ message: string; dataUpdatedAt: number } | null>(null);
+  const showActionError = (message: string) =>
+    setActionError({ message, dataUpdatedAt: ordersQuery.dataUpdatedAt });
+  const loadError = actionError && actionError.dataUpdatedAt === ordersQuery.dataUpdatedAt
+    ? actionError.message
+    : ordersQuery.isError ? 'Failed to load orders. Showing the last loaded data, if any.' : '';
 
-  useEffect(() => { loadOrders(); }, [loadOrders]);
-  useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
-  useEffect(() => { pager.reset(); }, [filter, debouncedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir, pager.reset]);
+  useEffect(() => { pager.reset(); }, [filter, debouncedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, salesUserId, sortBy, sortDir, pager.reset]);
   // Re-sync when the navbar search re-navigates here with a new ?search= param -
   // but not when the URL change is just our own sync below echoing back.
   useEffect(() => {
@@ -420,31 +476,91 @@ const OrderManagement: React.FC = () => {
     if (dateFrom) next.set('dateFrom', dateFrom);
     if (dateTo) next.set('dateTo', dateTo);
     vendor.forEach(value => next.append('vendor', value));
-    if (operationDept) next.set('operationDept', operationDept);
+    if (salesUserId) next.set('salesUserId', salesUserId);
     if (sortBy) next.set('sortBy', sortBy);
     if (sortDir !== 'desc') next.set('sortDir', sortDir);
     lastSyncedSearchRef.current = combinedSearch;
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, combinedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept, sortBy, sortDir]);
+  }, [filter, combinedSearch, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, salesUserId, sortBy, sortDir]);
 
   // A separate, tab-scoped (unsearched, unpaginated) fetch purely to keep the
   // filter dropdown option lists representative - the paginated `orders` above
   // is usually only 10 rows, too few to populate origin/rider/etc options from.
+  // Kept for a minute per tab; failing just leaves the previous options.
+  const filterOptionsQuery = useQuery({
+    queryKey: queryKeys.orderFilterOptions(TAB_GROUPS[filter]),
+    queryFn: ({ signal }) => getOrderFilterOptions(TAB_GROUPS[filter], signal),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+  });
+  const filterOptionsData: OrderFilterOptions =
+    filterOptionsQuery.data?.success && filterOptionsQuery.data.data ? filterOptionsQuery.data.data : NO_FILTER_OPTIONS;
+
+  // Sales-department admins for the SALES filter dropdown. Fetched once, across
+  // every page - a single default-sized request would only carry the 20 newest
+  // admins and quietly omit the rest.
   useEffect(() => {
+    if (!canFilterBySales) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await getOrderFilterOptions(TAB_GROUPS[filter]);
-        if (!cancelled && res?.success && res.data) {
-          setFilterOptionsData(res.data);
+        const res = await getAllAdmins({ status: 'active' });
+        if (!cancelled && res?.success && Array.isArray(res.data)) {
+          setSalesOptions(
+            res.data
+              .filter((a: any) => (a.department || '').toLowerCase() === 'sales')
+              .map((a: any) => ({ value: a.userId as string, label: a.name as string }))
+              .filter((o: { value?: string; label?: string }) => o.value && o.label),
+          );
         }
       } catch {
-        // dropdown options just won't refresh; not fatal
+        // The filter just won't have options; not fatal.
       }
     })();
     return () => { cancelled = true; };
-  }, [filter]);
+  }, [canFilterBySales]);
+
+  // Tab badge totals. Deliberately not scoped to the active tab (it feeds every
+  // tab at once) and deliberately not read off `meta.total`, which only ever
+  // describes the tab currently open. Carries the same non-status filters the
+  // list pushes to the server, so a search or date range narrows the badges and
+  // the table together instead of leaving them contradicting each other.
+  const countsParams = useMemo(() => ({
+    search: debouncedSearch || undefined,
+    vendorId: vendor.length ? vendor : undefined,
+    salesUserId: salesUserId || undefined,
+    originLocationId: originHub || undefined,
+    destinationLocationId: destinationHub || undefined,
+    ...(dateFrom || dateTo ? { dateField } : {}),
+    ...(dateFrom ? { dateFrom } : {}),
+    ...(dateTo ? { dateTo } : {}),
+  }), [debouncedSearch, vendor, salesUserId, originHub, destinationHub, dateField, dateFrom, dateTo]);
+  // Refreshed with the table on every status change (queryClient.ts). A failed
+  // count fetch keeps the previous numbers; the table below is the source of
+  // truth either way, so it shouldn't surface an error.
+  const countsQuery = useQuery({
+    queryKey: queryKeys.orders.countsByStatus(countsParams),
+    queryFn: ({ signal }) => getOrderCountsByStatus(countsParams, signal),
+    placeholderData: keepPreviousData,
+  });
+  // Null until the first fetch lands, so the tabs render without badges rather
+  // than flashing a misleading 0.
+  const statusCounts = countsQuery.data?.success && countsQuery.data.data ? countsQuery.data.data : null;
+
+  // Each badge sums its own group's statuses. "All" has an empty group by
+  // convention and counts every status instead.
+  const tabCounts = useMemo(() => {
+    if (!statusCounts) return null;
+    const total = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
+    return (Object.keys(TAB_GROUPS) as FilterTab[]).reduce((acc, tab) => {
+      const group = TAB_GROUPS[tab];
+      acc[tab] = group.length
+        ? group.reduce((sum, status) => sum + (statusCounts[status] ?? 0), 0)
+        : total;
+      return acc;
+    }, {} as Record<FilterTab, number>);
+  }, [statusCounts]);
 
   // Options are keyed by vendor id (not name) because the selection is sent to
   // the server as ?vendorId=. The picker keeps its own id->label cache, so the
@@ -461,10 +577,13 @@ const OrderManagement: React.FC = () => {
   }, []);
 
   const filterOptions = useMemo(() => {
+    // origins/destinations already came back de-duplicated by location id
+    // (see getOrderFilterOptions); just give them a stable display order.
+    const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name);
     return {
-      origins: uniqueValues(filterOptionsData.origins),
+      origins: [...filterOptionsData.origins].sort(byName),
       riders: uniqueValues(filterOptionsData.riders),
-      destinations: uniqueValues(filterOptionsData.destinations),
+      destinations: [...filterOptionsData.destinations].sort(byName),
     };
   }, [filterOptionsData]);
 
@@ -473,7 +592,7 @@ const OrderManagement: React.FC = () => {
   const filteredOrders = useMemo(
     () => orders.filter(order => matchesSecondaryFilters(order, secondaryFilters)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orders, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, operationDept],
+    [orders, originHub, riderName, keyword, destinationHub, currentStatus, orderType, dateField, dateFrom, dateTo, vendor, salesUserId],
   );
 
   const totalPages = meta?.totalPages ?? 1;
@@ -489,6 +608,16 @@ const OrderManagement: React.FC = () => {
   useEffect(() => {
     setSelectedIds(new Set());
   }, [filter, pager.request]);
+
+  // Select the freshly imported orders once the filtered list has loaded.
+  useEffect(() => {
+    const pending = pendingImportSelectRef.current;
+    if (!pending || loading) return;
+    const ids = orders.filter(o => pending.has(o.trackingId)).map(o => o.id);
+    if (ids.length === 0) return;
+    pendingImportSelectRef.current = null;
+    setSelectedIds(new Set(ids));
+  }, [orders, loading]);
 
   const handlePrintLabels = useCallback(async () => {
     const labelOrders = selectedIds.size > 0
@@ -514,7 +643,7 @@ const OrderManagement: React.FC = () => {
     setDateFrom('');
     setDateTo('');
     setVendor([]);
-    setOperationDept('');
+    setSalesUserId('');
   };
 
   // Who may create a single order - mirrors the /orders/create route's allowed
@@ -523,15 +652,103 @@ const OrderManagement: React.FC = () => {
     ['super_admin', 'admin', 'sales', 'vendor', 'vendor_staff'].includes(r),
   );
 
+  // Trash is admin-only, matching the server routes. A vendor/sales/rider never
+  // sees the button, the row action, or a trashed order in any list.
+  const canUseTrash = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r));
+
+  // Putting a failed order back into the workflow is a status change, so it is
+  // gated like the other ones on this page rather than like the trash actions.
+  const canRecoverFailed = getCurrentUserRoles().some((r) =>
+    ['super_admin', 'admin'].includes(r),
+  );
+
+  const handleRecoverFailed = async () => {
+    const order = recoverOrder;
+    if (!order) return;
+    const target = recoveryTargetFor(order.status);
+    if (!target) return;
+
+    setRecovering(true);
+    try {
+      await updateOrderStatus(order.id, target);
+      setRecoverOrder(null);
+      setNotice(`Order ${order.trackingId} moved to ${STATUS_LABELS[target]}`);
+    } catch (err) {
+      setRecoverOrder(null);
+      showActionError(apiErrorMessage(err, 'Failed to move the order back into the workflow'));
+    } finally {
+      setRecovering(false);
+    }
+  };
+
+  // Soft-delete, so this asks less insistently than the permanent delete inside
+  // the trash modal does — it's undoable from there.
+  const handleTrashOrder = async () => {
+    const order = trashTarget;
+    if (!order) return;
+
+    setTrashing(true);
+    try {
+      await trashOrder(order.id);
+      setTrashTarget(null);
+      setNotice(`Order ${order.trackingId} moved to trash`);
+    } catch (err) {
+      setTrashTarget(null);
+      showActionError(apiErrorMessage(err, 'Failed to move the order to trash'));
+    } finally {
+      setTrashing(false);
+    }
+  };
+
   const openCreateModal = () => {
     navigate('/orders/create');
   };
 
   // Redirect (customer moved) — admin/super_admin only, matching the server route.
   const canRedirect = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r));
+  // The accountant reads orders only; the remark API refuses it.
+  const readOnlyRemarks = isAccountantUser();
   const [redirectOrderRow, setRedirectOrderRow] = useState<Order | null>(null);
   const [redirectSaving, setRedirectSaving] = useState(false);
   const [redirectError, setRedirectError] = useState('');
+  // Forwarding charge on a delivered parcel — same admin gate as redirect.
+  const [forwardOrderRow, setForwardOrderRow] = useState<Order | null>(null);
+  const [forwardSaving, setForwardSaving] = useState(false);
+  const [forwardError, setForwardError] = useState('');
+
+  // super_admin or FORCE_STATUS_CHANGE: force a parcel into any status from
+  // the list, ignoring the transition map (the server grants the same bypass)
+  // — mirrors the override control on OrderDetailPage.tsx, just reachable
+  // from the row menu instead of a per-order visit.
+  const canForceStatus = hasAdminPermission('FORCE_STATUS_CHANGE');
+  const [statusEditOrder, setStatusEditOrder] = useState<Order | null>(null);
+  const [statusEditNewStatus, setStatusEditNewStatus] = useState<ParcelStatus | ''>('');
+  const [statusEditRemarks, setStatusEditRemarks] = useState('');
+  const [statusEditSaving, setStatusEditSaving] = useState(false);
+  const [statusEditError, setStatusEditError] = useState('');
+
+  const closeStatusEdit = () => {
+    if (statusEditSaving) return;
+    setStatusEditOrder(null);
+    setStatusEditNewStatus('');
+    setStatusEditRemarks('');
+    setStatusEditError('');
+  };
+
+  const handleStatusEditApply = async () => {
+    if (!statusEditOrder || !statusEditNewStatus || statusEditNewStatus === statusEditOrder.status) return;
+    setStatusEditSaving(true);
+    setStatusEditError('');
+    try {
+      await updateOrderStatus(statusEditOrder.id, statusEditNewStatus, statusEditRemarks.trim() || undefined);
+      setNotice(`Order ${statusEditOrder.trackingId} forced to ${STATUS_LABELS[statusEditNewStatus]}`);
+      closeStatusEdit();
+    } catch (err) {
+      setStatusEditError(apiErrorMessage(err, 'Failed to update status'));
+    } finally {
+      setStatusEditSaving(false);
+    }
+  };
 
   const handleRedirect = async (data: {
     destinationLocationId: string;
@@ -546,7 +763,6 @@ const OrderManagement: React.FC = () => {
       await redirectOrder(redirectOrderRow.id, data);
       setRedirectOrderRow(null);
       setNotice(`Order ${redirectOrderRow.trackingId} redirected.`);
-      await loadOrders();
     } catch (err: any) {
       setRedirectError(err?.response?.data?.message ?? 'Failed to redirect order');
     } finally {
@@ -554,8 +770,26 @@ const OrderManagement: React.FC = () => {
     }
   };
 
+  const handleForward = async (data: {
+    destinationLocationId: string;
+    forwardingCharge: number;
+    reason?: string;
+  }) => {
+    if (!forwardOrderRow) return;
+    try {
+      setForwardSaving(true);
+      setForwardError('');
+      await forwardOrder(forwardOrderRow.id, data);
+      setForwardOrderRow(null);
+      setNotice(`Forwarding charge added to order ${forwardOrderRow.trackingId}.`);
+    } catch (err: any) {
+      setForwardError(err?.response?.data?.message ?? 'Failed to add forwarding charge');
+    } finally {
+      setForwardSaving(false);
+    }
+  };
+
   const openPrefilledModal = (order: Order, mode: 'copy' | 'edit') => {
-    setOpenActionId(null);
     navigate('/orders/create', {
       state: {
         initialData: orderToCreateInput(order),
@@ -594,7 +828,7 @@ const OrderManagement: React.FC = () => {
 
   const downloadExcelExport = async () => {
     let exportOrders = selectedExportOrders;
-    // The "arrived at origin" date is only fetched for exports (withArrival), so
+    // The per-stage timestamps are only fetched for exports (withArrival), so
     // pull the tab+search-scoped set fresh with that flag on.
     try {
       const res = await getOrders({ status: TAB_GROUPS[filter], search: debouncedSearch || undefined, withArrival: true });
@@ -604,11 +838,13 @@ const OrderManagement: React.FC = () => {
           // same client-side filters as the table.
           exportOrders = res.data.filter(order => matchesSecondaryFilters(order, secondaryFilters));
         } else {
-          // Keep the exact selection, but enrich each row with its arrival date.
-          const arrivalById = new Map(res.data.map(order => [order.id, order.arrivedAtOrigin]));
+          // Keep the exact selection, but enrich each row with its per-stage
+          // timestamps - the rows already on screen came from a plain list
+          // query, which doesn't carry them.
+          const timestampsById = new Map(res.data.map(order => [order.id, order.statusTimestamps]));
           exportOrders = selectedExportOrders.map(order => ({
             ...order,
-            arrivedAtOrigin: arrivalById.get(order.id) ?? order.arrivedAtOrigin,
+            statusTimestamps: timestampsById.get(order.id) ?? order.statusTimestamps,
           }));
         }
       }
@@ -616,29 +852,7 @@ const OrderManagement: React.FC = () => {
       // fall back to the currently loaded page / selection
     }
 
-    const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Arrived at Origin Date', 'Delivered At', 'Last Updated By', 'Last Updated At'];
-    const rows = exportOrders.map(order => [
-      `#${order.orderNumber}`,
-      order.trackingId,
-      order.origin,
-      order.senderName,
-      order.receiverName,
-      order.receiverPhone || '',
-      order.receiverAddress || '',
-      order.destination,
-      order.codAmount,
-      order.deliveryCharge,
-      order.weightKg || '',
-      STATUS_LABELS[order.status],
-      order.riderName || '',
-      order.remarks || '',
-      toBsDate(order.createdAt) || '',
-      toBsDate(order.arrivedAtOrigin) || '',
-      toBsDate(order.deliveredAt) || '',
-      order.lastUpdatedBy || '',
-      toBsDate(order.lastUpdatedAt) || '',
-    ]);
-    downloadExcel('orders.xlsx', 'Orders', headers, rows);
+    await downloadOrdersExcel('orders.xlsx', 'Orders', exportOrders, STATUS_LABELS);
   };
 
   const sortableHeader = (label: string, field: OrderSortField) => (
@@ -676,7 +890,13 @@ const OrderManagement: React.FC = () => {
       width: '120px',
       className: 'created-cell',
     },
-    { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-'), width: '150px' },
+    { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-'), width: '100px' },
+    {
+      header: 'DESTINATION',
+      accessor: (order: Order) => <span title={order.destination || '-'}>{order.destination || '-'}</span>,
+      width: '130px',
+      className: 'destination-cell',
+    },
     {
       header: 'SENDER',
       accessor: (order: Order) => (
@@ -685,19 +905,18 @@ const OrderManagement: React.FC = () => {
           <small>{order.senderPhone}</small>
         </div>
       ),
-      width: '210px',
+      width: '180px',
     },
     {
       header: 'RECEIVER',
       accessor: (order: Order) => (
         <div className="party-cell">
           <span>{order.receiverName}</span>
-          <small>{order.receiverPhone}</small>
+          <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
-      width: '210px',
+      width: '140px',
     },
-    { header: 'DESTINATION', accessor: (order: Order) => order.destination || '-', width: '150px' },
     {
       header: sortableHeader('FINANCE', 'codAmount'),
       accessor: (order: Order) => (
@@ -707,20 +926,25 @@ const OrderManagement: React.FC = () => {
           <span>Collected: {formatMoney(order.collectedAmount)}</span>
         </div>
       ),
-      width: '160px',
+      width: '130px',
     },
     { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '120px' },
     {
       header: sortableHeader('STATUS', 'status'),
       accessor: (order: Order) => (
-        <StatusChip tone={getStatusTone(order.status)}>
-          {STATUS_LABELS[order.status]}
-        </StatusChip>
+        <span className="om-status-cell">
+          <StatusChip tone={getStatusTone(order.status)}>
+            {STATUS_LABELS[order.status]}
+          </StatusChip>
+          {order.carrierCode && <span className="om-carrier-chip">{CARRIER_LABELS[order.carrierCode]}</span>}
+        </span>
       ),
       width: '160px',
     },
     { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '140px' },
-    { header: 'REMARKS', accessor: (order: Order) => (
+    { header: 'REMARKS', accessor: (order: Order) => readOnlyRemarks ? (
+      <span title={order.remarks || undefined}>{order.remarks || '-'}</span>
+    ) : (
       <button
         type="button"
         className="remarks-cell-btn"
@@ -743,38 +967,84 @@ const OrderManagement: React.FC = () => {
     {
       header: 'ACTION',
       accessor: (order: Order) => (
-        <div className="actions-cell">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="row-action-btn"
-            onClick={() => setOpenActionId(value => value === order.id ? null : order.id)}
-            aria-label={`Open actions for ${order.trackingId}`}
-            aria-expanded={openActionId === order.id}
+        <div className="actions-cell row-action-menu-icons">
+          <button
+            type="button"
+            className="row-action-icon-only"
+            title="Edit"
+            aria-label="Edit"
+            onClick={() => openPrefilledModal(order, 'edit')}
           >
-            <MoreVertical size={16} />
-          </Button>
-          {openActionId === order.id && (
-            <div className="row-action-menu">
-              <button type="button" onClick={() => openPrefilledModal(order, 'edit')}>
-                <Edit size={14} /> Edit
-              </button>
-              <button type="button" onClick={() => openPrefilledModal(order, 'copy')}>
-                <Copy size={14} /> Copy Order
-              </button>
-              {canRedirect && REDIRECTABLE_STATUSES.includes(order.status) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenActionId(null);
-                    setRedirectError('');
-                    setRedirectOrderRow(order);
-                  }}
-                >
-                  <Shuffle size={14} /> Redirect
-                </button>
-              )}
-            </div>
+            <Edit size={14} />
+          </button>
+          <button
+            type="button"
+            className="row-action-icon-only"
+            title="Copy Order"
+            aria-label="Copy Order"
+            onClick={() => openPrefilledModal(order, 'copy')}
+          >
+            <Copy size={14} />
+          </button>
+          {canRedirect && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
+            <button
+              type="button"
+              className="row-action-icon-only"
+              title={order.status === 'delivered' ? 'Forward' : 'Redirect'}
+              aria-label={order.status === 'delivered' ? 'Forward' : 'Redirect'}
+              onClick={() => {
+                // Same slot as redirect: once delivered, the action becomes a forward.
+                if (order.status === 'delivered') {
+                  setForwardError('');
+                  setForwardOrderRow(order);
+                } else {
+                  setRedirectError('');
+                  setRedirectOrderRow(order);
+                }
+              }}
+            >
+              {order.status === 'delivered' ? <Forward size={14} /> : <Shuffle size={14} />}
+            </button>
+          )}
+          {canRecoverFailed && isRecoverableFailure(order.status) && (
+            <button
+              type="button"
+              className="row-action-icon-only"
+              title={FAILED_RECOVERY_LABEL[order.status]}
+              aria-label={FAILED_RECOVERY_LABEL[order.status]}
+              onClick={() => setRecoverOrder(order)}
+            >
+              <RotateCcw size={14} />
+            </button>
+          )}
+          {canForceStatus && (
+            <button
+              type="button"
+              className="row-action-icon-only"
+              title="Status Edit"
+              aria-label="Status Edit"
+              onClick={() => {
+                setStatusEditNewStatus('');
+                setStatusEditRemarks('');
+                setStatusEditError('');
+                setStatusEditOrder(order);
+              }}
+            >
+              <Repeat size={14} />
+            </button>
+          )}
+          {/* Cancelled only — mirrors the server, which refuses anything
+              still moving through the pipeline (see moveOrderToTrash). */}
+          {canUseTrash && order.status === 'cancelled' && (
+            <button
+              type="button"
+              className="row-action-icon-only row-action-danger"
+              title="Move to trash"
+              aria-label="Move to trash"
+              onClick={() => setTrashTarget(order)}
+            >
+              <Trash2 size={14} />
+            </button>
           )}
         </div>
       ),
@@ -785,13 +1055,17 @@ const OrderManagement: React.FC = () => {
 
   return (
     <div className="order-management-container">
-      <PageHeader title="Orders" subtitle="Manage and track package orders across the network." />
+      <PageHeader title="Orders" />
 
       <SegmentedTabs
         ariaLabel="Order status filters"
         value={filter}
         onChange={setFilter}
-        options={(Object.keys(TAB_GROUPS) as FilterTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab] }))}
+        options={(Object.keys(TAB_GROUPS) as FilterTab[]).map(tab => ({
+          value: tab,
+          label: TAB_LABELS[tab],
+          ...(tabCounts ? { count: tabCounts[tab] } : {}),
+        }))}
       />
 
       {loadError && <p className="order-load-error">{loadError}</p>}
@@ -818,7 +1092,7 @@ const OrderManagement: React.FC = () => {
               value={originHub}
               onChange={setOriginHub}
               placeholder="Select Hub"
-              options={filterOptions.origins.map(value => ({ value, label: value }))}
+              options={filterOptions.origins.map(({ id, name }) => ({ value: id, label: name }))}
             />
             <FilterDropdown
               label="RIDER NAME"
@@ -842,7 +1116,7 @@ const OrderManagement: React.FC = () => {
               value={destinationHub}
               onChange={setDestinationHub}
               placeholder="Select Hub"
-              options={filterOptions.destinations.map(value => ({ value, label: value }))}
+              options={filterOptions.destinations.map(({ id, name }) => ({ value: id, label: name }))}
             />
             <FilterDropdown
               label="ORDER TYPE"
@@ -891,17 +1165,15 @@ const OrderManagement: React.FC = () => {
               searchPlaceholder="Search vendor by name..."
               asyncSearch={handleVendorFilterSearch}
             />
-            <FilterDropdown
-              label="OPERATION DEPT"
-              value={operationDept}
-              onChange={setOperationDept}
-              placeholder="All Departments"
-              options={[
-                { value: 'pickup', label: 'Pickup' },
-                { value: 'delivery', label: 'Delivery' },
-                { value: 'returns', label: 'Returns' },
-              ]}
-            />
+            {canFilterBySales && (
+              <FilterDropdown
+                label="SALES"
+                value={salesUserId}
+                onChange={setSalesUserId}
+                placeholder="All Sales"
+                options={salesOptions}
+              />
+            )}
             <MultiFilterDropdown
               label="CURRENT STATUS"
               className="order-filter-span-2"
@@ -925,6 +1197,11 @@ const OrderManagement: React.FC = () => {
             </Button>
           )}
           <Button variant="secondary" onClick={() => navigate('/orders/bulk-create')}>Bulk Order</Button>
+          {canUseTrash && (
+            <Button variant="outline" onClick={() => navigate('/orders/trash')}>
+              <Trash2 size={16} /> Trash
+            </Button>
+          )}
         </div>
         <div className="order-toolbar-right">
           <Button variant="primary" onClick={downloadExcelExport}>
@@ -1033,6 +1310,103 @@ const OrderManagement: React.FC = () => {
           onConfirm={handleRedirect}
         />
       )}
+
+      {forwardOrderRow && (
+        <ForwardOrderModal
+          isOpen
+          trackingId={forwardOrderRow.trackingId}
+          currentBranch={forwardOrderRow.destination}
+          currentDeliveryCharge={forwardOrderRow.deliveryCharge}
+          busy={forwardSaving}
+          error={forwardError}
+          onClose={() => setForwardOrderRow(null)}
+          onConfirm={handleForward}
+        />
+      )}
+
+      {statusEditOrder && (
+        <div className="modal-overlay" onClick={closeStatusEdit}>
+          <div
+            className="modal-content status-edit-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="modal-header">
+              <h2>Status Edit — {statusEditOrder.trackingId}</h2>
+              <Button variant="ghost" size="icon" className="modal-close-btn" onClick={closeStatusEdit} type="button">
+                <X size={16} />
+              </Button>
+            </div>
+            <div className="form-group">
+              <label htmlFor="status-edit-select">New status</label>
+              <select
+                id="status-edit-select"
+                value={statusEditNewStatus}
+                onChange={(e) => setStatusEditNewStatus(e.target.value as ParcelStatus | '')}
+                disabled={statusEditSaving}
+              >
+                <option value="">Select new status...</option>
+                {(Object.keys(STATUS_LABELS) as ParcelStatus[])
+                  .filter((s) => s !== statusEditOrder.status && !OVERRIDE_EXCLUDED.includes(s))
+                  .map((s) => (
+                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                  ))}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginTop: 'var(--space-3)' }}>
+              <label htmlFor="status-edit-remarks">Remarks (optional)</label>
+              <input
+                id="status-edit-remarks"
+                type="text"
+                value={statusEditRemarks}
+                onChange={(e) => setStatusEditRemarks(e.target.value)}
+                disabled={statusEditSaving}
+              />
+            </div>
+            {statusEditError && <p className="error-text">{statusEditError}</p>}
+            <div className="modal-footer">
+              <Button variant="secondary" onClick={closeStatusEdit} disabled={statusEditSaving}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleStatusEditApply}
+                disabled={statusEditSaving || !statusEditNewStatus}
+              >
+                {statusEditSaving ? 'Applying...' : 'Apply'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        isOpen={recoverOrder !== null}
+        busy={recovering}
+        title={
+          recoverOrder
+            ? `Move ${recoverOrder.trackingId} back to ${STATUS_LABELS[recoveryTargetFor(recoverOrder.status)!]}?`
+            : ''
+        }
+        message="The order rejoins the workflow at that stage and the change is recorded in its history."
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={handleRecoverFailed}
+        onCancel={() => setRecoverOrder(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={trashTarget !== null}
+        danger
+        busy={trashing}
+        title={trashTarget ? `Move order ${trashTarget.trackingId} to the trash?` : ''}
+        message="It leaves every order list. You can restore it from Trash."
+        confirmLabel="OK"
+        cancelLabel="Cancel"
+        onConfirm={handleTrashOrder}
+        onCancel={() => setTrashTarget(null)}
+      />
     </div>
   );
 };

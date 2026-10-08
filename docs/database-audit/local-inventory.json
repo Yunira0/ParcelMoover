@@ -1,0 +1,1889 @@
+{
+  "capturedAt": "2026-10-06T06:39:32.062Z",
+  "scope": "Local development database; read-only transaction",
+  "configuredPoolMax": 60,
+  "metadata": {
+    "settings": [
+      {
+        "version": "PostgreSQL 18.4 on x86_64-apple-darwin24.6.0, compiled by Apple clang version 17.0.0 (clang-1700.6.3.2), 64-bit",
+        "max_connections": "100",
+        "shared_buffers": "128MB",
+        "work_mem": "4MB",
+        "effective_cache_size": "4GB",
+        "autovacuum": "on",
+        "shared_preload_libraries": ""
+      }
+    ],
+    "tables": [
+      {
+        "relname": "locations",
+        "n_live_tup": "0",
+        "n_dead_tup": "577",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "227",
+        "idx_scan": "24290",
+        "total_bytes": "3178496"
+      },
+      {
+        "relname": "parcels",
+        "n_live_tup": "113",
+        "n_dead_tup": "61",
+        "last_autovacuum": "2026-09-11T09:44:38.477Z",
+        "last_autoanalyze": "2026-09-29T14:02:15.486Z",
+        "seq_scan": "13137",
+        "idx_scan": "12218",
+        "total_bytes": "884736"
+      },
+      {
+        "relname": "audit_logs",
+        "n_live_tup": "669",
+        "n_dead_tup": "23",
+        "last_autovacuum": null,
+        "last_autoanalyze": "2026-09-07T13:50:35.532Z",
+        "seq_scan": "4",
+        "idx_scan": "857",
+        "total_bytes": "434176"
+      },
+      {
+        "relname": "vendors",
+        "n_live_tup": "51",
+        "n_dead_tup": "2",
+        "last_autovacuum": "2026-09-23T08:55:48.609Z",
+        "last_autoanalyze": "2026-09-23T08:55:48.636Z",
+        "seq_scan": "7339",
+        "idx_scan": "29",
+        "total_bytes": "335872"
+      },
+      {
+        "relname": "parcel_status_history",
+        "n_live_tup": "523",
+        "n_dead_tup": "14",
+        "last_autovacuum": null,
+        "last_autoanalyze": "2026-09-02T06:58:24.259Z",
+        "seq_scan": "1638",
+        "idx_scan": "13307",
+        "total_bytes": "270336"
+      },
+      {
+        "relname": "parties",
+        "n_live_tup": "97",
+        "n_dead_tup": "24",
+        "last_autovacuum": null,
+        "last_autoanalyze": "2026-09-02T06:58:23.967Z",
+        "seq_scan": "3447",
+        "idx_scan": "30",
+        "total_bytes": "204800"
+      },
+      {
+        "relname": "cod_collections",
+        "n_live_tup": "113",
+        "n_dead_tup": "14",
+        "last_autovacuum": null,
+        "last_autoanalyze": "2026-09-02T06:58:24.016Z",
+        "seq_scan": "2246",
+        "idx_scan": "3869",
+        "total_bytes": "188416"
+      },
+      {
+        "relname": "pickup_tasks",
+        "n_live_tup": "113",
+        "n_dead_tup": "66",
+        "last_autovacuum": null,
+        "last_autoanalyze": "2026-09-29T14:02:15.441Z",
+        "seq_scan": "24",
+        "idx_scan": "5",
+        "total_bytes": "155648"
+      },
+      {
+        "relname": "dispatches",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "0",
+        "idx_scan": "2",
+        "total_bytes": "131072"
+      },
+      {
+        "relname": "journal_entries",
+        "n_live_tup": "12",
+        "n_dead_tup": "10",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "51",
+        "idx_scan": "150",
+        "total_bytes": "131072"
+      },
+      {
+        "relname": "support_tickets",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "96",
+        "idx_scan": "0",
+        "total_bytes": "114688"
+      },
+      {
+        "relname": "admins",
+        "n_live_tup": "2",
+        "n_dead_tup": "21",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "1679",
+        "idx_scan": "52",
+        "total_bytes": "114688"
+      },
+      {
+        "relname": "journal_lines",
+        "n_live_tup": "24",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "1",
+        "idx_scan": "430",
+        "total_bytes": "114688"
+      },
+      {
+        "relname": "vouchers",
+        "n_live_tup": "104",
+        "n_dead_tup": "5",
+        "last_autovacuum": null,
+        "last_autoanalyze": "2026-09-15T12:33:24.066Z",
+        "seq_scan": "691",
+        "idx_scan": "73",
+        "total_bytes": "106496"
+      },
+      {
+        "relname": "users",
+        "n_live_tup": "73",
+        "n_dead_tup": "10",
+        "last_autovacuum": null,
+        "last_autoanalyze": "2026-09-11T12:06:01.405Z",
+        "seq_scan": "19250",
+        "idx_scan": "511802",
+        "total_bytes": "106496"
+      },
+      {
+        "relname": "ledger_accounts",
+        "n_live_tup": "2",
+        "n_dead_tup": "4",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "95",
+        "idx_scan": "33",
+        "total_bytes": "98304"
+      },
+      {
+        "relname": "branch_settlements",
+        "n_live_tup": "2",
+        "n_dead_tup": "2",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "11216",
+        "idx_scan": "30",
+        "total_bytes": "98304"
+      },
+      {
+        "relname": "settlements",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "1097",
+        "idx_scan": "370",
+        "total_bytes": "98304"
+      },
+      {
+        "relname": "vendor_kyc_applications",
+        "n_live_tup": "2",
+        "n_dead_tup": "4",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "2",
+        "idx_scan": "155",
+        "total_bytes": "98304"
+      },
+      {
+        "relname": "riders",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "3145",
+        "idx_scan": "3326",
+        "total_bytes": "98304"
+      },
+      {
+        "relname": "parcel_remarks",
+        "n_live_tup": "10",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "872",
+        "idx_scan": "495620",
+        "total_bytes": "98304"
+      },
+      {
+        "relname": "cod_settlement_requests",
+        "n_live_tup": "1",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "43",
+        "idx_scan": "22",
+        "total_bytes": "98304"
+      },
+      {
+        "relname": "notifications",
+        "n_live_tup": "62",
+        "n_dead_tup": "30",
+        "last_autovacuum": null,
+        "last_autoanalyze": "2026-09-15T12:52:24.142Z",
+        "seq_scan": "267",
+        "idx_scan": "1376",
+        "total_bytes": "90112"
+      },
+      {
+        "relname": "transit_manifests",
+        "n_live_tup": "1",
+        "n_dead_tup": "1",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "33",
+        "idx_scan": "7",
+        "total_bytes": "81920"
+      },
+      {
+        "relname": "voucher_claims",
+        "n_live_tup": "4",
+        "n_dead_tup": "2",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "81",
+        "idx_scan": "90",
+        "total_bytes": "81920"
+      },
+      {
+        "relname": "run_sheets",
+        "n_live_tup": "3",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "2",
+        "idx_scan": "9",
+        "total_bytes": "81920"
+      },
+      {
+        "relname": "_prisma_migrations",
+        "n_live_tup": "119",
+        "n_dead_tup": "5",
+        "last_autovacuum": null,
+        "last_autoanalyze": "2026-09-11T08:40:37.732Z",
+        "seq_scan": "96",
+        "idx_scan": "1",
+        "total_bytes": "81920"
+      },
+      {
+        "relname": "parcel_redirects",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "2",
+        "idx_scan": "143",
+        "total_bytes": "81920"
+      },
+      {
+        "relname": "accounting_periods",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "32",
+        "idx_scan": "16",
+        "total_bytes": "81920"
+      },
+      {
+        "relname": "settlement_documents",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "2",
+        "idx_scan": "20",
+        "total_bytes": "65536"
+      },
+      {
+        "relname": "vendor_payments",
+        "n_live_tup": "2",
+        "n_dead_tup": "8",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "19",
+        "idx_scan": "346",
+        "total_bytes": "65536"
+      },
+      {
+        "relname": "branch_settlement_payments",
+        "n_live_tup": "1",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "3",
+        "idx_scan": "22",
+        "total_bytes": "65536"
+      },
+      {
+        "relname": "api_keys",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "0",
+        "idx_scan": "4",
+        "total_bytes": "65536"
+      },
+      {
+        "relname": "payment_methods",
+        "n_live_tup": "0",
+        "n_dead_tup": "2",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "74",
+        "idx_scan": "0",
+        "total_bytes": "65536"
+      },
+      {
+        "relname": "expenses",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "4",
+        "idx_scan": "0",
+        "total_bytes": "57344"
+      },
+      {
+        "relname": "return_manifests",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "35",
+        "idx_scan": "38",
+        "total_bytes": "57344"
+      },
+      {
+        "relname": "branch_settlement_items",
+        "n_live_tup": "2",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "163",
+        "idx_scan": "977",
+        "total_bytes": "57344"
+      },
+      {
+        "relname": "promotion_grants",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "7",
+        "idx_scan": "68",
+        "total_bytes": "49152"
+      },
+      {
+        "relname": "banners",
+        "n_live_tup": "2",
+        "n_dead_tup": "6",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "163",
+        "idx_scan": "53",
+        "total_bytes": "49152"
+      },
+      {
+        "relname": "sla_settings",
+        "n_live_tup": "3",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "381",
+        "idx_scan": "8",
+        "total_bytes": "49152"
+      },
+      {
+        "relname": "roles",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "1",
+        "idx_scan": "85463",
+        "total_bytes": "49152"
+      },
+      {
+        "relname": "carriers",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "0",
+        "idx_scan": "0",
+        "total_bytes": "49152"
+      },
+      {
+        "relname": "announcements",
+        "n_live_tup": "1",
+        "n_dead_tup": "3",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "139",
+        "idx_scan": "0",
+        "total_bytes": "49152"
+      },
+      {
+        "relname": "parcel_exceptions",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "0",
+        "idx_scan": "6",
+        "total_bytes": "49152"
+      },
+      {
+        "relname": "settlement_payments",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "3",
+        "idx_scan": "33",
+        "total_bytes": "49152"
+      },
+      {
+        "relname": "voucher_events",
+        "n_live_tup": "6",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "4",
+        "idx_scan": "0",
+        "total_bytes": "49152"
+      },
+      {
+        "relname": "run_sheet_parcels",
+        "n_live_tup": "3",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "0",
+        "idx_scan": "2",
+        "total_bytes": "40960"
+      },
+      {
+        "relname": "branch_payments",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "80",
+        "idx_scan": "21679",
+        "total_bytes": "40960"
+      },
+      {
+        "relname": "promotion_entries",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "36",
+        "idx_scan": "2",
+        "total_bytes": "40960"
+      },
+      {
+        "relname": "branch_virtual_coverage",
+        "n_live_tup": "3",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "16",
+        "idx_scan": "241",
+        "total_bytes": "40960"
+      },
+      {
+        "relname": "dispatch_parcels",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "0",
+        "idx_scan": "2",
+        "total_bytes": "40960"
+      },
+      {
+        "relname": "delivery_rates",
+        "n_live_tup": "1",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "11",
+        "idx_scan": "10",
+        "total_bytes": "40960"
+      },
+      {
+        "relname": "billing_settings",
+        "n_live_tup": "0",
+        "n_dead_tup": "3",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "674",
+        "idx_scan": "0",
+        "total_bytes": "32768"
+      },
+      {
+        "relname": "voucher_campaigns",
+        "n_live_tup": "1",
+        "n_dead_tup": "1",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "77",
+        "idx_scan": "166",
+        "total_bytes": "32768"
+      },
+      {
+        "relname": "vendor_staff",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "0",
+        "idx_scan": "552",
+        "total_bytes": "32768"
+      },
+      {
+        "relname": "webhook_deliveries",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "0",
+        "idx_scan": "24256",
+        "total_bytes": "32768"
+      },
+      {
+        "relname": "user_roles",
+        "n_live_tup": "3",
+        "n_dead_tup": "3",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "31591",
+        "idx_scan": "26615",
+        "total_bytes": "24576"
+      },
+      {
+        "relname": "pickup_time_slots",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "1",
+        "idx_scan": "0",
+        "total_bytes": "24576"
+      },
+      {
+        "relname": "webhook_endpoints",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "0",
+        "idx_scan": "25",
+        "total_bytes": "24576"
+      },
+      {
+        "relname": "vendor_volume_settings",
+        "n_live_tup": "1",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "1",
+        "idx_scan": "11",
+        "total_bytes": "24576"
+      },
+      {
+        "relname": "settlement_items",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "246",
+        "idx_scan": "740",
+        "total_bytes": "24576"
+      },
+      {
+        "relname": "pricing_settings",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "28",
+        "idx_scan": "0",
+        "total_bytes": "24576"
+      },
+      {
+        "relname": "ticket_replies",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "0",
+        "idx_scan": "0",
+        "total_bytes": "24576"
+      },
+      {
+        "relname": "return_manifest_parcels",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "4",
+        "idx_scan": "2",
+        "total_bytes": "16384"
+      },
+      {
+        "relname": "transit_manifest_parcels",
+        "n_live_tup": "0",
+        "n_dead_tup": "0",
+        "last_autovacuum": null,
+        "last_autoanalyze": null,
+        "seq_scan": "7",
+        "idx_scan": "8",
+        "total_bytes": "16384"
+      }
+    ],
+    "indexes": [
+      {
+        "tablename": "_prisma_migrations",
+        "indexname": "_prisma_migrations_pkey",
+        "indexdef": "CREATE UNIQUE INDEX _prisma_migrations_pkey ON public._prisma_migrations USING btree (id)"
+      },
+      {
+        "tablename": "accounting_periods",
+        "indexname": "accounting_periods_period_key_key",
+        "indexdef": "CREATE UNIQUE INDEX accounting_periods_period_key_key ON public.accounting_periods USING btree (period_key)"
+      },
+      {
+        "tablename": "accounting_periods",
+        "indexname": "accounting_periods_pkey",
+        "indexdef": "CREATE UNIQUE INDEX accounting_periods_pkey ON public.accounting_periods USING btree (id)"
+      },
+      {
+        "tablename": "accounting_periods",
+        "indexname": "idx_accounting_periods_fiscal_year",
+        "indexdef": "CREATE INDEX idx_accounting_periods_fiscal_year ON public.accounting_periods USING btree (fiscal_year, bs_month)"
+      },
+      {
+        "tablename": "accounting_periods",
+        "indexname": "uq_accounting_periods_bs_month",
+        "indexdef": "CREATE UNIQUE INDEX uq_accounting_periods_bs_month ON public.accounting_periods USING btree (bs_year, bs_month)"
+      },
+      {
+        "tablename": "admins",
+        "indexname": "admins_employee_number_key",
+        "indexdef": "CREATE UNIQUE INDEX admins_employee_number_key ON public.admins USING btree (employee_number)"
+      },
+      {
+        "tablename": "admins",
+        "indexname": "admins_pkey",
+        "indexdef": "CREATE UNIQUE INDEX admins_pkey ON public.admins USING btree (id)"
+      },
+      {
+        "tablename": "admins",
+        "indexname": "admins_user_id_key",
+        "indexdef": "CREATE UNIQUE INDEX admins_user_id_key ON public.admins USING btree (user_id)"
+      },
+      {
+        "tablename": "admins",
+        "indexname": "idx_admins_location_id",
+        "indexdef": "CREATE INDEX idx_admins_location_id ON public.admins USING btree (location_id)"
+      },
+      {
+        "tablename": "announcements",
+        "indexname": "announcements_pkey",
+        "indexdef": "CREATE UNIQUE INDEX announcements_pkey ON public.announcements USING btree (id)"
+      },
+      {
+        "tablename": "announcements",
+        "indexname": "idx_announcements_enabled_sort",
+        "indexdef": "CREATE INDEX idx_announcements_enabled_sort ON public.announcements USING btree (is_enabled, sort_order)"
+      },
+      {
+        "tablename": "api_keys",
+        "indexname": "api_keys_key_hash_key",
+        "indexdef": "CREATE UNIQUE INDEX api_keys_key_hash_key ON public.api_keys USING btree (key_hash)"
+      },
+      {
+        "tablename": "api_keys",
+        "indexname": "api_keys_pkey",
+        "indexdef": "CREATE UNIQUE INDEX api_keys_pkey ON public.api_keys USING btree (id)"
+      },
+      {
+        "tablename": "api_keys",
+        "indexname": "idx_api_keys_vendor_id",
+        "indexdef": "CREATE INDEX idx_api_keys_vendor_id ON public.api_keys USING btree (vendor_id)"
+      },
+      {
+        "tablename": "audit_logs",
+        "indexname": "audit_logs_pkey",
+        "indexdef": "CREATE UNIQUE INDEX audit_logs_pkey ON public.audit_logs USING btree (id)"
+      },
+      {
+        "tablename": "audit_logs",
+        "indexname": "idx_audit_logs_action",
+        "indexdef": "CREATE INDEX idx_audit_logs_action ON public.audit_logs USING btree (action)"
+      },
+      {
+        "tablename": "audit_logs",
+        "indexname": "idx_audit_logs_actor_id",
+        "indexdef": "CREATE INDEX idx_audit_logs_actor_id ON public.audit_logs USING btree (actor_id)"
+      },
+      {
+        "tablename": "audit_logs",
+        "indexname": "idx_audit_logs_created_at",
+        "indexdef": "CREATE INDEX idx_audit_logs_created_at ON public.audit_logs USING btree (created_at DESC)"
+      },
+      {
+        "tablename": "audit_logs",
+        "indexname": "idx_audit_logs_entity",
+        "indexdef": "CREATE INDEX idx_audit_logs_entity ON public.audit_logs USING btree (entity_type, entity_id, created_at DESC)"
+      },
+      {
+        "tablename": "banners",
+        "indexname": "banners_pkey",
+        "indexdef": "CREATE UNIQUE INDEX banners_pkey ON public.banners USING btree (id)"
+      },
+      {
+        "tablename": "banners",
+        "indexname": "idx_banners_display_enabled",
+        "indexdef": "CREATE INDEX idx_banners_display_enabled ON public.banners USING btree (display_type, is_enabled)"
+      },
+      {
+        "tablename": "billing_settings",
+        "indexname": "billing_settings_pkey",
+        "indexdef": "CREATE UNIQUE INDEX billing_settings_pkey ON public.billing_settings USING btree (id)"
+      },
+      {
+        "tablename": "branch_payments",
+        "indexname": "branch_payments_pkey",
+        "indexdef": "CREATE UNIQUE INDEX branch_payments_pkey ON public.branch_payments USING btree (id)"
+      },
+      {
+        "tablename": "branch_payments",
+        "indexname": "idx_branch_payments_branch_status",
+        "indexdef": "CREATE INDEX idx_branch_payments_branch_status ON public.branch_payments USING btree (branch_id, status)"
+      },
+      {
+        "tablename": "branch_payments",
+        "indexname": "idx_branch_payments_settlement",
+        "indexdef": "CREATE INDEX idx_branch_payments_settlement ON public.branch_payments USING btree (settlement_id)"
+      },
+      {
+        "tablename": "branch_payments",
+        "indexname": "idx_branch_payments_status_created",
+        "indexdef": "CREATE INDEX idx_branch_payments_status_created ON public.branch_payments USING btree (status, created_at DESC)"
+      },
+      {
+        "tablename": "branch_settlement_items",
+        "indexname": "branch_settlement_items_parcel_id_key",
+        "indexdef": "CREATE UNIQUE INDEX branch_settlement_items_parcel_id_key ON public.branch_settlement_items USING btree (parcel_id)"
+      },
+      {
+        "tablename": "branch_settlement_items",
+        "indexname": "branch_settlement_items_pkey",
+        "indexdef": "CREATE UNIQUE INDEX branch_settlement_items_pkey ON public.branch_settlement_items USING btree (settlement_id, parcel_id)"
+      },
+      {
+        "tablename": "branch_settlement_items",
+        "indexname": "idx_branch_settlement_items_settlement",
+        "indexdef": "CREATE INDEX idx_branch_settlement_items_settlement ON public.branch_settlement_items USING btree (settlement_id)"
+      },
+      {
+        "tablename": "branch_settlement_payments",
+        "indexname": "branch_settlement_payments_pkey",
+        "indexdef": "CREATE UNIQUE INDEX branch_settlement_payments_pkey ON public.branch_settlement_payments USING btree (id)"
+      },
+      {
+        "tablename": "branch_settlement_payments",
+        "indexname": "idx_branch_settlement_payments_recorded_by",
+        "indexdef": "CREATE INDEX idx_branch_settlement_payments_recorded_by ON public.branch_settlement_payments USING btree (recorded_by)"
+      },
+      {
+        "tablename": "branch_settlement_payments",
+        "indexname": "idx_branch_settlement_payments_settlement",
+        "indexdef": "CREATE INDEX idx_branch_settlement_payments_settlement ON public.branch_settlement_payments USING btree (settlement_id, paid_at)"
+      },
+      {
+        "tablename": "branch_settlements",
+        "indexname": "branch_settlements_pkey",
+        "indexdef": "CREATE UNIQUE INDEX branch_settlements_pkey ON public.branch_settlements USING btree (id)"
+      },
+      {
+        "tablename": "branch_settlements",
+        "indexname": "branch_settlements_statement_no_key",
+        "indexdef": "CREATE UNIQUE INDEX branch_settlements_statement_no_key ON public.branch_settlements USING btree (statement_no)"
+      },
+      {
+        "tablename": "branch_settlements",
+        "indexname": "idx_branch_settlements_created_by",
+        "indexdef": "CREATE INDEX idx_branch_settlements_created_by ON public.branch_settlements USING btree (created_by)"
+      },
+      {
+        "tablename": "branch_settlements",
+        "indexname": "idx_branch_settlements_route_date",
+        "indexdef": "CREATE INDEX idx_branch_settlements_route_date ON public.branch_settlements USING btree (from_branch_id, to_branch_id, settlement_date DESC)"
+      },
+      {
+        "tablename": "branch_settlements",
+        "indexname": "idx_branch_settlements_status_date",
+        "indexdef": "CREATE INDEX idx_branch_settlements_status_date ON public.branch_settlements USING btree (status, settlement_date DESC)"
+      },
+      {
+        "tablename": "branch_virtual_coverage",
+        "indexname": "branch_virtual_coverage_pkey",
+        "indexdef": "CREATE UNIQUE INDEX branch_virtual_coverage_pkey ON public.branch_virtual_coverage USING btree (branch_id, covered_branch_id)"
+      },
+      {
+        "tablename": "branch_virtual_coverage",
+        "indexname": "idx_branch_virtual_coverage_covered_branch",
+        "indexdef": "CREATE INDEX idx_branch_virtual_coverage_covered_branch ON public.branch_virtual_coverage USING btree (covered_branch_id)"
+      },
+      {
+        "tablename": "carriers",
+        "indexname": "carriers_code_key",
+        "indexdef": "CREATE UNIQUE INDEX carriers_code_key ON public.carriers USING btree (code)"
+      },
+      {
+        "tablename": "carriers",
+        "indexname": "carriers_pkey",
+        "indexdef": "CREATE UNIQUE INDEX carriers_pkey ON public.carriers USING btree (id)"
+      },
+      {
+        "tablename": "cod_collections",
+        "indexname": "cod_collections_parcel_id_key",
+        "indexdef": "CREATE UNIQUE INDEX cod_collections_parcel_id_key ON public.cod_collections USING btree (parcel_id)"
+      },
+      {
+        "tablename": "cod_collections",
+        "indexname": "cod_collections_pkey",
+        "indexdef": "CREATE UNIQUE INDEX cod_collections_pkey ON public.cod_collections USING btree (id)"
+      },
+      {
+        "tablename": "cod_collections",
+        "indexname": "idx_cod_collections_rider_payment_status",
+        "indexdef": "CREATE INDEX idx_cod_collections_rider_payment_status ON public.cod_collections USING btree (rider_id, rider_payment_status)"
+      },
+      {
+        "tablename": "cod_collections",
+        "indexname": "idx_cod_collections_rider_status",
+        "indexdef": "CREATE INDEX idx_cod_collections_rider_status ON public.cod_collections USING btree (rider_id, payment_status)"
+      },
+      {
+        "tablename": "cod_collections",
+        "indexname": "idx_cod_collections_vendor_status",
+        "indexdef": "CREATE INDEX idx_cod_collections_vendor_status ON public.cod_collections USING btree (vendor_id, payment_status)"
+      },
+      {
+        "tablename": "cod_settlement_requests",
+        "indexname": "cod_settlement_requests_one_live_per_vendor",
+        "indexdef": "CREATE UNIQUE INDEX cod_settlement_requests_one_live_per_vendor ON public.cod_settlement_requests USING btree (vendor_id) WHERE (status = ANY (ARRAY['open'::cod_settlement_request_status, 'in_progress'::cod_settlement_request_status]))"
+      },
+      {
+        "tablename": "cod_settlement_requests",
+        "indexname": "cod_settlement_requests_pkey",
+        "indexdef": "CREATE UNIQUE INDEX cod_settlement_requests_pkey ON public.cod_settlement_requests USING btree (id)"
+      },
+      {
+        "tablename": "cod_settlement_requests",
+        "indexname": "cod_settlement_requests_request_no_key",
+        "indexdef": "CREATE UNIQUE INDEX cod_settlement_requests_request_no_key ON public.cod_settlement_requests USING btree (request_no)"
+      },
+      {
+        "tablename": "cod_settlement_requests",
+        "indexname": "idx_cod_settlement_requests_status",
+        "indexdef": "CREATE INDEX idx_cod_settlement_requests_status ON public.cod_settlement_requests USING btree (status, created_at DESC)"
+      },
+      {
+        "tablename": "cod_settlement_requests",
+        "indexname": "idx_cod_settlement_requests_vendor",
+        "indexdef": "CREATE INDEX idx_cod_settlement_requests_vendor ON public.cod_settlement_requests USING btree (vendor_id, created_at DESC)"
+      },
+      {
+        "tablename": "delivery_rates",
+        "indexname": "delivery_rates_origin_location_id_destination_location_id_key",
+        "indexdef": "CREATE UNIQUE INDEX delivery_rates_origin_location_id_destination_location_id_key ON public.delivery_rates USING btree (origin_location_id, destination_location_id)"
+      },
+      {
+        "tablename": "delivery_rates",
+        "indexname": "delivery_rates_pkey",
+        "indexdef": "CREATE UNIQUE INDEX delivery_rates_pkey ON public.delivery_rates USING btree (id)"
+      },
+      {
+        "tablename": "dispatch_parcels",
+        "indexname": "dispatch_parcels_pkey",
+        "indexdef": "CREATE UNIQUE INDEX dispatch_parcels_pkey ON public.dispatch_parcels USING btree (dispatch_id, parcel_id)"
+      },
+      {
+        "tablename": "dispatch_parcels",
+        "indexname": "idx_dispatch_parcels_parcel_id",
+        "indexdef": "CREATE INDEX idx_dispatch_parcels_parcel_id ON public.dispatch_parcels USING btree (parcel_id)"
+      },
+      {
+        "tablename": "dispatches",
+        "indexname": "dispatches_dispatch_no_key",
+        "indexdef": "CREATE UNIQUE INDEX dispatches_dispatch_no_key ON public.dispatches USING btree (dispatch_no)"
+      },
+      {
+        "tablename": "dispatches",
+        "indexname": "dispatches_pkey",
+        "indexdef": "CREATE UNIQUE INDEX dispatches_pkey ON public.dispatches USING btree (id)"
+      },
+      {
+        "tablename": "dispatches",
+        "indexname": "idx_dispatches_delivery_rider",
+        "indexdef": "CREATE INDEX idx_dispatches_delivery_rider ON public.dispatches USING btree (delivery_rider_id)"
+      },
+      {
+        "tablename": "dispatches",
+        "indexname": "idx_dispatches_dispatched_at",
+        "indexdef": "CREATE INDEX idx_dispatches_dispatched_at ON public.dispatches USING btree (dispatched_at)"
+      },
+      {
+        "tablename": "dispatches",
+        "indexname": "idx_dispatches_dispatched_by",
+        "indexdef": "CREATE INDEX idx_dispatches_dispatched_by ON public.dispatches USING btree (dispatched_by)"
+      },
+      {
+        "tablename": "dispatches",
+        "indexname": "idx_dispatches_locations",
+        "indexdef": "CREATE INDEX idx_dispatches_locations ON public.dispatches USING btree (from_location_id, to_location_id)"
+      },
+      {
+        "tablename": "dispatches",
+        "indexname": "idx_dispatches_to_location",
+        "indexdef": "CREATE INDEX idx_dispatches_to_location ON public.dispatches USING btree (to_location_id)"
+      },
+      {
+        "tablename": "expenses",
+        "indexname": "expenses_expense_no_key",
+        "indexdef": "CREATE UNIQUE INDEX expenses_expense_no_key ON public.expenses USING btree (expense_no)"
+      },
+      {
+        "tablename": "expenses",
+        "indexname": "expenses_pkey",
+        "indexdef": "CREATE UNIQUE INDEX expenses_pkey ON public.expenses USING btree (id)"
+      },
+      {
+        "tablename": "expenses",
+        "indexname": "idx_expenses_account",
+        "indexdef": "CREATE INDEX idx_expenses_account ON public.expenses USING btree (account_id, expense_date DESC)"
+      },
+      {
+        "tablename": "expenses",
+        "indexname": "idx_expenses_date",
+        "indexdef": "CREATE INDEX idx_expenses_date ON public.expenses USING btree (expense_date DESC)"
+      },
+      {
+        "tablename": "expenses",
+        "indexname": "idx_expenses_party",
+        "indexdef": "CREATE INDEX idx_expenses_party ON public.expenses USING btree (party_type, party_id, expense_date DESC)"
+      },
+      {
+        "tablename": "expenses",
+        "indexname": "idx_expenses_status",
+        "indexdef": "CREATE INDEX idx_expenses_status ON public.expenses USING btree (status, expense_date DESC)"
+      },
+      {
+        "tablename": "journal_entries",
+        "indexname": "idx_journal_entries_entry_date",
+        "indexdef": "CREATE INDEX idx_journal_entries_entry_date ON public.journal_entries USING btree (entry_date DESC)"
+      },
+      {
+        "tablename": "journal_entries",
+        "indexname": "idx_journal_entries_period",
+        "indexdef": "CREATE INDEX idx_journal_entries_period ON public.journal_entries USING btree (period_key, entry_date)"
+      },
+      {
+        "tablename": "journal_entries",
+        "indexname": "idx_journal_entries_reversal_of",
+        "indexdef": "CREATE INDEX idx_journal_entries_reversal_of ON public.journal_entries USING btree (reversal_of_id)"
+      },
+      {
+        "tablename": "journal_entries",
+        "indexname": "idx_journal_entries_source_lookup",
+        "indexdef": "CREATE INDEX idx_journal_entries_source_lookup ON public.journal_entries USING btree (source_type, source_id)"
+      },
+      {
+        "tablename": "journal_entries",
+        "indexname": "journal_entries_entry_no_key",
+        "indexdef": "CREATE UNIQUE INDEX journal_entries_entry_no_key ON public.journal_entries USING btree (entry_no)"
+      },
+      {
+        "tablename": "journal_entries",
+        "indexname": "journal_entries_pkey",
+        "indexdef": "CREATE UNIQUE INDEX journal_entries_pkey ON public.journal_entries USING btree (id)"
+      },
+      {
+        "tablename": "journal_entries",
+        "indexname": "uq_journal_entries_source",
+        "indexdef": "CREATE UNIQUE INDEX uq_journal_entries_source ON public.journal_entries USING btree (source_type, source_id, event_key)"
+      },
+      {
+        "tablename": "journal_lines",
+        "indexname": "idx_journal_lines_account_date",
+        "indexdef": "CREATE INDEX idx_journal_lines_account_date ON public.journal_lines USING btree (account_id, entry_date DESC)"
+      },
+      {
+        "tablename": "journal_lines",
+        "indexname": "idx_journal_lines_entry_id",
+        "indexdef": "CREATE INDEX idx_journal_lines_entry_id ON public.journal_lines USING btree (entry_id)"
+      },
+      {
+        "tablename": "journal_lines",
+        "indexname": "idx_journal_lines_parcel_id",
+        "indexdef": "CREATE INDEX idx_journal_lines_parcel_id ON public.journal_lines USING btree (parcel_id)"
+      },
+      {
+        "tablename": "journal_lines",
+        "indexname": "idx_journal_lines_party_date",
+        "indexdef": "CREATE INDEX idx_journal_lines_party_date ON public.journal_lines USING btree (party_type, party_id, entry_date DESC)"
+      },
+      {
+        "tablename": "journal_lines",
+        "indexname": "journal_lines_pkey",
+        "indexdef": "CREATE UNIQUE INDEX journal_lines_pkey ON public.journal_lines USING btree (id)"
+      },
+      {
+        "tablename": "journal_lines",
+        "indexname": "uq_journal_lines_entry_line",
+        "indexdef": "CREATE UNIQUE INDEX uq_journal_lines_entry_line ON public.journal_lines USING btree (entry_id, line_no)"
+      },
+      {
+        "tablename": "ledger_accounts",
+        "indexname": "idx_ledger_accounts_parent_id",
+        "indexdef": "CREATE INDEX idx_ledger_accounts_parent_id ON public.ledger_accounts USING btree (parent_id)"
+      },
+      {
+        "tablename": "ledger_accounts",
+        "indexname": "idx_ledger_accounts_type_code",
+        "indexdef": "CREATE INDEX idx_ledger_accounts_type_code ON public.ledger_accounts USING btree (type, code)"
+      },
+      {
+        "tablename": "ledger_accounts",
+        "indexname": "idx_ledger_accounts_type_sub_type",
+        "indexdef": "CREATE INDEX idx_ledger_accounts_type_sub_type ON public.ledger_accounts USING btree (type, sub_type, code)"
+      },
+      {
+        "tablename": "ledger_accounts",
+        "indexname": "ledger_accounts_code_key",
+        "indexdef": "CREATE UNIQUE INDEX ledger_accounts_code_key ON public.ledger_accounts USING btree (code)"
+      },
+      {
+        "tablename": "ledger_accounts",
+        "indexname": "ledger_accounts_pkey",
+        "indexdef": "CREATE UNIQUE INDEX ledger_accounts_pkey ON public.ledger_accounts USING btree (id)"
+      },
+      {
+        "tablename": "locations",
+        "indexname": "idx_locations_name_trgm",
+        "indexdef": "CREATE INDEX idx_locations_name_trgm ON public.locations USING gin (name gin_trgm_ops)"
+      },
+      {
+        "tablename": "locations",
+        "indexname": "idx_locations_parent_id",
+        "indexdef": "CREATE INDEX idx_locations_parent_id ON public.locations USING btree (parent_id)"
+      },
+      {
+        "tablename": "locations",
+        "indexname": "locations_code_key",
+        "indexdef": "CREATE UNIQUE INDEX locations_code_key ON public.locations USING btree (code)"
+      },
+      {
+        "tablename": "locations",
+        "indexname": "locations_pkey",
+        "indexdef": "CREATE UNIQUE INDEX locations_pkey ON public.locations USING btree (id)"
+      },
+      {
+        "tablename": "notifications",
+        "indexname": "idx_notifications_user_read",
+        "indexdef": "CREATE INDEX idx_notifications_user_read ON public.notifications USING btree (user_id, read_at)"
+      },
+      {
+        "tablename": "notifications",
+        "indexname": "notifications_pkey",
+        "indexdef": "CREATE UNIQUE INDEX notifications_pkey ON public.notifications USING btree (id)"
+      },
+      {
+        "tablename": "parcel_exceptions",
+        "indexname": "idx_parcel_exceptions_parcel_id",
+        "indexdef": "CREATE INDEX idx_parcel_exceptions_parcel_id ON public.parcel_exceptions USING btree (parcel_id)"
+      },
+      {
+        "tablename": "parcel_exceptions",
+        "indexname": "idx_parcel_exceptions_reported_by",
+        "indexdef": "CREATE INDEX idx_parcel_exceptions_reported_by ON public.parcel_exceptions USING btree (reported_by)"
+      },
+      {
+        "tablename": "parcel_exceptions",
+        "indexname": "idx_parcel_exceptions_resolved_by",
+        "indexdef": "CREATE INDEX idx_parcel_exceptions_resolved_by ON public.parcel_exceptions USING btree (resolved_by)"
+      },
+      {
+        "tablename": "parcel_exceptions",
+        "indexname": "idx_parcel_exceptions_type_status",
+        "indexdef": "CREATE INDEX idx_parcel_exceptions_type_status ON public.parcel_exceptions USING btree (exception_type, status)"
+      },
+      {
+        "tablename": "parcel_exceptions",
+        "indexname": "parcel_exceptions_pkey",
+        "indexdef": "CREATE UNIQUE INDEX parcel_exceptions_pkey ON public.parcel_exceptions USING btree (id)"
+      },
+      {
+        "tablename": "parcel_redirects",
+        "indexname": "idx_parcel_redirects_created_at",
+        "indexdef": "CREATE INDEX idx_parcel_redirects_created_at ON public.parcel_redirects USING btree (created_at DESC)"
+      },
+      {
+        "tablename": "parcel_redirects",
+        "indexname": "idx_parcel_redirects_parcel_id",
+        "indexdef": "CREATE INDEX idx_parcel_redirects_parcel_id ON public.parcel_redirects USING btree (parcel_id, created_at DESC)"
+      },
+      {
+        "tablename": "parcel_redirects",
+        "indexname": "idx_parcel_redirects_to_location",
+        "indexdef": "CREATE INDEX idx_parcel_redirects_to_location ON public.parcel_redirects USING btree (to_location_id)"
+      },
+      {
+        "tablename": "parcel_redirects",
+        "indexname": "parcel_redirects_pkey",
+        "indexdef": "CREATE UNIQUE INDEX parcel_redirects_pkey ON public.parcel_redirects USING btree (id)"
+      },
+      {
+        "tablename": "parcel_remarks",
+        "indexname": "idx_parcel_remarks_location_id",
+        "indexdef": "CREATE INDEX idx_parcel_remarks_location_id ON public.parcel_remarks USING btree (location_id)"
+      },
+      {
+        "tablename": "parcel_remarks",
+        "indexname": "idx_parcel_remarks_parcel_id",
+        "indexdef": "CREATE INDEX idx_parcel_remarks_parcel_id ON public.parcel_remarks USING btree (parcel_id, created_at DESC)"
+      },
+      {
+        "tablename": "parcel_remarks",
+        "indexname": "idx_parcel_remarks_parent_remark_id",
+        "indexdef": "CREATE INDEX idx_parcel_remarks_parent_remark_id ON public.parcel_remarks USING btree (parent_remark_id)"
+      },
+      {
+        "tablename": "parcel_remarks",
+        "indexname": "idx_parcel_remarks_user_id",
+        "indexdef": "CREATE INDEX idx_parcel_remarks_user_id ON public.parcel_remarks USING btree (user_id)"
+      },
+      {
+        "tablename": "parcel_remarks",
+        "indexname": "parcel_remarks_pkey",
+        "indexdef": "CREATE UNIQUE INDEX parcel_remarks_pkey ON public.parcel_remarks USING btree (id)"
+      },
+      {
+        "tablename": "parcel_status_history",
+        "indexname": "idx_parcel_status_history_changed_by",
+        "indexdef": "CREATE INDEX idx_parcel_status_history_changed_by ON public.parcel_status_history USING btree (changed_by)"
+      },
+      {
+        "tablename": "parcel_status_history",
+        "indexname": "idx_parcel_status_history_location_id",
+        "indexdef": "CREATE INDEX idx_parcel_status_history_location_id ON public.parcel_status_history USING btree (location_id)"
+      },
+      {
+        "tablename": "parcel_status_history",
+        "indexname": "idx_parcel_status_history_parcel_id",
+        "indexdef": "CREATE INDEX idx_parcel_status_history_parcel_id ON public.parcel_status_history USING btree (parcel_id, created_at DESC)"
+      },
+      {
+        "tablename": "parcel_status_history",
+        "indexname": "parcel_status_history_pkey",
+        "indexdef": "CREATE UNIQUE INDEX parcel_status_history_pkey ON public.parcel_status_history USING btree (id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_carrier_id",
+        "indexdef": "CREATE INDEX idx_parcels_carrier_id ON public.parcels USING btree (carrier_id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_created_at",
+        "indexdef": "CREATE INDEX idx_parcels_created_at ON public.parcels USING btree (created_at DESC)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_created_by",
+        "indexdef": "CREATE INDEX idx_parcels_created_by ON public.parcels USING btree (created_by)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_current_location",
+        "indexdef": "CREATE INDEX idx_parcels_current_location ON public.parcels USING btree (current_location_id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_delivered_at",
+        "indexdef": "CREATE INDEX idx_parcels_delivered_at ON public.parcels USING btree (delivered_at DESC)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_delivery_rider",
+        "indexdef": "CREATE INDEX idx_parcels_delivery_rider ON public.parcels USING btree (delivery_rider_id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_destination_location",
+        "indexdef": "CREATE INDEX idx_parcels_destination_location ON public.parcels USING btree (destination_location_id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_order_number_id",
+        "indexdef": "CREATE INDEX idx_parcels_order_number_id ON public.parcels USING btree (order_number DESC, id DESC)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_order_type_order_number_id",
+        "indexdef": "CREATE INDEX idx_parcels_order_type_order_number_id ON public.parcels USING btree (order_type, order_number DESC, id DESC)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_origin_location",
+        "indexdef": "CREATE INDEX idx_parcels_origin_location ON public.parcels USING btree (origin_location_id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_pickup_rider",
+        "indexdef": "CREATE INDEX idx_parcels_pickup_rider ON public.parcels USING btree (pickup_rider_id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_receiver_id",
+        "indexdef": "CREATE INDEX idx_parcels_receiver_id ON public.parcels USING btree (receiver_id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_search_text",
+        "indexdef": "CREATE INDEX idx_parcels_search_text ON public.parcels USING gin (search_text gin_trgm_ops)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_sender_id",
+        "indexdef": "CREATE INDEX idx_parcels_sender_id ON public.parcels USING btree (sender_id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_source_order_id",
+        "indexdef": "CREATE INDEX idx_parcels_source_order_id ON public.parcels USING btree (source_order_id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_status",
+        "indexdef": "CREATE INDEX idx_parcels_status ON public.parcels USING btree (status)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_status_order_number_id",
+        "indexdef": "CREATE INDEX idx_parcels_status_order_number_id ON public.parcels USING btree (status, order_number DESC, id DESC)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_updated_at",
+        "indexdef": "CREATE INDEX idx_parcels_updated_at ON public.parcels USING btree (updated_at)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_vendor_id",
+        "indexdef": "CREATE INDEX idx_parcels_vendor_id ON public.parcels USING btree (vendor_id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "idx_parcels_vendor_status_charge",
+        "indexdef": "CREATE INDEX idx_parcels_vendor_status_charge ON public.parcels USING btree (vendor_id, status) WHERE (deleted_at IS NULL)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "parcel_active_voucher_claim",
+        "indexdef": "CREATE UNIQUE INDEX parcel_active_voucher_claim ON public.parcels USING btree (voucher_claim_id) WHERE (voucher_claim_id IS NOT NULL)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "parcels_pkey",
+        "indexdef": "CREATE UNIQUE INDEX parcels_pkey ON public.parcels USING btree (id)"
+      },
+      {
+        "tablename": "parcels",
+        "indexname": "parcels_tracking_id_key",
+        "indexdef": "CREATE UNIQUE INDEX parcels_tracking_id_key ON public.parcels USING btree (tracking_id)"
+      },
+      {
+        "tablename": "parties",
+        "indexname": "idx_parties_location_id",
+        "indexdef": "CREATE INDEX idx_parties_location_id ON public.parties USING btree (location_id)"
+      },
+      {
+        "tablename": "parties",
+        "indexname": "idx_parties_name_trgm",
+        "indexdef": "CREATE INDEX idx_parties_name_trgm ON public.parties USING gin (name gin_trgm_ops)"
+      },
+      {
+        "tablename": "parties",
+        "indexname": "idx_parties_phone",
+        "indexdef": "CREATE INDEX idx_parties_phone ON public.parties USING btree (phone)"
+      },
+      {
+        "tablename": "parties",
+        "indexname": "parties_pkey",
+        "indexdef": "CREATE UNIQUE INDEX parties_pkey ON public.parties USING btree (id)"
+      },
+      {
+        "tablename": "payment_methods",
+        "indexname": "payment_methods_name_key",
+        "indexdef": "CREATE UNIQUE INDEX payment_methods_name_key ON public.payment_methods USING btree (name)"
+      },
+      {
+        "tablename": "payment_methods",
+        "indexname": "payment_methods_pkey",
+        "indexdef": "CREATE UNIQUE INDEX payment_methods_pkey ON public.payment_methods USING btree (id)"
+      },
+      {
+        "tablename": "payment_methods",
+        "indexname": "uq_payment_methods_ledger_account",
+        "indexdef": "CREATE UNIQUE INDEX uq_payment_methods_ledger_account ON public.payment_methods USING btree (ledger_account_id) WHERE (ledger_account_id IS NOT NULL)"
+      },
+      {
+        "tablename": "pickup_tasks",
+        "indexname": "idx_pickup_tasks_rider_status",
+        "indexdef": "CREATE INDEX idx_pickup_tasks_rider_status ON public.pickup_tasks USING btree (rider_id, status)"
+      },
+      {
+        "tablename": "pickup_tasks",
+        "indexname": "pickup_tasks_parcel_id_key",
+        "indexdef": "CREATE UNIQUE INDEX pickup_tasks_parcel_id_key ON public.pickup_tasks USING btree (parcel_id)"
+      },
+      {
+        "tablename": "pickup_tasks",
+        "indexname": "pickup_tasks_pkey",
+        "indexdef": "CREATE UNIQUE INDEX pickup_tasks_pkey ON public.pickup_tasks USING btree (id)"
+      },
+      {
+        "tablename": "pickup_time_slots",
+        "indexname": "pickup_time_slots_pkey",
+        "indexdef": "CREATE UNIQUE INDEX pickup_time_slots_pkey ON public.pickup_time_slots USING btree (id)"
+      },
+      {
+        "tablename": "pricing_settings",
+        "indexname": "pricing_settings_pkey",
+        "indexdef": "CREATE UNIQUE INDEX pricing_settings_pkey ON public.pricing_settings USING btree (id)"
+      },
+      {
+        "tablename": "promotion_entries",
+        "indexname": "promotion_entries_grant_id_created_at_idx",
+        "indexdef": "CREATE INDEX promotion_entries_grant_id_created_at_idx ON public.promotion_entries USING btree (grant_id, created_at)"
+      },
+      {
+        "tablename": "promotion_entries",
+        "indexname": "promotion_entries_parcel_id_idx",
+        "indexdef": "CREATE INDEX promotion_entries_parcel_id_idx ON public.promotion_entries USING btree (parcel_id)"
+      },
+      {
+        "tablename": "promotion_entries",
+        "indexname": "promotion_entries_pkey",
+        "indexdef": "CREATE UNIQUE INDEX promotion_entries_pkey ON public.promotion_entries USING btree (id)"
+      },
+      {
+        "tablename": "promotion_entries",
+        "indexname": "promotion_entries_reverses_id_key",
+        "indexdef": "CREATE UNIQUE INDEX promotion_entries_reverses_id_key ON public.promotion_entries USING btree (reverses_id)"
+      },
+      {
+        "tablename": "promotion_grants",
+        "indexname": "promotion_grants_pkey",
+        "indexdef": "CREATE UNIQUE INDEX promotion_grants_pkey ON public.promotion_grants USING btree (id)"
+      },
+      {
+        "tablename": "promotion_grants",
+        "indexname": "promotion_grants_request_id_key",
+        "indexdef": "CREATE UNIQUE INDEX promotion_grants_request_id_key ON public.promotion_grants USING btree (request_id)"
+      },
+      {
+        "tablename": "promotion_grants",
+        "indexname": "promotion_grants_vendor_id_expires_at_idx",
+        "indexdef": "CREATE INDEX promotion_grants_vendor_id_expires_at_idx ON public.promotion_grants USING btree (vendor_id, expires_at)"
+      },
+      {
+        "tablename": "promotion_grants",
+        "indexname": "promotion_grants_vendor_id_kind_reference_key",
+        "indexdef": "CREATE UNIQUE INDEX promotion_grants_vendor_id_kind_reference_key ON public.promotion_grants USING btree (vendor_id, kind, reference)"
+      },
+      {
+        "tablename": "promotion_grants",
+        "indexname": "promotion_onboarding_once",
+        "indexdef": "CREATE UNIQUE INDEX promotion_onboarding_once ON public.promotion_grants USING btree (vendor_id) WHERE (kind = 'onboarding'::text)"
+      },
+      {
+        "tablename": "return_manifest_parcels",
+        "indexname": "idx_return_manifest_parcels_parcel_id",
+        "indexdef": "CREATE INDEX idx_return_manifest_parcels_parcel_id ON public.return_manifest_parcels USING btree (parcel_id)"
+      },
+      {
+        "tablename": "return_manifest_parcels",
+        "indexname": "return_manifest_parcels_pkey",
+        "indexdef": "CREATE UNIQUE INDEX return_manifest_parcels_pkey ON public.return_manifest_parcels USING btree (return_manifest_id, parcel_id)"
+      },
+      {
+        "tablename": "return_manifests",
+        "indexname": "idx_return_manifests_rider",
+        "indexdef": "CREATE INDEX idx_return_manifests_rider ON public.return_manifests USING btree (rider_id)"
+      },
+      {
+        "tablename": "return_manifests",
+        "indexname": "idx_return_manifests_status",
+        "indexdef": "CREATE INDEX idx_return_manifests_status ON public.return_manifests USING btree (status, created_at DESC)"
+      },
+      {
+        "tablename": "return_manifests",
+        "indexname": "idx_return_manifests_vendor",
+        "indexdef": "CREATE INDEX idx_return_manifests_vendor ON public.return_manifests USING btree (vendor_id, created_at DESC)"
+      },
+      {
+        "tablename": "return_manifests",
+        "indexname": "return_manifests_manifest_no_key",
+        "indexdef": "CREATE UNIQUE INDEX return_manifests_manifest_no_key ON public.return_manifests USING btree (manifest_no)"
+      },
+      {
+        "tablename": "return_manifests",
+        "indexname": "return_manifests_one_open_per_vendor",
+        "indexdef": "CREATE UNIQUE INDEX return_manifests_one_open_per_vendor ON public.return_manifests USING btree (vendor_id) WHERE (status = 'open'::return_manifest_status)"
+      },
+      {
+        "tablename": "return_manifests",
+        "indexname": "return_manifests_pkey",
+        "indexdef": "CREATE UNIQUE INDEX return_manifests_pkey ON public.return_manifests USING btree (id)"
+      },
+      {
+        "tablename": "riders",
+        "indexname": "idx_riders_location_id",
+        "indexdef": "CREATE INDEX idx_riders_location_id ON public.riders USING btree (location_id)"
+      },
+      {
+        "tablename": "riders",
+        "indexname": "riders_employee_number_key",
+        "indexdef": "CREATE UNIQUE INDEX riders_employee_number_key ON public.riders USING btree (employee_number)"
+      },
+      {
+        "tablename": "riders",
+        "indexname": "riders_phone_key",
+        "indexdef": "CREATE UNIQUE INDEX riders_phone_key ON public.riders USING btree (phone)"
+      },
+      {
+        "tablename": "riders",
+        "indexname": "riders_pkey",
+        "indexdef": "CREATE UNIQUE INDEX riders_pkey ON public.riders USING btree (id)"
+      },
+      {
+        "tablename": "riders",
+        "indexname": "riders_user_id_key",
+        "indexdef": "CREATE UNIQUE INDEX riders_user_id_key ON public.riders USING btree (user_id)"
+      },
+      {
+        "tablename": "roles",
+        "indexname": "roles_code_key",
+        "indexdef": "CREATE UNIQUE INDEX roles_code_key ON public.roles USING btree (code)"
+      },
+      {
+        "tablename": "roles",
+        "indexname": "roles_pkey",
+        "indexdef": "CREATE UNIQUE INDEX roles_pkey ON public.roles USING btree (id)"
+      },
+      {
+        "tablename": "run_sheet_parcels",
+        "indexname": "idx_run_sheet_parcels_parcel_id",
+        "indexdef": "CREATE INDEX idx_run_sheet_parcels_parcel_id ON public.run_sheet_parcels USING btree (parcel_id)"
+      },
+      {
+        "tablename": "run_sheet_parcels",
+        "indexname": "run_sheet_parcels_pkey",
+        "indexdef": "CREATE UNIQUE INDEX run_sheet_parcels_pkey ON public.run_sheet_parcels USING btree (run_sheet_id, parcel_id)"
+      },
+      {
+        "tablename": "run_sheets",
+        "indexname": "idx_run_sheets_created_at",
+        "indexdef": "CREATE INDEX idx_run_sheets_created_at ON public.run_sheets USING btree (created_at DESC)"
+      },
+      {
+        "tablename": "run_sheets",
+        "indexname": "idx_run_sheets_rider_created",
+        "indexdef": "CREATE INDEX idx_run_sheets_rider_created ON public.run_sheets USING btree (rider_id, created_at DESC)"
+      },
+      {
+        "tablename": "run_sheets",
+        "indexname": "run_sheets_pkey",
+        "indexdef": "CREATE UNIQUE INDEX run_sheets_pkey ON public.run_sheets USING btree (id)"
+      },
+      {
+        "tablename": "run_sheets",
+        "indexname": "run_sheets_sheet_no_key",
+        "indexdef": "CREATE UNIQUE INDEX run_sheets_sheet_no_key ON public.run_sheets USING btree (sheet_no)"
+      },
+      {
+        "tablename": "settlement_documents",
+        "indexname": "idx_settlement_documents_payment_id",
+        "indexdef": "CREATE INDEX idx_settlement_documents_payment_id ON public.settlement_documents USING btree (settlement_payment_id)"
+      },
+      {
+        "tablename": "settlement_documents",
+        "indexname": "idx_settlement_documents_settlement_kind",
+        "indexdef": "CREATE INDEX idx_settlement_documents_settlement_kind ON public.settlement_documents USING btree (settlement_id, kind)"
+      },
+      {
+        "tablename": "settlement_documents",
+        "indexname": "settlement_documents_pkey",
+        "indexdef": "CREATE UNIQUE INDEX settlement_documents_pkey ON public.settlement_documents USING btree (id)"
+      },
+      {
+        "tablename": "settlement_items",
+        "indexname": "settlement_items_pkey",
+        "indexdef": "CREATE UNIQUE INDEX settlement_items_pkey ON public.settlement_items USING btree (settlement_id, cod_collection_id)"
+      },
+      {
+        "tablename": "settlement_payments",
+        "indexname": "idx_settlement_payments_settlement_id",
+        "indexdef": "CREATE INDEX idx_settlement_payments_settlement_id ON public.settlement_payments USING btree (settlement_id)"
+      },
+      {
+        "tablename": "settlement_payments",
+        "indexname": "settlement_payments_pkey",
+        "indexdef": "CREATE UNIQUE INDEX settlement_payments_pkey ON public.settlement_payments USING btree (id)"
+      },
+      {
+        "tablename": "settlements",
+        "indexname": "idx_settlements_approved_by",
+        "indexdef": "CREATE INDEX idx_settlements_approved_by ON public.settlements USING btree (approved_by)"
+      },
+      {
+        "tablename": "settlements",
+        "indexname": "idx_settlements_settled_by",
+        "indexdef": "CREATE INDEX idx_settlements_settled_by ON public.settlements USING btree (settled_by)"
+      },
+      {
+        "tablename": "settlements",
+        "indexname": "idx_settlements_settlement_date",
+        "indexdef": "CREATE INDEX idx_settlements_settlement_date ON public.settlements USING btree (settlement_date)"
+      },
+      {
+        "tablename": "settlements",
+        "indexname": "settlements_pkey",
+        "indexdef": "CREATE UNIQUE INDEX settlements_pkey ON public.settlements USING btree (id)"
+      },
+      {
+        "tablename": "settlements",
+        "indexname": "settlements_statement_id_key",
+        "indexdef": "CREATE UNIQUE INDEX settlements_statement_id_key ON public.settlements USING btree (statement_id)"
+      },
+      {
+        "tablename": "sla_settings",
+        "indexname": "sla_settings_pkey",
+        "indexdef": "CREATE UNIQUE INDEX sla_settings_pkey ON public.sla_settings USING btree (id)"
+      },
+      {
+        "tablename": "sla_settings",
+        "indexname": "sla_settings_status_key_key",
+        "indexdef": "CREATE UNIQUE INDEX sla_settings_status_key_key ON public.sla_settings USING btree (status_key)"
+      },
+      {
+        "tablename": "support_tickets",
+        "indexname": "idx_support_tickets_assigned_to",
+        "indexdef": "CREATE INDEX idx_support_tickets_assigned_to ON public.support_tickets USING btree (assigned_to)"
+      },
+      {
+        "tablename": "support_tickets",
+        "indexname": "idx_support_tickets_created_by",
+        "indexdef": "CREATE INDEX idx_support_tickets_created_by ON public.support_tickets USING btree (created_by)"
+      },
+      {
+        "tablename": "support_tickets",
+        "indexname": "idx_support_tickets_parcel_id",
+        "indexdef": "CREATE INDEX idx_support_tickets_parcel_id ON public.support_tickets USING btree (parcel_id)"
+      },
+      {
+        "tablename": "support_tickets",
+        "indexname": "idx_support_tickets_status",
+        "indexdef": "CREATE INDEX idx_support_tickets_status ON public.support_tickets USING btree (status, created_at DESC)"
+      },
+      {
+        "tablename": "support_tickets",
+        "indexname": "support_tickets_pkey",
+        "indexdef": "CREATE UNIQUE INDEX support_tickets_pkey ON public.support_tickets USING btree (id)"
+      },
+      {
+        "tablename": "support_tickets",
+        "indexname": "support_tickets_ticket_no_key",
+        "indexdef": "CREATE UNIQUE INDEX support_tickets_ticket_no_key ON public.support_tickets USING btree (ticket_no)"
+      },
+      {
+        "tablename": "ticket_replies",
+        "indexname": "idx_ticket_replies_ticket_id",
+        "indexdef": "CREATE INDEX idx_ticket_replies_ticket_id ON public.ticket_replies USING btree (ticket_id, created_at)"
+      },
+      {
+        "tablename": "ticket_replies",
+        "indexname": "ticket_replies_pkey",
+        "indexdef": "CREATE UNIQUE INDEX ticket_replies_pkey ON public.ticket_replies USING btree (id)"
+      },
+      {
+        "tablename": "transit_manifest_parcels",
+        "indexname": "idx_transit_manifest_parcels_parcel_id",
+        "indexdef": "CREATE INDEX idx_transit_manifest_parcels_parcel_id ON public.transit_manifest_parcels USING btree (parcel_id)"
+      },
+      {
+        "tablename": "transit_manifest_parcels",
+        "indexname": "transit_manifest_parcels_pkey",
+        "indexdef": "CREATE UNIQUE INDEX transit_manifest_parcels_pkey ON public.transit_manifest_parcels USING btree (transit_manifest_id, parcel_id)"
+      },
+      {
+        "tablename": "transit_manifests",
+        "indexname": "idx_transit_manifests_route",
+        "indexdef": "CREATE INDEX idx_transit_manifests_route ON public.transit_manifests USING btree (from_location_id, to_location_id)"
+      },
+      {
+        "tablename": "transit_manifests",
+        "indexname": "idx_transit_manifests_status",
+        "indexdef": "CREATE INDEX idx_transit_manifests_status ON public.transit_manifests USING btree (status, created_at DESC)"
+      },
+      {
+        "tablename": "transit_manifests",
+        "indexname": "transit_manifests_manifest_no_key",
+        "indexdef": "CREATE UNIQUE INDEX transit_manifests_manifest_no_key ON public.transit_manifests USING btree (manifest_no)"
+      },
+      {
+        "tablename": "transit_manifests",
+        "indexname": "transit_manifests_pkey",
+        "indexdef": "CREATE UNIQUE INDEX transit_manifests_pkey ON public.transit_manifests USING btree (id)"
+      },
+      {
+        "tablename": "user_roles",
+        "indexname": "user_roles_pkey",
+        "indexdef": "CREATE UNIQUE INDEX user_roles_pkey ON public.user_roles USING btree (user_id, role_id)"
+      },
+      {
+        "tablename": "users",
+        "indexname": "users_email_key",
+        "indexdef": "CREATE UNIQUE INDEX users_email_key ON public.users USING btree (email)"
+      },
+      {
+        "tablename": "users",
+        "indexname": "users_phone_key",
+        "indexdef": "CREATE UNIQUE INDEX users_phone_key ON public.users USING btree (phone)"
+      },
+      {
+        "tablename": "users",
+        "indexname": "users_pkey",
+        "indexdef": "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"
+      },
+      {
+        "tablename": "vendor_kyc_applications",
+        "indexname": "idx_kyc_created_at",
+        "indexdef": "CREATE INDEX idx_kyc_created_at ON public.vendor_kyc_applications USING btree (created_at DESC)"
+      },
+      {
+        "tablename": "vendor_kyc_applications",
+        "indexname": "idx_kyc_status",
+        "indexdef": "CREATE INDEX idx_kyc_status ON public.vendor_kyc_applications USING btree (status)"
+      },
+      {
+        "tablename": "vendor_kyc_applications",
+        "indexname": "idx_kyc_vendor_id",
+        "indexdef": "CREATE INDEX idx_kyc_vendor_id ON public.vendor_kyc_applications USING btree (vendor_id)"
+      },
+      {
+        "tablename": "vendor_kyc_applications",
+        "indexname": "kyc_one_pending_per_vendor",
+        "indexdef": "CREATE UNIQUE INDEX kyc_one_pending_per_vendor ON public.vendor_kyc_applications USING btree (vendor_id) WHERE ((vendor_id IS NOT NULL) AND (status = 'pending'::kyc_status))"
+      },
+      {
+        "tablename": "vendor_kyc_applications",
+        "indexname": "vendor_kyc_applications_pkey",
+        "indexdef": "CREATE UNIQUE INDEX vendor_kyc_applications_pkey ON public.vendor_kyc_applications USING btree (id)"
+      },
+      {
+        "tablename": "vendor_payments",
+        "indexname": "idx_vendor_payments_status_created",
+        "indexdef": "CREATE INDEX idx_vendor_payments_status_created ON public.vendor_payments USING btree (status, created_at DESC)"
+      },
+      {
+        "tablename": "vendor_payments",
+        "indexname": "idx_vendor_payments_vendor_status",
+        "indexdef": "CREATE INDEX idx_vendor_payments_vendor_status ON public.vendor_payments USING btree (vendor_id, status)"
+      },
+      {
+        "tablename": "vendor_payments",
+        "indexname": "vendor_payments_pkey",
+        "indexdef": "CREATE UNIQUE INDEX vendor_payments_pkey ON public.vendor_payments USING btree (id)"
+      },
+      {
+        "tablename": "vendor_staff",
+        "indexname": "idx_vendor_staff_vendor_id",
+        "indexdef": "CREATE INDEX idx_vendor_staff_vendor_id ON public.vendor_staff USING btree (vendor_id)"
+      },
+      {
+        "tablename": "vendor_staff",
+        "indexname": "vendor_staff_pkey",
+        "indexdef": "CREATE UNIQUE INDEX vendor_staff_pkey ON public.vendor_staff USING btree (id)"
+      },
+      {
+        "tablename": "vendor_staff",
+        "indexname": "vendor_staff_user_id_key",
+        "indexdef": "CREATE UNIQUE INDEX vendor_staff_user_id_key ON public.vendor_staff USING btree (user_id)"
+      },
+      {
+        "tablename": "vendor_volume_settings",
+        "indexname": "vendor_volume_settings_pkey",
+        "indexdef": "CREATE UNIQUE INDEX vendor_volume_settings_pkey ON public.vendor_volume_settings USING btree (id)"
+      },
+      {
+        "tablename": "vendors",
+        "indexname": "idx_vendors_location_id",
+        "indexdef": "CREATE INDEX idx_vendors_location_id ON public.vendors USING btree (location_id)"
+      },
+      {
+        "tablename": "vendors",
+        "indexname": "idx_vendors_sales_user_id",
+        "indexdef": "CREATE INDEX idx_vendors_sales_user_id ON public.vendors USING btree (sales_user_id)"
+      },
+      {
+        "tablename": "vendors",
+        "indexname": "idx_vendors_search_text",
+        "indexdef": "CREATE INDEX idx_vendors_search_text ON public.vendors USING gin (search_text gin_trgm_ops)"
+      },
+      {
+        "tablename": "vendors",
+        "indexname": "vendors_pkey",
+        "indexdef": "CREATE UNIQUE INDEX vendors_pkey ON public.vendors USING btree (id)"
+      },
+      {
+        "tablename": "vendors",
+        "indexname": "vendors_user_id_key",
+        "indexdef": "CREATE UNIQUE INDEX vendors_user_id_key ON public.vendors USING btree (user_id)"
+      },
+      {
+        "tablename": "voucher_campaigns",
+        "indexname": "voucher_campaigns_pkey",
+        "indexdef": "CREATE UNIQUE INDEX voucher_campaigns_pkey ON public.voucher_campaigns USING btree (id)"
+      },
+      {
+        "tablename": "voucher_claims",
+        "indexname": "voucher_claims_parcel_id_key",
+        "indexdef": "CREATE UNIQUE INDEX voucher_claims_parcel_id_key ON public.voucher_claims USING btree (parcel_id)"
+      },
+      {
+        "tablename": "voucher_claims",
+        "indexname": "voucher_claims_pkey",
+        "indexdef": "CREATE UNIQUE INDEX voucher_claims_pkey ON public.voucher_claims USING btree (id)"
+      },
+      {
+        "tablename": "voucher_claims",
+        "indexname": "voucher_claims_vendor_id_claimed_at_idx",
+        "indexdef": "CREATE INDEX voucher_claims_vendor_id_claimed_at_idx ON public.voucher_claims USING btree (vendor_id, claimed_at)"
+      },
+      {
+        "tablename": "voucher_claims",
+        "indexname": "voucher_claims_voucher_id_vendor_id_idx",
+        "indexdef": "CREATE INDEX voucher_claims_voucher_id_vendor_id_idx ON public.voucher_claims USING btree (voucher_id, vendor_id)"
+      },
+      {
+        "tablename": "voucher_events",
+        "indexname": "voucher_events_claim_id_created_at_idx",
+        "indexdef": "CREATE INDEX voucher_events_claim_id_created_at_idx ON public.voucher_events USING btree (claim_id, created_at)"
+      },
+      {
+        "tablename": "voucher_events",
+        "indexname": "voucher_events_pkey",
+        "indexdef": "CREATE UNIQUE INDEX voucher_events_pkey ON public.voucher_events USING btree (id)"
+      },
+      {
+        "tablename": "vouchers",
+        "indexname": "vouchers_campaign_id_idx",
+        "indexdef": "CREATE INDEX vouchers_campaign_id_idx ON public.vouchers USING btree (campaign_id)"
+      },
+      {
+        "tablename": "vouchers",
+        "indexname": "vouchers_code_key",
+        "indexdef": "CREATE UNIQUE INDEX vouchers_code_key ON public.vouchers USING btree (code)"
+      },
+      {
+        "tablename": "vouchers",
+        "indexname": "vouchers_pkey",
+        "indexdef": "CREATE UNIQUE INDEX vouchers_pkey ON public.vouchers USING btree (id)"
+      },
+      {
+        "tablename": "webhook_deliveries",
+        "indexname": "idx_webhook_deliveries_endpoint_id",
+        "indexdef": "CREATE INDEX idx_webhook_deliveries_endpoint_id ON public.webhook_deliveries USING btree (webhook_endpoint_id, created_at DESC)"
+      },
+      {
+        "tablename": "webhook_deliveries",
+        "indexname": "idx_webhook_deliveries_pending_sweep",
+        "indexdef": "CREATE INDEX idx_webhook_deliveries_pending_sweep ON public.webhook_deliveries USING btree (status, next_attempt_at)"
+      },
+      {
+        "tablename": "webhook_deliveries",
+        "indexname": "webhook_deliveries_pkey",
+        "indexdef": "CREATE UNIQUE INDEX webhook_deliveries_pkey ON public.webhook_deliveries USING btree (id)"
+      },
+      {
+        "tablename": "webhook_endpoints",
+        "indexname": "idx_webhook_endpoints_vendor_id",
+        "indexdef": "CREATE INDEX idx_webhook_endpoints_vendor_id ON public.webhook_endpoints USING btree (vendor_id)"
+      },
+      {
+        "tablename": "webhook_endpoints",
+        "indexname": "webhook_endpoints_pkey",
+        "indexdef": "CREATE UNIQUE INDEX webhook_endpoints_pkey ON public.webhook_endpoints USING btree (id)"
+      }
+    ],
+    "invalidIndexes": [],
+    "extensions": [
+      {
+        "extname": "pg_trgm",
+        "extversion": "1.6"
+      },
+      {
+        "extname": "plpgsql",
+        "extversion": "1.0"
+      }
+    ],
+    "connections": [
+      {
+        "state": "active",
+        "connections": 1
+      },
+      {
+        "state": "idle",
+        "connections": 3
+      }
+    ],
+    "migrationStatus": [
+      {
+        "total": 119,
+        "unfinished": 0
+      }
+    ]
+  }
+}

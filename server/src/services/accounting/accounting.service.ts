@@ -39,7 +39,11 @@ import type {
   LedgerRow,
   Paged,
   PartyBalance,
+  PartyMethodTotal,
   PartySearchResult,
+  PartyLedgerEntry,
+  PartyLedgerSummaryLine,
+  PartySettlementLedger,
   PartyStatement,
   PeriodView,
   ProfitAndLoss,
@@ -57,6 +61,12 @@ type Actor = { id: string; roles: string[] };
 
 const MAX_PAGE_SIZE = 200;
 const DEFAULT_PAGE_SIZE = 50;
+// The account and party settlement ledgers alone: a printable ledger sheet
+// asks for its whole (usually short, deliberately chosen) date range in one
+// request. 2000 matches the row cap these endpoints used to hard-code before
+// they had real pagination - see accountLedgerQuerySchema's matching cap.
+const LEDGER_MAX_PAGE_SIZE = 2000;
+const LEDGER_DEFAULT_PAGE_SIZE = 100;
 
 const num = (value: unknown) => Math.round(Number(value ?? 0) * 100) / 100;
 const iso = (date: Date) => date.toISOString();
@@ -75,6 +85,19 @@ const iso = (date: Date) => date.toISOString();
  * no effect on arithmetic.
  */
 const ALL_ENTRIES = Prisma.sql`TRUE`;
+
+/**
+ * An entry's source as the ledger screens name its voucher type. A settlement
+ * is a Receipt from a rider but a Payment to a vendor, so it carries its payee:
+ * `settlement_rider` / `settlement_vendor`. A statement entry moves no cash -
+ * its instalments do - so it reads as `statement`.
+ */
+const VOUCHER_SOURCE = Prisma.sql`CASE WHEN split_part(e.event_key, '#', 1)
+    IN ('rider_statement', 'vendor_statement', 'branch_statement', 'carrier_statement')
+  THEN 'statement'
+  WHEN e.source_type::text = 'settlement'
+  THEN 'settlement_' || COALESCE((SELECT s.payee_type FROM settlements s WHERE s.id = e.source_id), 'rider')
+  ELSE e.source_type::text END`;
 
 // ── Ranges ──────────────────────────────────────────────────────────────────
 
@@ -224,9 +247,31 @@ function toAccountBalance(row: RawTotal): AccountBalance {
  * out. Their entries are still readable: getAccountLedger takes a code and does
  * not consult this list, so a link to a retired account still opens.
  */
-export async function listAccounts(): Promise<AccountSummary[]> {
+/**
+ * The chart of accounts, or just the accounts money moves through.
+ *
+ * `cash_bank` is 1000 Cash in Hand plus whatever account each payment method
+ * books to - which is what makes it the real cash-and-bank set rather than a
+ * guess from the account type. A method with no account of its own has no
+ * balance to show, so it contributes nothing.
+ */
+export async function listAccounts(scope?: "cash_bank"): Promise<AccountSummary[]> {
+  let where: Prisma.ledger_accountsWhereInput = { is_active: true };
+
+  if (scope === "cash_bank") {
+    const methods = await prisma.payment_methods.findMany({
+      where: { ledger_account_id: { not: null } },
+      select: { ledger_account_id: true },
+    });
+    const ids = methods.map((method) => method.ledger_account_id).filter((id): id is string => Boolean(id));
+    where = {
+      is_active: true,
+      OR: [{ code: ACCOUNT.CASH_IN_HAND }, ...(ids.length ? [{ id: { in: ids } }] : [])],
+    };
+  }
+
   const rows = await prisma.ledger_accounts.findMany({
-    where: { is_active: true },
+    where,
     orderBy: { code: "asc" },
   });
   return rows.map((row) => ({
@@ -242,23 +287,63 @@ export async function listAccounts(): Promise<AccountSummary[]> {
   }));
 }
 
+/**
+ * What moved through the COD float during the window, for the Overview.
+ *
+ * Statements are restated on every change (the old entry voided, a reversal
+ * posted, a fresh entry written), so only live entries count here: summing the
+ * raw lines would count every edit or revert as money moving twice. Balances
+ * are unaffected either way, since each pair nets to zero.
+ *
+ * Read off the posting rules in events.ts:
+ *   - COD comes in as a credit to 2005 (rider, branch and 3PL statements). A
+ *     vendor's shortfall also credits 2005, so vendor-tagged lines are left out.
+ *   - A rider statement credits 2005 for the full amount and debits 1010 for
+ *     whatever is still in the rider's pocket; the difference is cash received.
+ *   - A vendor statement debits 2005 for the gross COD it hands on - kept as
+ *     charges, paid out, or still payable.
+ */
+async function periodMovement(from: Date, to: Date) {
+  const [row] = await prisma.$queryRaw<Array<{
+    cod_in: string; rider_cod: string; with_rider: string; to_vendors: string;
+  }>>(Prisma.sql`
+    SELECT
+      COALESCE(SUM(l.credit) FILTER (WHERE a.code = ${ACCOUNT.COD_HELD} AND l.party_type IS DISTINCT FROM 'vendor'), 0) AS cod_in,
+      COALESCE(SUM(l.credit) FILTER (WHERE a.code = ${ACCOUNT.COD_HELD} AND l.party_type = 'rider'), 0) AS rider_cod,
+      COALESCE(SUM(l.debit)  FILTER (WHERE a.code = ${ACCOUNT.CASH_WITH_RIDER}), 0) AS with_rider,
+      COALESCE(SUM(l.debit)  FILTER (WHERE a.code = ${ACCOUNT.COD_HELD} AND l.party_type = 'vendor'), 0) AS to_vendors
+      FROM journal_lines l
+      JOIN ledger_accounts a ON a.id = l.account_id
+      JOIN journal_entries e ON e.id = l.entry_id
+     WHERE l.entry_date >= ${from}
+       AND l.entry_date < ${to}
+       AND e.status::text <> 'voided'
+       AND e.reversal_of_id IS NULL
+  `);
+  return {
+    codCollected: num(row?.cod_in),
+    receivedFromRiders: num(Math.max(0, Number(row?.rider_cod ?? 0) - Number(row?.with_rider ?? 0))),
+    paidToVendors: num(row?.to_vendors),
+  };
+}
+
 // ── Overview ────────────────────────────────────────────────────────────────
 
 export async function getOverview(query: RangeQuery): Promise<AccountingOverview> {
   const range = resolveRange(query);
 
-  const [cumulative, periodTotals, riderHoldings, recent, entryCount] = await Promise.all([
+  const [cumulative, periodTotals, movement, riderHoldings, recent, entryCount] = await Promise.all([
     // Cash and party positions are "as at now", not "during the period" - what
     // matters about cash is how much there is, not how much it moved.
     accountTotals(null, range.to),
     accountTotals(range.from, range.to),
+    periodMovement(range.from, range.to),
     listPartyBalances("rider", { limit: 5, nonZeroOnly: true }),
     listJournal({ page: 1, pageSize: 6 }),
     prisma.journal_entries.count({ where: { entry_date: { gte: range.from, lt: range.to }, status: "posted" } }),
   ]);
 
   const byCode = new Map(cumulative.map((account) => [account.code, account]));
-  const periodByCode = new Map(periodTotals.map((account) => [account.code, account]));
 
   // Every asset account that is not a control account is money the office
   // itself holds. Derived rather than listed, because payment methods create
@@ -288,10 +373,7 @@ export async function getOverview(query: RangeQuery): Promise<AccountingOverview
     revenue,
     expenses,
     netProfit: num(revenue - expenses),
-    // Movement within the period, read off the side each account moves on.
-    codCollected: periodByCode.get(ACCOUNT.CASH_WITH_RIDER)?.debit ?? 0,
-    paidToVendors: periodByCode.get(ACCOUNT.VENDOR_CONTROL)?.debit ?? 0,
-    receivedFromRiders: periodByCode.get(ACCOUNT.CASH_WITH_RIDER)?.credit ?? 0,
+    ...movement,
     entryCount,
     topRiderHoldings: riderHoldings,
     recentEntries: recent.items,
@@ -441,27 +523,60 @@ export async function getJournalEntry(entryId: string): Promise<JournalEntryView
 
 // ── Account ledger ──────────────────────────────────────────────────────────
 
+export interface AccountLedgerQuery extends RangeQuery {
+  page?: number | undefined;
+  pageSize?: number | undefined;
+}
+
 /**
  * One account's movements over a window, with a running balance.
  *
  * The opening balance is everything before the window, so the closing figure is
  * a real position rather than a period subtotal - otherwise a ledger opened on
  * the second month of the year would appear to start from nothing.
+ *
+ * totalDebit/totalCredit/closingBalance are computed from a full-range
+ * aggregate query, not from the returned page of rows - an account with more
+ * movements than fit on one page must still report a correct closing balance,
+ * not one silently short by whatever fell off the page. The running balance on
+ * each row is a window function over the same full-range ordering, for the
+ * same reason: page 2's opening figure has to pick up exactly where page 1 left
+ * off.
  */
-export async function getAccountLedger(accountCode: string, query: RangeQuery): Promise<AccountLedger> {
+export async function getAccountLedger(accountCode: string, query: AccountLedgerQuery): Promise<AccountLedger> {
   const range = resolveRange(query);
   const account = await prisma.ledger_accounts.findUnique({ where: { code: accountCode } });
   if (!account) throw new AppError(404, `Account ${accountCode} not found`);
 
   const debitNormal = account.normal_side === "debit";
+  const page = Math.max(1, Number(query.page ?? 1));
+  const pageSize = Math.min(LEDGER_MAX_PAGE_SIZE, Math.max(1, Number(query.pageSize ?? LEDGER_DEFAULT_PAGE_SIZE)));
+  const offset = (page - 1) * pageSize;
 
-  const [openingRows, rows] = await Promise.all([
+  // Signed so a running SUM() OVER(...) is just an accumulation - positive
+  // deltas grow the balance on this account's normal side, negative shrink it.
+  const balanceDelta = debitNormal ? Prisma.sql`l.debit - l.credit` : Prisma.sql`l.credit - l.debit`;
+
+  const [openingRows, summaryRows, rows] = await Promise.all([
     prisma.$queryRaw<Array<{ debit: string; credit: string }>>(Prisma.sql`
       SELECT COALESCE(SUM(l.debit), 0) AS debit, COALESCE(SUM(l.credit), 0) AS credit
         FROM journal_lines l
         JOIN journal_entries e ON e.id = l.entry_id AND ${ALL_ENTRIES}
        WHERE l.account_id = ${account.id}::uuid
          AND e.entry_date < ${range.from}
+    `),
+    // Totals span the whole range, not the page: a footer that only adds up the
+    // rows currently on screen answers a different question than "what is the
+    // closing balance of this account".
+    prisma.$queryRaw<Array<{ total: bigint; debit: string; credit: string }>>(Prisma.sql`
+      SELECT COUNT(*)::bigint AS total,
+             COALESCE(SUM(l.debit), 0)  AS debit,
+             COALESCE(SUM(l.credit), 0) AS credit
+        FROM journal_lines l
+        JOIN journal_entries e ON e.id = l.entry_id AND ${ALL_ENTRIES}
+       WHERE l.account_id = ${account.id}::uuid
+         AND e.entry_date >= ${range.from}
+         AND e.entry_date <  ${range.to}
     `),
     prisma.$queryRaw<
       Array<{
@@ -473,9 +588,11 @@ export async function getAccountLedger(accountCode: string, query: RangeQuery): 
         debit: string;
         credit: string;
         contra: string | null;
+        source_type: string;
+        running_balance: string;
       }>
     >(Prisma.sql`
-      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo,
+      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo, ${VOUCHER_SOURCE} AS source_type,
              l.debit, l.credit,
              -- The other accounts in the same entry. Without this a ledger row
              -- says an amount moved but not what it moved against, which is the
@@ -485,14 +602,23 @@ export async function getAccountLedger(accountCode: string, query: RangeQuery): 
                  FROM journal_lines l2
                  JOIN ledger_accounts a2 ON a2.id = l2.account_id
                 WHERE l2.entry_id = e.id AND l2.account_id <> l.account_id
-             ) AS contra
+             ) AS contra,
+             -- The cumulative delta since the range's start (opening balance
+             -- added back in JS below) - computed over every row the WHERE
+             -- clause matches, before the LIMIT/OFFSET below clips it to one
+             -- page, so this keeps accumulating correctly across page
+             -- boundaries.
+             SUM(${balanceDelta}) OVER (
+               ORDER BY e.entry_date ASC, e.entry_no ASC, l.line_no ASC
+               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+             ) AS running_balance
         FROM journal_lines l
         JOIN journal_entries e ON e.id = l.entry_id AND ${ALL_ENTRIES}
        WHERE l.account_id = ${account.id}::uuid
          AND e.entry_date >= ${range.from}
          AND e.entry_date <  ${range.to}
        ORDER BY e.entry_date ASC, e.entry_no ASC, l.line_no ASC
-       LIMIT 2000
+       LIMIT ${pageSize} OFFSET ${offset}
     `),
   ]);
 
@@ -500,28 +626,25 @@ export async function getAccountLedger(accountCode: string, query: RangeQuery): 
   const openingCredit = num(openingRows[0]?.credit);
   const openingBalance = num(debitNormal ? openingDebit - openingCredit : openingCredit - openingDebit);
 
-  let running = openingBalance;
-  let totalDebit = 0;
-  let totalCredit = 0;
+  const totalDebit = num(summaryRows[0]?.debit);
+  const totalCredit = num(summaryRows[0]?.credit);
+  const closingBalance = num(openingBalance + (debitNormal ? totalDebit - totalCredit : totalCredit - totalDebit));
+  const totalRows = Number(summaryRows[0]?.total ?? 0);
 
-  const ledgerRows: LedgerRow[] = rows.map((row) => {
-    const debit = num(row.debit);
-    const credit = num(row.credit);
-    totalDebit += debit;
-    totalCredit += credit;
-    running = num(running + (debitNormal ? debit - credit : credit - debit));
-    return {
-      entryId: row.entry_id,
-      entryNo: row.entry_no,
-      entryDate: iso(row.entry_date),
-      bsDate: row.bs_date,
-      memo: row.memo,
-      contraAccounts: row.contra ?? "",
-      debit,
-      credit,
-      runningBalance: running,
-    };
-  });
+  const ledgerRows: LedgerRow[] = rows.map((row) => ({
+    entryId: row.entry_id,
+    entryNo: row.entry_no,
+    entryDate: iso(row.entry_date),
+    bsDate: row.bs_date,
+    memo: row.memo,
+    sourceType: row.source_type,
+    contraAccounts: row.contra ?? "",
+    debit: num(row.debit),
+    credit: num(row.credit),
+    // The window function only accumulates deltas from the range's start, so
+    // the opening balance is added back in here rather than inside the SQL.
+    runningBalance: num(openingBalance + num(row.running_balance)),
+  }));
 
   return {
     account: {
@@ -537,10 +660,14 @@ export async function getAccountLedger(accountCode: string, query: RangeQuery): 
     },
     range: rangeView(range),
     openingBalance,
-    closingBalance: running,
-    totalDebit: num(totalDebit),
-    totalCredit: num(totalCredit),
+    closingBalance,
+    totalDebit,
+    totalCredit,
     rows: ledgerRows,
+    totalRows,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(totalRows / pageSize)),
   };
 }
 
@@ -671,9 +798,10 @@ export async function listTransactions(query: TransactionQuery): Promise<Transac
         debit: string;
         credit: string;
         contra: string | null;
+        source_type: string;
       }>
     >(Prisma.sql`
-      SELECT l.id, e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo,
+      SELECT l.id, e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo, ${VOUCHER_SOURCE} AS source_type,
              a.code AS account_code, a.name AS account_name,
              l.party_type::text AS party_type, l.party_id, l.parcel_id,
              l.debit, l.credit,
@@ -707,6 +835,7 @@ export async function listTransactions(query: TransactionQuery): Promise<Transac
       entryDate: iso(row.entry_date),
       bsDate: row.bs_date,
       memo: row.memo,
+      sourceType: row.source_type,
       accountCode: row.account_code,
       accountName: row.account_name,
       contraAccounts: row.contra ?? "",
@@ -736,19 +865,43 @@ export async function listPartyBalances(
   partyType: "vendor" | "rider",
   options: { limit?: number | undefined; nonZeroOnly?: boolean | undefined; search?: string | undefined } = {},
 ): Promise<PartyBalance[]> {
-  const code = partyType === "vendor" ? ACCOUNT.VENDOR_CONTROL : ACCOUNT.CASH_WITH_RIDER;
   const debitNormal = partyType === "rider";
+  const partyColumn = partyType === "vendor" ? Prisma.sql`s.vendor_id` : Prisma.sql`s.rider_id`;
 
-  const rows = await prisma.$queryRaw<Array<{ party_id: string; debit: string; credit: string }>>(Prisma.sql`
-    SELECT l.party_id, COALESCE(SUM(l.debit), 0) AS debit, COALESCE(SUM(l.credit), 0) AS credit
-      FROM journal_lines l
-      JOIN journal_entries e ON e.id = l.entry_id AND ${ALL_ENTRIES}
-      JOIN ledger_accounts a ON a.id = l.account_id
-     WHERE a.code = ${code}
-       AND l.party_type = ${partyType}::ledger_party_type
-       AND l.party_id IS NOT NULL
-     GROUP BY l.party_id
-  `);
+  // Read from the statements, not from the control account. Since the
+  // settlement-only migration nothing credits 1010 or 2000 any more, so a
+  // journal-sourced pair here was the old per-parcel postings plus the mirror
+  // entries that reversed them - two large figures that cancelled to the right
+  // balance while describing nothing. These are the same source the settlement
+  // ledger and the method breakdown already use, so a row now agrees with the
+  // sheet it links to.
+  //
+  // Raised is what the statements say, settled is what was actually handed
+  // over. A rider is debit-normal - they hold our cash until they remit it -
+  // and a vendor credit-normal, so each pair is stated in that direction.
+  const rows = await prisma.$queryRaw<Array<{ party_id: string; raised: string; settled: string }>>(Prisma.sql`
+    SELECT ${partyColumn} AS party_id,
+           COALESCE(SUM(
+             ${partyType === "vendor" ? Prisma.sql`COALESCE(s.payable_amount, s.amount)` : Prisma.sql`s.amount`}
+           ), 0) AS raised,
+           COALESCE(SUM(paid.total), 0) AS settled
+      FROM settlements s
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(sp.amount), 0) AS total
+          FROM settlement_payments sp
+         WHERE sp.settlement_id = s.id
+      ) paid ON TRUE
+     WHERE s.payee_type = ${partyType}
+       AND ${partyColumn} IS NOT NULL
+       AND s.status <> 'cancelled'
+     GROUP BY 1
+  `).then((result) =>
+    result.map((row) => ({
+      party_id: row.party_id,
+      debit: debitNormal ? row.raised : row.settled,
+      credit: debitNormal ? row.settled : row.raised,
+    })),
+  );
 
   const ids = rows.map((row) => row.party_id);
   if (ids.length === 0) return [];
@@ -770,6 +923,33 @@ export async function listPartyBalances(
     for (const rider of riders) names.set(rider.id, { name: rider.name, subtitle: rider.phone });
   }
 
+  // The same settled figure as above, split by method.
+  const methodRows = await prisma.$queryRaw<Array<{ party_id: string; method: string; amount: string }>>(Prisma.sql`
+    SELECT ${partyColumn} AS party_id,
+           COALESCE(NULLIF(TRIM(b->>'method'), ''), 'Unspecified') AS method,
+           SUM(COALESCE((b->>'amount')::numeric, 0)) AS amount
+      FROM settlement_payments sp
+      JOIN settlements s ON s.id = sp.settlement_id
+      -- The CASE, not a WHERE guard: the lateral is evaluated before WHERE, so
+      -- a breakdown that is not an array has to be neutralised here or the
+      -- whole query errors on it.
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(sp.breakdown) = 'array' THEN sp.breakdown ELSE '[]'::jsonb END
+      ) AS b
+     WHERE s.payee_type = ${partyType}
+       AND ${partyColumn} IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
+       AND s.status <> 'cancelled'
+     GROUP BY 1, 2
+  `);
+
+  const methodsByParty = new Map<string, PartyMethodTotal[]>();
+  for (const row of methodRows) {
+    const list = methodsByParty.get(row.party_id) ?? [];
+    list.push({ method: row.method, amount: num(row.amount) });
+    methodsByParty.set(row.party_id, list);
+  }
+  for (const list of methodsByParty.values()) list.sort((a, b) => b.amount - a.amount);
+
   let balances: PartyBalance[] = rows.map((row) => {
     const debit = num(row.debit);
     const credit = num(row.credit);
@@ -784,6 +964,7 @@ export async function listPartyBalances(
       debit,
       credit,
       balance: num(debitNormal ? debit - credit : credit - debit),
+      methods: methodsByParty.get(row.party_id) ?? [],
     };
   });
 
@@ -829,9 +1010,10 @@ export async function getPartyLedger(
         debit: string;
         credit: string;
         contra: string | null;
+        source_type: string;
       }>
     >(Prisma.sql`
-      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date,
+      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, ${VOUCHER_SOURCE} AS source_type,
              COALESCE(p.tracking_id, e.memo) AS memo,
              l.debit, l.credit,
              (
@@ -873,6 +1055,7 @@ export async function getPartyLedger(
       entryDate: iso(row.entry_date),
       bsDate: row.bs_date,
       memo: row.memo,
+      sourceType: row.source_type,
       contraAccounts: row.contra ?? "",
       debit,
       credit,
@@ -911,60 +1094,319 @@ export async function getPartyLedger(
     totalDebit: num(totalDebit),
     totalCredit: num(totalCredit),
     rows: ledgerRows,
+    // This endpoint is unreached by the app (only a legacy URL redirect points
+    // at its route) and keeps its own un-paginated 2000-row cap rather than
+    // getAccountLedger's - so there's no real page/total to report here.
+    totalRows: ledgerRows.length,
+    page: 1,
+    pageSize: Math.max(1, ledgerRows.length),
+    totalPages: 1,
+  };
+}
+
+// ── The party ledger ────────────────────────────────────────────────────────
+
+/**
+ * A rider's or vendor's ledger, driven by statements.
+ *
+ * Nothing accrues per parcel. A rider carrying COD owes nothing on this ledger
+ * until a statement is raised naming the amount; the instalments against it are
+ * what work the balance back down. Same shape on the vendor side, opposite
+ * direction.
+ *
+ * Two rows per statement, not one, because they are two events on two dates:
+ * the statement being raised, and each instalment landing. Collapsing them
+ * would date the payment to the statement and lose the method.
+ *
+ * Read from settlements and settlement_payments rather than journal_lines: a
+ * statement's posting nets to zero on the control account once it is fully
+ * paid, so the journal can only show what is still outstanding.
+ *
+ * Paginated by slicing the assembled, already-ordered movement list rather
+ * than pushing LIMIT/OFFSET into the two source queries: a statement and its
+ * instalments come from different tables and have to be interleaved by date
+ * before "page 2" means anything, so the merge has to happen before any
+ * slicing can. totalDebit/totalCredit/closingBalance are still summed over
+ * every movement in the range, not just the returned page.
+ */
+export async function getPartySettlementLedger(
+  partyType: "rider" | "vendor",
+  partyId: string,
+  query: RangeQuery & { page?: number | undefined; pageSize?: number | undefined },
+): Promise<PartySettlementLedger> {
+  const range = resolveRange(query);
+  const page = Math.max(1, Number(query.page ?? 1));
+  const pageSize = Math.min(LEDGER_MAX_PAGE_SIZE, Math.max(1, Number(query.pageSize ?? LEDGER_DEFAULT_PAGE_SIZE)));
+  const isRider = partyType === "rider";
+  const partyColumn = isRider ? Prisma.sql`s.rider_id` : Prisma.sql`s.vendor_id`;
+
+  const raisedAt = Prisma.sql`COALESCE(s.settlement_date, s.created_at)`;
+  const belongsToParty = Prisma.sql`
+      s.payee_type = ${partyType}
+      AND ${partyColumn} = ${partyId}::uuid
+      AND s.status <> 'cancelled'
+  `;
+
+  const [identity, openingRaised, openingPaid, statements, instalments] = await Promise.all([
+    partyIdentity(partyType, partyId),
+    prisma.$queryRaw<Array<{ amount: string; payable: string }>>(Prisma.sql`
+      SELECT COALESCE(SUM(s.amount), 0)                             AS amount,
+             COALESCE(SUM(COALESCE(s.payable_amount, s.amount)), 0) AS payable
+        FROM settlements s
+       WHERE ${belongsToParty} AND ${raisedAt} < ${range.from}
+    `),
+    prisma.$queryRaw<Array<{ paid: string }>>(Prisma.sql`
+      SELECT COALESCE(SUM(sp.amount), 0) AS paid
+        FROM settlement_payments sp
+        JOIN settlements s ON s.id = sp.settlement_id
+       WHERE ${belongsToParty} AND sp.paid_at < ${range.from}
+    `),
+    prisma.$queryRaw<
+      Array<{
+        id: string;
+        statement_id: string;
+        raised_at: Date;
+        amount: string;
+        payable: string;
+        entry_id: string | null;
+      }>
+    >(Prisma.sql`
+      SELECT s.id, s.statement_id, ${raisedAt} AS raised_at,
+             s.amount, COALESCE(s.payable_amount, s.amount) AS payable,
+             e.id AS entry_id
+        FROM settlements s
+        -- The live entry only: a restated statement has its superseded entries
+        -- voided, and drilling into one would open a voucher that no longer
+        -- says what this row says. Instalments post their own entries, which
+        -- the instalment rows below link to instead.
+        LEFT JOIN LATERAL (
+          SELECT je.id FROM journal_entries je
+           WHERE je.source_type = 'settlement' AND je.source_id = s.id AND je.status = 'posted'
+             AND je.event_key NOT LIKE '%payment:%'
+           ORDER BY je.created_at DESC LIMIT 1
+        ) e ON TRUE
+       WHERE ${belongsToParty}
+         AND ${raisedAt} >= ${range.from} AND ${raisedAt} < ${range.to}
+    `),
+    prisma.$queryRaw<
+      Array<{ id: string; statement_id: string; paid_at: Date; amount: string; method: string | null; entry_id: string | null }>
+    >(Prisma.sql`
+      SELECT sp.id, s.statement_id, sp.paid_at, sp.amount, sp.method, e.id AS entry_id
+        FROM settlement_payments sp
+        JOIN settlements s ON s.id = sp.settlement_id
+        -- Null on statements still carrying the older one-entry posting.
+        LEFT JOIN LATERAL (
+          SELECT je.id FROM journal_entries je
+           WHERE je.source_type = 'settlement' AND je.source_id = s.id AND je.status = 'posted'
+             AND split_part(je.event_key, '#', 1) LIKE '%payment:' || sp.id::text
+           LIMIT 1
+        ) e ON TRUE
+       WHERE ${belongsToParty}
+         AND sp.paid_at >= ${range.from} AND sp.paid_at < ${range.to}
+    `),
+  ]);
+
+  // The rider owes what the statements say they collected; the office owes the
+  // vendor what the statements say is payable. Either way the instalments work
+  // it off, so the opening figure is raised less paid.
+  const openingRaisedTotal = num(isRider ? openingRaised[0]?.amount : openingRaised[0]?.payable);
+  const openingBalance = num(openingRaisedTotal - num(openingPaid[0]?.paid));
+
+  interface Movement {
+    id: string;
+    kind: "statement" | "instalment";
+    reference: string;
+    entryId: string | null;
+    at: Date;
+    description: string;
+    debit: number;
+    credit: number;
+  }
+
+  const movements: Movement[] = [];
+
+  for (const statement of statements) {
+    const amount = num(statement.amount);
+    const payable = num(statement.payable);
+    const raised = isRider ? amount : payable;
+    if (raised === 0) continue;
+
+    const charges = num(amount - payable);
+    movements.push({
+      id: `stm-${statement.id}`,
+      kind: "statement",
+      reference: statement.statement_id,
+      entryId: statement.entry_id,
+      at: statement.raised_at,
+      description: isRider
+        ? `COD collected ${money(raised)}`
+        : `COD collected ${money(amount)}${charges !== 0 ? `, ${money(charges)} kept as charges` : ""}, ${money(payable)} due to vendor`,
+      // A rider's statement is our money in their hands, so it debits them; a
+      // vendor's is our debt to them, so it credits.
+      debit: isRider ? raised : 0,
+      credit: isRider ? 0 : raised,
+    });
+  }
+
+  for (const instalment of instalments) {
+    const amount = num(instalment.amount);
+    if (amount === 0) continue;
+    const method = instalment.method ? ` through ${instalment.method}` : "";
+    movements.push({
+      id: `pay-${instalment.id}`,
+      kind: "instalment",
+      reference: instalment.statement_id,
+      entryId: instalment.entry_id,
+      at: instalment.paid_at,
+      description: isRider
+        ? `COD paid by rider ${money(amount)}${method}`
+        : `COD paid to vendor ${money(amount)}${method}`,
+      debit: isRider ? 0 : amount,
+      credit: isRider ? amount : 0,
+    });
+  }
+
+  movements.sort((a, b) => a.at.getTime() - b.at.getTime() || a.reference.localeCompare(b.reference));
+
+  let running = openingBalance;
+  let totalDebit = 0;
+  let totalCredit = 0;
+
+  const rows: PartyLedgerEntry[] = movements.map((movement) => {
+    totalDebit += movement.debit;
+    totalCredit += movement.credit;
+    running = num(running + (isRider ? movement.debit - movement.credit : movement.credit - movement.debit));
+    return {
+      id: movement.id,
+      kind: movement.kind,
+      reference: movement.reference,
+      entryId: movement.entryId,
+      date: iso(movement.at),
+      bsDate: formatBs(movement.at),
+      description: movement.description,
+      debit: movement.debit,
+      credit: movement.credit,
+      runningBalance: running,
+    };
+  });
+
+  const raisedTotal = num(isRider ? totalDebit : totalCredit);
+  const paidTotal = num(isRider ? totalCredit : totalDebit);
+
+  const summary: PartyLedgerSummaryLine[] = isRider
+    ? [
+        { label: "Total COD collected", amount: raisedTotal },
+        { label: "Total COD paid", amount: paidTotal },
+        { label: "Still to pay", amount: running },
+      ]
+    : [
+        { label: "Total COD collected", amount: raisedTotal },
+        { label: "Total COD paid", amount: paidTotal },
+        { label: "Still to pay", amount: running },
+      ];
+
+  const totalRows = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+
+  return {
+    partyType,
+    partyId,
+    partyName: identity.name,
+    partySubtitle: identity.subtitle,
+    range: rangeView(range),
+    openingBalance,
+    closingBalance: running,
+    totalDebit: num(totalDebit),
+    totalCredit: num(totalCredit),
+    summary,
+    rows: pageRows,
+    totalRows,
+    page,
+    pageSize,
+    totalPages,
+  };
+}
+
+/** `NPR 15,000.00`, the way the descriptions on this ledger read. */
+const money = (value: number) =>
+  `NPR ${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+async function partyIdentity(
+  partyType: "rider" | "vendor",
+  partyId: string,
+): Promise<{ name: string; subtitle: string | null }> {
+  if (partyType === "rider") {
+    const rider = await prisma.riders.findUnique({ where: { id: partyId }, select: { name: true, phone: true } });
+    return { name: rider?.name ?? "Unknown rider", subtitle: rider?.phone ?? null };
+  }
+  const vendor = await prisma.vendors.findUnique({
+    where: { id: partyId },
+    select: { client_name: true, business_name: true, phone: true },
+  });
+  return {
+    name: vendor ? vendor.business_name || vendor.client_name : "Unknown vendor",
+    subtitle: vendor?.phone ?? null,
   };
 }
 
 // ── Party search and statement ──────────────────────────────────────────────
 
 /**
- * Finds anyone money has moved for, by name or phone.
+ * Finds an eligible party by name, phone or email, or browses the directory.
  *
- * One search across riders, vendors and staff, because from the finance side
+ * One search across riders, vendors and other users, because from the finance side
  * they are the same question - "what have we paid this person, and what do they
  * owe us" - even though the system stores them in three unrelated tables.
  */
-export async function searchParties(query: string, limit = 20): Promise<PartySearchResult[]> {
+type SearchablePartyType = PartySearchResult["partyType"];
+
+/** One bounded page across all eligible parties, including other login accounts. */
+export async function searchPartiesPage(
+  query: string,
+  types: SearchablePartyType[] = ["rider", "vendor", "user"],
+  offset = 0,
+  limit = 30,
+): Promise<{ results: PartySearchResult[]; hasMore: boolean }> {
   const needle = query.trim();
-  if (needle.length < 2) return [];
+  const pattern = `%${needle}%`;
+  const branches: Prisma.Sql[] = [];
 
-  const contains = { contains: needle, mode: "insensitive" as const };
+  if (types.includes("rider")) branches.push(Prisma.sql`
+    SELECT 'rider'::text AS "partyType", r.id AS "partyId", r.name, r.phone AS subtitle
+      FROM riders r
+     WHERE r.deleted_at IS NULL
+       ${needle ? Prisma.sql`AND (r.name ILIKE ${pattern} OR r.phone ILIKE ${pattern})` : Prisma.empty}
+  `);
+  if (types.includes("vendor")) branches.push(Prisma.sql`
+    SELECT 'vendor'::text AS "partyType", v.id AS "partyId",
+           COALESCE(NULLIF(v.business_name, ''), v.client_name) AS name, v.phone AS subtitle
+      FROM vendors v
+     WHERE v.deleted_at IS NULL
+       ${needle ? Prisma.sql`AND (v.client_name ILIKE ${pattern} OR v.business_name ILIKE ${pattern} OR v.phone ILIKE ${pattern})` : Prisma.empty}
+  `);
+  if (types.includes("user")) branches.push(Prisma.sql`
+    SELECT 'user'::text AS "partyType", u.id AS "partyId", u.full_name AS name, u.phone AS subtitle
+      FROM users u
+     WHERE u.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM riders r WHERE r.user_id = u.id AND r.deleted_at IS NULL)
+       AND NOT EXISTS (SELECT 1 FROM vendors v WHERE v.user_id = u.id AND v.deleted_at IS NULL)
+       ${needle ? Prisma.sql`AND (u.full_name ILIKE ${pattern} OR u.phone ILIKE ${pattern} OR u.email ILIKE ${pattern})` : Prisma.empty}
+  `);
 
-  const [riders, vendors, staff] = await Promise.all([
-    prisma.riders.findMany({
-      where: { deleted_at: null, OR: [{ name: contains }, { phone: contains }] },
-      select: { id: true, name: true, phone: true },
-      take: limit,
-    }),
-    prisma.vendors.findMany({
-      where: {
-        deleted_at: null,
-        OR: [{ client_name: contains }, { business_name: contains }, { phone: contains }],
-      },
-      select: { id: true, client_name: true, business_name: true, phone: true },
-      take: limit,
-    }),
-    prisma.users.findMany({
-      where: { deleted_at: null, OR: [{ full_name: contains }, { phone: contains }, { email: contains }] },
-      select: { id: true, full_name: true, phone: true, email: true },
-      take: limit,
-    }),
-  ]);
+  if (!branches.length) return { results: [], hasMore: false };
+  const rows = await prisma.$queryRaw<PartySearchResult[]>(Prisma.sql`
+    SELECT * FROM (${Prisma.join(branches, " UNION ALL ")}) parties
+     ORDER BY lower(name), "partyType", "partyId"
+     LIMIT ${limit + 1} OFFSET ${offset}
+  `);
+  return { results: rows.slice(0, limit), hasMore: rows.length > limit };
+}
 
-  return [
-    ...riders.map((r) => ({ partyType: "rider" as const, partyId: r.id, name: r.name, subtitle: r.phone })),
-    ...vendors.map((v) => ({
-      partyType: "vendor" as const,
-      partyId: v.id,
-      name: v.business_name || v.client_name,
-      subtitle: v.phone,
-    })),
-    ...staff.map((u) => ({
-      partyType: "user" as const,
-      partyId: u.id,
-      name: u.full_name,
-      subtitle: u.phone ?? u.email,
-    })),
-  ].slice(0, limit * 3);
+/** Existing search-only consumers keep their array response. */
+export async function searchParties(query: string, limit = 20): Promise<PartySearchResult[]> {
+  if (query.trim().length < 2) return [];
+  return (await searchPartiesPage(query, ["rider", "vendor", "user"], 0, limit)).results;
 }
 
 /** The display name for a party, whichever table it lives in. */
@@ -1034,9 +1476,12 @@ export async function getPartyStatement(
         debit: string;
         credit: string;
         tracking_id: string | null;
+        status: string;
+        source_type: string;
       }>
     >(Prisma.sql`
       SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo,
+             e.status::text AS status, ${VOUCHER_SOURCE} AS source_type,
              a.code, a.name AS account_name, a.type::text AS type,
              l.debit, l.credit, p.tracking_id
         FROM journal_lines l
@@ -1093,6 +1538,8 @@ export async function getPartyStatement(
       debit: num(row.debit),
       credit: num(row.credit),
       trackingId: row.tracking_id,
+      status: row.status,
+      sourceType: row.source_type,
     })),
   };
 }
@@ -1275,13 +1722,18 @@ type RawExpense = Prisma.expensesGetPayload<{ include: typeof EXPENSE_INCLUDE }>
 async function resolvePartyNames(
   parties: Array<{ party_type: string | null; party_id: string | null }>,
 ): Promise<Map<string, string>> {
-  const byType = { rider: new Set<string>(), vendor: new Set<string>(), user: new Set<string>() };
+  const byType = {
+    rider: new Set<string>(),
+    vendor: new Set<string>(),
+    user: new Set<string>(),
+    location: new Set<string>(),
+  };
   for (const row of parties) {
     if (!row.party_type || !row.party_id) continue;
     if (row.party_type in byType) byType[row.party_type as keyof typeof byType].add(row.party_id);
   }
 
-  const [riders, vendors, users] = await Promise.all([
+  const [riders, vendors, users, locations] = await Promise.all([
     byType.rider.size
       ? prisma.riders.findMany({ where: { id: { in: [...byType.rider] } }, select: { id: true, name: true } })
       : [],
@@ -1294,12 +1746,16 @@ async function resolvePartyNames(
     byType.user.size
       ? prisma.users.findMany({ where: { id: { in: [...byType.user] } }, select: { id: true, full_name: true } })
       : [],
+    byType.location.size
+      ? prisma.locations.findMany({ where: { id: { in: [...byType.location] } }, select: { id: true, name: true } })
+      : [],
   ]);
 
   const names = new Map<string, string>();
   for (const r of riders) names.set(`rider:${r.id}`, r.name);
   for (const v of vendors) names.set(`vendor:${v.id}`, v.business_name || v.client_name);
   for (const u of users) names.set(`user:${u.id}`, u.full_name);
+  for (const l of locations) names.set(`location:${l.id}`, l.name);
   return names;
 }
 

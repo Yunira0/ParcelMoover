@@ -11,7 +11,7 @@ vi.mock("../../lib/redis", () => ({
   scanAndDelete: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { getVendorQuote, getReturnDeliveryQuote, VendorRateOverrides } from "../pricing.service";
+import { getVendorQuote, getReturnDeliveryQuote, getVendorFlatRateBands, VendorRateOverrides } from "../pricing.service";
 import prisma from "../../lib/prisma";
 import redis from "../../lib/redis";
 
@@ -166,6 +166,21 @@ describe("getVendorQuote - flat rate", () => {
 });
 
 describe("getVendorQuote - flat rate, outside ring road", () => {
+  it("lists the outside-ring-road tier even without a matching destination", async () => {
+    useSettings({
+      flat_inside_valley: 79,
+      flat_outside_ring_road: 120,
+      flat_outside_valley: 165,
+      branch_flat_outside_ring_road: 90,
+    });
+    const bands = await getVendorFlatRateBands({ flatOutsideRingRoad: 100 });
+    expect(bands).toEqual({
+      insideValley: { homeRate: 79, branchRate: 79 },
+      outsideRingRoad: { homeRate: 100, branchRate: 90 },
+      outsideValley: { homeRate: 165, branchRate: 165 },
+    });
+  });
+
   it("an inside-valley destination flagged outside ring road uses flat_outside_ring_road when set", async () => {
     useSettings({ flat_inside_valley: 100, flat_outside_ring_road: 140 });
     setLocation(DEST_ID, { valley: "inside", ring_road: "outside" });

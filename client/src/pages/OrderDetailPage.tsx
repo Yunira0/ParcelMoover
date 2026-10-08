@@ -1,12 +1,12 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package, ShieldAlert } from 'lucide-react';
 import {
-  getOrderByTrackingId,
   addOrderRemark,
-  subscribeToOrderStatusChanged,
   updateOrderStatus,
   redirectOrder,
+  forwardOrder,
   updateOrder,
   type OrderDetail,
   type OrderRemark,
@@ -14,7 +14,7 @@ import {
   type UpdateOrderInput,
 } from '../services/orders.service';
 import OrderDetailHeader, { STATUS_LABEL } from '../components/order-detail/OrderDetailHeader';
-import { getCurrentUserRoles, isVendorSide, hasAdminPermission } from '../utils/auth';
+import { getCurrentUserRoles, isAccountantUser, isVendorSide, hasAdminPermission } from '../utils/auth';
 import OrderInfoCards from '../components/order-detail/OrderInfoCards';
 import OrderTimeline from '../components/order-detail/OrderTimeline';
 import OrderRemarks from '../components/order-detail/OrderRemarks';
@@ -22,7 +22,10 @@ import OrderRemarkInput from '../components/order-detail/OrderRemarkInput';
 import OrderPriceLog from '../components/order-detail/OrderPriceLog';
 import OrderRedirectLog from '../components/order-detail/OrderRedirectLog';
 import RedirectOrderModal from '../components/RedirectOrderModal';
+import ForwardOrderModal from '../components/ForwardOrderModal';
 import { printLabels } from '../utils/printLabels';
+import { queryKeys } from '../queries/keys';
+import { orderDetailQuery } from '../queries/orders';
 import './OrderDetailPage.css';
 
 // Statuses whose transition needs structured extra data (a rider pick, COD
@@ -75,9 +78,23 @@ const VENDOR_EDITABLE_STATUSES: ParcelStatus[] = [
 const OrderDetailPage: React.FC = () => {
   const { trackingId } = useParams<{ trackingId: string }>();
   const navigate = useNavigate();
-  const [order, setOrder] = useState<OrderDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const orderKey = queryKeys.orders.detail(trackingId ?? '');
+  // A revisit paints the cached parcel at once and refetches behind it; any
+  // order change in this tab refetches it too (queryClient.ts). A failed
+  // background refetch keeps the parcel on screen rather than blanking it.
+  const orderQuery = useQuery({
+    ...orderDetailQuery(trackingId ?? ''),
+    enabled: Boolean(trackingId),
+  });
+  const order: OrderDetail | null = orderQuery.data?.success ? orderQuery.data.data : null;
+  const loading = orderQuery.isPending && Boolean(trackingId);
+  const error = orderQuery.isError
+    ? 'Failed to load order details. Please try again.'
+    : orderQuery.data && !orderQuery.data.success ? 'Order not found.' : null;
+  // Every mutation used below announces itself, which already started the
+  // refetch - wait for that one instead of starting a second.
+  const fetchOrder = () => orderQuery.refetch({ cancelRefetch: false });
   const [replyingTo, setReplyingTo] = useState<OrderRemark | null>(null);
   const [highlightedRemarkId, setHighlightedRemarkId] = useState<string | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,9 +105,10 @@ const OrderDetailPage: React.FC = () => {
     };
   }, []);
 
-  // super_admin only: force the parcel into any status, ignoring the
-  // transition map (the server grants the same bypass to super_admin actors).
+  // super_admin or FORCE_STATUS_CHANGE: force the parcel into any status,
+  // ignoring the transition map (the server grants the same bypass).
   const isSuperAdmin = getCurrentUserRoles().includes('super_admin');
+  const canForceStatus = hasAdminPermission('FORCE_STATUS_CHANGE');
   const [overrideStatus, setOverrideStatus] = useState<ParcelStatus | ''>('');
   const [overrideRemarks, setOverrideRemarks] = useState('');
   const [overrideSaving, setOverrideSaving] = useState(false);
@@ -101,6 +119,10 @@ const OrderDetailPage: React.FC = () => {
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [redirectSaving, setRedirectSaving] = useState(false);
   const [redirectError, setRedirectError] = useState('');
+  // Forwarding charge — a delivered parcel forwarded on to another destination.
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardSaving, setForwardSaving] = useState(false);
+  const [forwardError, setForwardError] = useState('');
 
   // Edit parcel details — inline, field by field, directly on the details
   // card (OrderInfoCards). Ops staff can edit any non-terminal parcel; a
@@ -114,44 +136,14 @@ const OrderDetailPage: React.FC = () => {
     await fetchOrder();
   };
 
-  const fetchOrder = useCallback(async () => {
-    if (!trackingId) return;
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await getOrderByTrackingId(trackingId);
-      if (response.success) {
-        setOrder(response.data);
-      } else {
-        setError('Order not found.');
-      }
-    } catch {
-      setError('Failed to load order details. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, [trackingId]);
-
-  useEffect(() => {
-    fetchOrder();
-  }, [fetchOrder]);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToOrderStatusChanged(() => {
-      fetchOrder();
-    });
-    return unsubscribe;
-  }, [fetchOrder]);
-
   const handleAddRemark = async (remark: string, parentRemarkId?: string | null) => {
     if (!order) return;
     const response = await addOrderRemark(order.id, remark, parentRemarkId);
     if (response.success) {
       const newRemark = response.data;
-      setOrder((prev) => {
-        if (!prev) return prev;
-        return { ...prev, remarks: [...prev.remarks, newRemark] };
-      });
+      queryClient.setQueryData<{ success: boolean; data: OrderDetail }>(orderKey, (prev) =>
+        prev?.success ? { ...prev, data: { ...prev.data, remarks: [...prev.data.remarks, newRemark] } } : prev,
+      );
       setHighlightedRemarkId(newRemark.id);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
       highlightTimeoutRef.current = setTimeout(() => setHighlightedRemarkId(null), 2500);
@@ -205,6 +197,25 @@ const OrderDetailPage: React.FC = () => {
     }
   };
 
+  const handleForward = async (data: {
+    destinationLocationId: string;
+    forwardingCharge: number;
+    reason?: string;
+  }) => {
+    if (!order) return;
+    try {
+      setForwardSaving(true);
+      setForwardError('');
+      await forwardOrder(order.id, data);
+      setForwardOpen(false);
+      await fetchOrder();
+    } catch (err: any) {
+      setForwardError(err?.response?.data?.message ?? 'Failed to add forwarding charge');
+    } finally {
+      setForwardSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="od-page">
@@ -219,7 +230,7 @@ const OrderDetailPage: React.FC = () => {
     );
   }
 
-  if (error || !order) {
+  if (!order) {
     return (
       <div className="od-page">
         <div className="od-container">
@@ -246,11 +257,13 @@ const OrderDetailPage: React.FC = () => {
   // that closes once ops has the parcel, since that's a temporary, explainable
   // state worth surfacing rather than a settled one worth hiding.
   const showEditDisabled = !canEditNow && !isEditBlocked && isVendorActor;
-  // Narrow escape hatch: super_admin or an admin holding EDIT_COD_LOCKED may
+  // Narrow escape hatch: super_admin or an admin holding EDIT_SETTLEMENTS may
   // still fix the COD amount on an otherwise-locked (delivered/RTV/RTO)
   // parcel — every other field stays locked. Server re-enforces this exactly;
   // this only decides whether to offer the affordance.
-  const canOverrideCod = isSuperAdmin || hasAdminPermission('EDIT_COD_LOCKED');
+  // The accountant holds EDIT_SETTLEMENTS for statements, not orders - the
+  // order edit API refuses it, so the control would only fail.
+  const canOverrideCod = isSuperAdmin || (isAdmin && hasAdminPermission('EDIT_SETTLEMENTS'));
   const codEditable = canEditNow || canOverrideCod;
 
   return (
@@ -272,11 +285,11 @@ const OrderDetailPage: React.FC = () => {
           onPrint={handlePrint}
         />
 
-        {isSuperAdmin && (
+        {canForceStatus && (
           <div className="od-override">
             <div className="od-override-title">
               <ShieldAlert size={15} />
-              <span>Super admin: force status</span>
+              <span>Force status</span>
             </div>
             <div className="od-override-controls">
               <select
@@ -327,6 +340,9 @@ const OrderDetailPage: React.FC = () => {
           codAmount={order.codAmount}
           itemValue={order.itemValue}
           deliveryCharge={order.deliveryCharge}
+          grossDeliveryCharge={order.grossDeliveryCharge}
+          discountAmount={order.discountAmount}
+          voucher={order.voucher ?? null}
           pieces={order.pieces}
           weightKg={order.weightKg}
           editable={canEditNow}
@@ -348,6 +364,7 @@ const OrderDetailPage: React.FC = () => {
             <OrderTimeline
               statusHistory={order.statusHistory}
               currentStatus={order.status}
+              showCarrierBadge={!isVendorActor}
             />
           </div>
           <div className="od-activity-right">
@@ -360,11 +377,14 @@ const OrderDetailPage: React.FC = () => {
               onReply={handleReply}
               highlightedRemarkId={highlightedRemarkId}
             />
-            <OrderRemarkInput
-              onSubmit={handleAddRemark}
-              replyingTo={replyingTo}
-              onCancelReply={() => setReplyingTo(null)}
-            />
+            {/* The accountant reads orders only; the remark API refuses it. */}
+            {!isAccountantUser() && (
+              <OrderRemarkInput
+                onSubmit={handleAddRemark}
+                replyingTo={replyingTo}
+                onCancelReply={() => setReplyingTo(null)}
+              />
+            )}
           </div>
         </div>
 
@@ -376,18 +396,24 @@ const OrderDetailPage: React.FC = () => {
           <OrderPriceLog entries={order.priceLog} />
 
           <div className="od-section-header od-section-header-divided">
-            <h2>Redirect Log</h2>
+            <h2>Redirect / Forward Log</h2>
             <span className="od-section-count">{order.redirectLog.length}</span>
-            {isAdmin && REDIRECTABLE_STATUSES.includes(order.status) && (
+            {isAdmin && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
               <button
                 type="button"
                 className="od-section-action"
                 onClick={() => {
-                  setRedirectError('');
-                  setRedirectOpen(true);
+                  // Same slot as redirect: once delivered, the action becomes a forward.
+                  if (order.status === 'delivered') {
+                    setForwardError('');
+                    setForwardOpen(true);
+                  } else {
+                    setRedirectError('');
+                    setRedirectOpen(true);
+                  }
                 }}
               >
-                Redirect order
+                {order.status === 'delivered' ? 'Forward order' : 'Redirect order'}
               </button>
             )}
           </div>
@@ -405,6 +431,17 @@ const OrderDetailPage: React.FC = () => {
         error={redirectError}
         onClose={() => setRedirectOpen(false)}
         onConfirm={handleRedirect}
+      />
+
+      <ForwardOrderModal
+        isOpen={forwardOpen}
+        trackingId={order.trackingId}
+        currentBranch={order.destination}
+        currentDeliveryCharge={order.deliveryCharge}
+        busy={forwardSaving}
+        error={forwardError}
+        onClose={() => setForwardOpen(false)}
+        onConfirm={handleForward}
       />
     </div>
   );

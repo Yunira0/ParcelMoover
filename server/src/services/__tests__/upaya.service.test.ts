@@ -24,7 +24,7 @@ vi.mock("../order.service", () => ({
   invalidateOrderCaches: vi.fn(),
 }));
 
-import { processUpayaWebhook } from "../upaya.service";
+import { matchUpayaArea, processUpayaWebhook } from "../upaya.service";
 import prisma from "../../lib/prisma";
 import redis from "../../lib/redis";
 import { applyExternalCarrierFollowUp, applyExternalCarrierStatus } from "../order.service";
@@ -61,14 +61,14 @@ describe("processUpayaWebhook — parcel resolution", () => {
   it("resolves the parcel via order_reference_id (tracking_id, hyphens stripped) first", async () => {
     await processUpayaWebhook(payload());
     expect(mockedPrisma.$queryRaw).toHaveBeenCalled();
-    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, "arrived_at_branch", expect.any(String));
+    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, "arrived_at_branch", expect.any(String), "upaya");
   });
 
   it("falls back to the Redis order-id cache when order_reference_id doesn't resolve", async () => {
     mockedPrisma.$queryRaw.mockResolvedValue([]);
     mockedRedis.get.mockResolvedValue(PARCEL_ID);
     await processUpayaWebhook(payload({ order_reference_id: undefined }));
-    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, "arrived_at_branch", expect.any(String));
+    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, "arrived_at_branch", expect.any(String), "upaya");
   });
 
   it("no-ops when the parcel can't be resolved at all", async () => {
@@ -95,7 +95,7 @@ describe("processUpayaWebhook — forward carrier-leg statuses", () => {
     ["delivered", "delivered"],
   ])("maps '%s' -> applyExternalCarrierStatus(%s)", async (status, target) => {
     await processUpayaWebhook(payload({ status }));
-    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, target, expect.stringContaining(`${CARRIER_AUTHOR_LABEL}: ${status}`));
+    expect(mockedApplyStatus).toHaveBeenCalledWith(PARCEL_ID, target, expect.stringContaining(`${CARRIER_AUTHOR_LABEL}: ${status}`), "upaya");
     expect(mockedApplyFollowUp).not.toHaveBeenCalled();
   });
 });
@@ -185,5 +185,27 @@ describe("processUpayaWebhook — unrecognized status", () => {
     expect(mockedApplyStatus).not.toHaveBeenCalled();
     expect(mockedApplyFollowUp).not.toHaveBeenCalled();
     expect(mockedPrisma.parcel_remarks.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("matchUpayaArea — explicit area override", () => {
+  const areas = [
+    { id: 11, name: "Dhulikhel", locationId: 1, locationName: "Dhulikhel" },
+    { id: 22, name: "Banepa", locationId: 2, locationName: "Banepa" },
+  ];
+
+  it("pins to the override area even when the name would match another", () => {
+    const dest = { name: "Dhulikhel - Kavrepalanchok", district: null, city: null, upaya_area_id: 22 };
+    expect(matchUpayaArea(dest, areas)?.id).toBe(22);
+  });
+
+  it("returns no match for an override Upaya no longer has, instead of guessing", () => {
+    const dest = { name: "Dhulikhel - Kavrepalanchok", district: null, city: null, upaya_area_id: 99 };
+    expect(matchUpayaArea(dest, areas)).toBeUndefined();
+  });
+
+  it("falls back to name matching when no override is set", () => {
+    const dest = { name: "Dhulikhel - Kavrepalanchok", district: null, city: null, upaya_area_id: null };
+    expect(matchUpayaArea(dest, areas)?.id).toBe(11);
   });
 });

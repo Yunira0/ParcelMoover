@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, QrCode } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Button from '../../components/Button';
+import CreditUsageBar from '../../components/CreditUsageBar';
 import FileField from '../../components/FileField';
 import Pagination from '../../components/Pagination';
 import {
@@ -15,6 +16,7 @@ import {
 import { formatCurrency } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
 import { apiErrorMessage } from '../../utils/serverValidation';
+import { useSessionState } from '../../hooks/useSessionState';
 import './VendorFinance.css';
 import './VendorBilling.css';
 
@@ -31,7 +33,8 @@ const VendorBilling: React.FC = () => {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [payments, setPayments] = useState<VendorPayment[]>([]);
   const [page, setPage] = useState(1);
-  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  // Kept for the browser tab, so coming back keeps the chosen page size.
+  const [pageSizeChoice, setPageSizeChoice] = useSessionState('vendor-payments:pageSize', PAGE_SIZE);
   const [paymentsTotal, setPaymentsTotal] = useState(0);
   const [paymentsTotalPages, setPaymentsTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -76,9 +79,10 @@ const VendorBilling: React.FC = () => {
 
   // What the vendor most likely wants to pay: enough to lift a block, or the
   // whole outstanding balance if they're only warned.
+  const payToClear = status?.amountToClearBlock ?? 0;
   const suggestedAmount =
     status && status.state !== 'ok'
-      ? (status.state === 'blocked' ? status.amountToClearBlock : Math.abs(status.balance)).toFixed(2)
+      ? (status.state === 'blocked' ? payToClear : Math.abs(status.balance)).toFixed(2)
       : '';
   const amountValue = amount ?? suggestedAmount;
 
@@ -90,6 +94,10 @@ const VendorBilling: React.FC = () => {
     const parsed = Number(amountValue);
     if (!Number.isFinite(parsed) || parsed <= 0) {
       setFormError('Enter the amount you paid.');
+      return;
+    }
+    if (!proof) {
+      setFormError('Attach the payment screenshot.');
       return;
     }
 
@@ -117,7 +125,6 @@ const VendorBilling: React.FC = () => {
     <div className="vendor-finance-page">
       <PageHeader
         title="Billing & Payments"
-        subtitle="Your account balance with us, and how to clear outstanding delivery charges."
       />
 
       {loading ? (
@@ -147,7 +154,7 @@ const VendorBilling: React.FC = () => {
                 <p>
                   {status.state === 'blocked'
                     ? `${formatCurrency(owed)} is outstanding. Pay at least ${formatCurrency(
-                        status.amountToClearBlock,
+                        payToClear,
                       )} to resume placing orders.`
                     : `${formatCurrency(owed)} is outstanding. Order creation pauses at ${formatCurrency(
                         Math.abs(status.blockThreshold),
@@ -160,6 +167,8 @@ const VendorBilling: React.FC = () => {
           <div className="billing-grid">
             <section className="billing-card">
               <h3>Account balance</h3>
+              {/* Every term of the balance, so the lines add up to the total
+                  shown. Payouts can be negative (statements where you paid us). */}
               <div className="billing-breakdown">
                 <div>
                   <span>COD collected</span>
@@ -169,11 +178,38 @@ const VendorBilling: React.FC = () => {
                   <span>Delivery charges</span>
                   <span className="billing-debit">-{formatCurrency(status.deliveryCharges)}</span>
                 </div>
+                <div>
+                  <span>COD paid out to you</span>
+                  <span className={status.payouts > 0 ? 'billing-debit' : ''}>
+                    {status.payouts >= 0 ? '-' : '+'}
+                    {formatCurrency(Math.abs(status.payouts))}
+                  </span>
+                </div>
+                <div>
+                  <span>Your payments</span>
+                  <span>+{formatCurrency(status.paymentsReceived)}</span>
+                </div>
                 <div className="billing-breakdown-total">
-                  <span>Due delivery charge</span>
-                  <span className={owed > 0 ? 'billing-debit' : ''}>{formatCurrency(owed)}</span>
+                  <span>{owed > 0 ? 'Due delivery charge' : 'Balance in your favour'}</span>
+                  <span className={owed > 0 ? 'billing-debit' : ''}>
+                    {formatCurrency(owed > 0 ? owed : status.balance)}
+                  </span>
                 </div>
               </div>
+              {owed === 0 && status.balance > 0 && (
+                <p className="billing-hint">
+                  Paid out to you through your COD statements, including any delivery charges you
+                  paid here in advance.
+                </p>
+              )}
+              <CreditUsageBar
+                balance={status.balance}
+                creditLimit={status.creditLimit}
+                state={status.state}
+              />
+              <p className="billing-hint">
+                Credit limit {formatCurrency(status.creditLimit)} — order creation pauses past it.
+              </p>
               {status.pendingPaymentAmount > 0 && (
                 <p className="billing-hint">
                   <Clock size={14} /> {formatCurrency(status.pendingPaymentAmount)} submitted and
@@ -247,7 +283,7 @@ const VendorBilling: React.FC = () => {
                     />
                   </label>
                   <FileField
-                    label="Payment screenshot (optional)"
+                    label="Payment screenshot"
                     hint="JPG, PNG, WebP or PDF · max 5 MB"
                     file={proof}
                     onChange={setProof}

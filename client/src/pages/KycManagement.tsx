@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { CheckCircle, XCircle, Eye, X, FileText, ExternalLink } from 'lucide-react';
+import { CheckCircle, XCircle, Eye, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Table from '../components/Table';
 import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
 import SegmentedTabs from '../components/SegmentedTabs';
 import Button from '../components/Button';
+import DocLink from '../components/DocLink';
 import {
   getKycApplications,
   approveKyc,
@@ -24,23 +25,7 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: 'rejected', label: 'Rejected' },
 ];
 
-const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
 const PAGE_SIZE = 20;
-
-const DocLink: React.FC<{ path: string | null; label: string }> = ({ path, label }) => {
-  if (!path) return <span className="kyc-doc-missing">—</span>;
-  const relative = path.replace(/\\/g, '/').replace(/^.*?(uploads\/)/, '$1');
-  return (
-    <a
-      href={`${API_BASE}/${relative}`}
-      target="_blank"
-      rel="noreferrer"
-      className="kyc-doc-link"
-    >
-      <FileText size={14} /> {label} <ExternalLink size={12} />
-    </a>
-  );
-};
 
 interface KycManagementProps {
   /** Rendered as a tab of Vendor Management, which supplies the page header. */
@@ -157,6 +142,11 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
       </div>
     )},
     { header: 'Email', accessor: (a: KycApplication) => a.ownerEmail },
+    { header: 'Type', accessor: (a: KycApplication) => (
+      <StatusChip tone={a.applicationType === 'verification' ? 'info' : 'neutral'}>
+        {a.applicationType === 'verification' ? 'Verification' : 'Onboarding'}
+      </StatusChip>
+    ), width: '120px' },
     { header: 'Status', accessor: (a: KycApplication) => (
       <StatusChip tone={a.status === 'approved' ? 'success' : a.status === 'rejected' ? 'danger' : 'warning'}>
         {a.status.charAt(0).toUpperCase() + a.status.slice(1)}
@@ -175,7 +165,6 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
       {!embedded && (
         <PageHeader
           title="KYC Applications"
-          subtitle="Review and approve vendor onboarding applications"
         />
       )}
 
@@ -220,6 +209,11 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
                 <StatusChip tone={selected.status === 'approved' ? 'success' : selected.status === 'rejected' ? 'danger' : 'warning'}>
                   {selected.status.charAt(0).toUpperCase() + selected.status.slice(1)}
                 </StatusChip>
+                {selected.applicationType === 'verification' && (
+                  <span className="kyc-verification-note">
+                    Verification for {selected.vendorName || 'an existing vendor'} — approval unlocks vouchers, no new account is created.
+                  </span>
+                )}
               </div>
               <button className="kyc-modal-close" onClick={closeDetail}><X size={18} /></button>
             </div>
@@ -252,8 +246,12 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
                 <h4>Documents</h4>
                 <div className="kyc-docs-grid">
                   <div className="kyc-doc-item">
-                    <span className="kyc-doc-label">Citizenship</span>
-                    <DocLink path={selected.citizenshipDoc} label="View" />
+                    <span className="kyc-doc-label">Citizenship (Front)</span>
+                    <DocLink path={selected.citizenshipDocFront} label="View" />
+                  </div>
+                  <div className="kyc-doc-item">
+                    <span className="kyc-doc-label">Citizenship (Back)</span>
+                    <DocLink path={selected.citizenshipDocBack} label="View" />
                   </div>
                   <div className="kyc-doc-item">
                     <span className="kyc-doc-label">PAN / VAT</span>

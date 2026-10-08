@@ -61,6 +61,69 @@
   gap: var(--space-4);
 }
 
+/* Package description + delivery instruction: identical fixed-size boxes side
+   by side (no manual resize, so they can't drift apart), character counter
+   right-aligned under each. Sized for their 100-char limit plus the dropdown. */
+.order-long-text textarea {
+  height: 112px;
+  min-height: 112px;
+  resize: none;
+}
+
+.order-long-text .form-hint {
+  text-align: right;
+}
+
+.order-long-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.order-long-field > .form-hint,
+.order-long-field > .form-error {
+  text-align: right;
+}
+
+/* The quick-add dropdown (a regular FormField select) sits inside the top of
+   the delivery instruction box. The text area's FormField is flattened into
+   this grid so the dropdown can share the text area's cell, whatever the
+   label's height; the text area leaves room for it at the top. */
+.order-instruction-box {
+  display: grid;
+  row-gap: var(--space-1);
+}
+
+.order-instruction-box > .order-long-text {
+  display: contents;
+}
+
+.order-instruction-box > .order-long-text > textarea {
+  grid-area: 2 / 1;
+  padding-top: 38px;
+}
+
+.order-instruction-select {
+  grid-area: 2 / 1;
+  align-self: start;
+  justify-self: start;
+  margin: 4px 5px;
+  z-index: 1;
+}
+
+.order-instruction-select select {
+  width: auto;
+  height: 28px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .order-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .order-summary-card {
   gap: var(--space-2);
 }
@@ -89,30 +152,13 @@
   font-weight: var(--font-weight-regular);
   color: var(--color-text-caption);
   text-transform: none;
-  text-align: right;
+  text-align: center;
 }
 
 .order-summary-divider {
   height: 1px;
   background: var(--color-border-default);
   margin: var(--space-1) 0;
-}
-
-.order-summary-info {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  background: var(--color-background-primary-invert-default);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-modal);
-  padding: var(--space-2);
-  color: var(--color-background-primary-default);
-  font-size: 12px;
-}
-
-.order-summary-info svg {
-  flex-shrink: 0;
-  margin-top: 2px;
 }
 
 .order-form-error {
@@ -138,6 +184,33 @@
   margin: 0;
 }
 
+/* Voucher picker inside the order summary: FormField controls throughout —
+   same bordered 36px fields, focus ring, and error slot as every other field.
+   The group label names both controls; their own labels are sr-only
+   (see FormField hideLabel). Discount row in success green (a status color,
+   never a second warm accent competing with rust). */
+.order-voucher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.order-voucher-label {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-default);
+  text-transform: uppercase;
+}
+
+.order-voucher-code input {
+  font-family: var(--mono);
+  text-transform: uppercase;
+}
+
+.order-voucher-discount {
+  color: var(--color-success-default);
+}
+
 .order-form-warning {
   color: var(--color-background-warning-default);
   font-size: var(--font-size-sm);
@@ -145,7 +218,7 @@
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-background-warning-default);
   border-radius: var(--border-radius-default);
-  background: var(--color-background-warning-subtle, transparent);
+  background: var(--color-warning-surface);
 }
 
 .create-order-actions {

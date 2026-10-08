@@ -238,7 +238,6 @@ const SystemLogs: React.FC = () => {
     <div className="system-logs-container">
       <PageHeader
         title="System Logs"
-        subtitle="Audit trail of actions across the platform."
       />
 
       <div className="system-logs-filter-panel">

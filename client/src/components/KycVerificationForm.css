@@ -1,0 +1,130 @@
+/* Owned entirely by this file: the start-KYC route never loaded the shared
+   modal/billing stylesheets, so every class the form uses is defined here. */
+
+.kyc-verify-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Sections inside one surface are sequential, not independent cards — a rule
+   separates them, the same vocabulary VendorBilling uses for ordered steps. */
+.kyc-section + .kyc-section {
+  border-top: 1px solid var(--color-border-default);
+  padding-top: var(--space-6);
+}
+
+.kyc-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+
+.kyc-section-head h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  margin: 0;
+}
+
+.kyc-section-head h2 svg {
+  color: var(--color-text-caption);
+  flex-shrink: 0;
+}
+
+.kyc-section-head p {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-caption);
+  margin: 0;
+}
+
+.kyc-section-head-split {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.kyc-section-head-split > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Readiness is text first, color second — never color alone. */
+.kyc-doc-count {
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-caption);
+  background-color: var(--color-background-canvas);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-full);
+  padding: 2px var(--space-3);
+  white-space: nowrap;
+}
+
+.kyc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+/* Long filenames and wide inputs must wrap inside their cell, never push the
+   grid past the card on narrow screens. */
+.kyc-grid > * {
+  min-width: 0;
+}
+
+.kyc-form-error {
+  margin: 0;
+}
+
+/* Page-level action bar, not a modal footer: hint on the left names where the
+   submit goes, actions on the right. Sticky so a long form never hides them. */
+.kyc-form-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  border-top: 1px solid var(--color-border-default);
+  padding-top: var(--space-4);
+  position: sticky;
+  bottom: 0;
+  background-color: var(--color-background-surface);
+  z-index: var(--z-sticky);
+}
+
+.kyc-form-footer-hint {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-caption);
+  margin: 0;
+}
+
+.kyc-form-footer-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .kyc-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kyc-form-footer-actions {
+    width: 100%;
+  }
+
+  .kyc-form-footer-actions > * {
+    flex: 1 1 0;
+  }
+}

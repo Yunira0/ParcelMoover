@@ -70,6 +70,12 @@ export const publicCreateOrderSchema = createOrderSchema
 
 export type PublicCreateOrderInput = z.infer<typeof publicCreateOrderSchema>;
 
+export const publicBulkCreateOrderSchema = z.object({
+  orders: z.array(publicCreateOrderSchema).min(1).max(100),
+  confirmDuplicateBatch: z.boolean().optional(),
+});
+export type PublicBulkCreateOrderInput = z.infer<typeof publicBulkCreateOrderSchema>;
+
 // ── Update order (pre-dispatch edit / address change) ──────────────────────────
 // Same VENDOR_EDITABLE_STATUSES restriction the dashboard's own vendor users
 // have: only while the parcel is still pickup_ordered/rider_assigned/failed_pickup,
@@ -196,3 +202,11 @@ export const publicVendorPaymentsQuerySchema = paginationQuerySchema.extend({
 });
 
 export type PublicVendorPaymentsQuery = z.infer<typeof publicVendorPaymentsQuerySchema>;
+
+// Payout bank details always come from the registered vendor profile. The
+// dashboard schema tolerates legacy bank fields, but the Partner API only
+// documents and forwards the optional note.
+export const publicCreateCodSettlementRequestSchema = z.object({
+  note: z.string().trim().max(1000).optional(),
+});
+export type PublicCreateCodSettlementRequestInput = z.infer<typeof publicCreateCodSettlementRequestSchema>;

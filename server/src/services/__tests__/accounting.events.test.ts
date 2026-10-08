@@ -5,9 +5,7 @@ vi.mock("../../lib/redis", () => ({ default: { get: vi.fn(), setex: vi.fn(), del
 
 import { ACCOUNT, CHART_OF_ACCOUNTS, clearAccountCache } from "../accounting/accounts";
 import {
-  hasEarnedDeliveryCharge,
-  postCodCollected,
-  postDeliveryChargeEarned,
+  postBranchSettlement,
   postOpeningBalance,
   postRiderRemittance,
   postVendorPaymentVerified,
@@ -15,6 +13,7 @@ import {
   SYNTHETIC_SOURCE_ID,
 } from "../accounting/events";
 import { wasPosted } from "../accounting/posting.service";
+import { describeCarrierSettlement } from "../accounting/events";
 
 // Accounts generated alongside a payment method. Not in the chart - they are
 // created when an admin adds the method - so the tests stand them up the same
@@ -98,154 +97,12 @@ beforeEach(() => {
   clearAccountCache();
 });
 
-// ── 1. COD collected ────────────────────────────────────────────────────────
+// Parcels post nothing. There is deliberately no suite here for COD collected
+// or delivery charge earned: a parcel is not a money event in this ledger, and
+// the statement that settles it carries the whole cycle instead. What a vendor
+// is owed before that point lives in billing.service, and is tested there.
 
-describe("postCodCollected", () => {
-  const collection = {
-    id: "col-1",
-    parcel_id: "parcel-1",
-    vendor_id: "vendor-1",
-    rider_id: "rider-1",
-    collected_amount: 1000,
-    collected_at: new Date("2026-08-07T06:00:00Z"),
-    created_at: new Date("2026-08-01T06:00:00Z"),
-  };
-
-  it("moves cash to the rider and the obligation to the vendor", async () => {
-    const db = fakeDb();
-    const outcome = await postCodCollected(asDb(db), collection);
-
-    expect(wasPosted(outcome)).toBe(true);
-    expect(linesByAccount(db)).toEqual([
-      { code: ACCOUNT.CASH_WITH_RIDER, debit: "1000", credit: "0", party: "rider:rider-1" },
-      { code: ACCOUNT.VENDOR_CONTROL, debit: "0", credit: "1000", party: "vendor:vendor-1" },
-    ]);
-  });
-
-  it("books no revenue - COD is never the office's money", async () => {
-    const db = fakeDb();
-    await postCodCollected(asDb(db), collection);
-    expect(linesByAccount(db).some((line) => line.code.startsWith("4"))).toBe(false);
-  });
-
-  it("skips a delivery where no cash was collected", async () => {
-    const db = fakeDb();
-    const outcome = await postCodCollected(asDb(db), { ...collection, collected_amount: 0 });
-    expect(outcome).toEqual({ skipped: true, reason: "no cash collected" });
-    expect(db.journal_lines.createMany).not.toHaveBeenCalled();
-  });
-
-  it("refuses to post without a rider, rather than losing the cash in a total", async () => {
-    // Cash with Rider is a control account: an untagged line would sit in the
-    // account total but in nobody's subledger.
-    const db = fakeDb();
-    await expect(postCodCollected(asDb(db), { ...collection, rider_id: null })).rejects.toThrow(/has no rider/);
-  });
-
-  it("refuses to post without a vendor, for the same reason as the rider", async () => {
-    // 2000 Vendor is a control account too: the credit side has to name who the
-    // money is owed to, and a collection with no vendor cannot.
-    const db = fakeDb();
-    await expect(postCodCollected(asDb(db), { ...collection, vendor_id: null })).rejects.toThrow(/has no vendor/);
-    expect(db.journal_lines.createMany).not.toHaveBeenCalled();
-  });
-
-  it("falls back to created_at when the collection has no collected_at", async () => {
-    const db = fakeDb();
-    await postCodCollected(asDb(db), { ...collection, collected_at: null });
-    expect(db.createdLines[0]!.entry_date).toEqual(collection.created_at);
-  });
-});
-
-// ── 2. Delivery charge earned ───────────────────────────────────────────────
-
-describe("hasEarnedDeliveryCharge", () => {
-  it("earns on delivery and partial delivery", () => {
-    expect(hasEarnedDeliveryCharge({ status: "delivered", order_type: "delivery" })).toBe(true);
-    expect(hasEarnedDeliveryCharge({ status: "partially_delivered", order_type: "delivery" })).toBe(true);
-  });
-
-  it("earns on a return order that reached the vendor", () => {
-    expect(hasEarnedDeliveryCharge({ status: "returned_to_vendor", order_type: "return" })).toBe(true);
-  });
-
-  it("does NOT earn on a plain RTO parcel", () => {
-    // The row still carries its original outbound charge, so counting it would
-    // bill the vendor a full delivery for a parcel that was never delivered.
-    expect(hasEarnedDeliveryCharge({ status: "returned_to_vendor", order_type: "delivery" })).toBe(false);
-  });
-
-  it("does not earn before the parcel is delivered", () => {
-    for (const status of ["sent_for_delivery", "dispatched", "hold", "failed_delivery", "cancelled"]) {
-      expect(hasEarnedDeliveryCharge({ status, order_type: "delivery" })).toBe(false);
-    }
-  });
-});
-
-describe("postDeliveryChargeEarned", () => {
-  const parcel = {
-    id: "parcel-1",
-    vendor_id: "vendor-1",
-    tracking_id: "TRK00001",
-    delivery_charge: 120,
-    status: "delivered",
-    order_type: "delivery",
-    delivered_at: new Date("2026-08-07T06:00:00Z"),
-    updated_at: new Date("2026-08-08T06:00:00Z"),
-    destination_location_id: "loc-1",
-  };
-
-  it("takes the office's cut out of the vendor's position", async () => {
-    const db = fakeDb();
-    await postDeliveryChargeEarned(asDb(db), parcel);
-
-    expect(linesByAccount(db)).toEqual([
-      { code: ACCOUNT.VENDOR_CONTROL, debit: "120", credit: "0", party: "vendor:vendor-1" },
-      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "120", party: null },
-    ]);
-  });
-
-  it("books a return order to return revenue", async () => {
-    const db = fakeDb();
-    await postDeliveryChargeEarned(asDb(db), {
-      ...parcel,
-      order_type: "return",
-      status: "returned_to_vendor",
-      delivered_at: null,
-    });
-
-    expect(linesByAccount(db)[1]).toMatchObject({ code: ACCOUNT.RETURN_REVENUE, credit: "120" });
-  });
-
-  it("skips a plain RTO parcel", async () => {
-    const db = fakeDb();
-    const outcome = await postDeliveryChargeEarned(asDb(db), { ...parcel, status: "returned_to_vendor" });
-    expect(outcome).toMatchObject({ skipped: true });
-    expect(db.journal_lines.createMany).not.toHaveBeenCalled();
-  });
-
-  it("skips a zero-rated parcel", async () => {
-    const db = fakeDb();
-    const outcome = await postDeliveryChargeEarned(asDb(db), { ...parcel, delivery_charge: 0 });
-    expect(outcome).toEqual({ skipped: true, reason: "no delivery charge" });
-  });
-
-  it("refuses to charge a vendor-less parcel", async () => {
-    const db = fakeDb();
-    await expect(postDeliveryChargeEarned(asDb(db), { ...parcel, vendor_id: null })).rejects.toThrow(
-      /has no vendor/,
-    );
-    expect(db.journal_lines.createMany).not.toHaveBeenCalled();
-  });
-
-  it("tags the revenue line with the destination for branch reporting", async () => {
-    const db = fakeDb();
-    await postDeliveryChargeEarned(asDb(db), parcel);
-    expect(db.createdLines[1]).toMatchObject({ location_id: "loc-1" });
-  });
-});
-
-// ── 3. Rider remittance ─────────────────────────────────────────────────────
+// ── 1. Rider remits to the office ───────────────────────────────────────────
 
 describe("postRiderRemittance", () => {
   const settlement = {
@@ -256,6 +113,7 @@ describe("postRiderRemittance", () => {
     vendor_id: null,
     amount: 1500,
     payable_amount: 1500,
+    paid_amount: 1500,
     payment_method: "cash, eSewa",
     payments: [
       { method: "cash", amount: 1200 },
@@ -271,13 +129,32 @@ describe("postRiderRemittance", () => {
     await postRiderRemittance(asDb(db), settlement);
 
     expect(linesByAccount(db)).toEqual([
-      { code: ACCOUNT.CASH_IN_HAND, debit: "1200", credit: "0", party: null },
-      { code: ESEWA, debit: "300", credit: "0", party: null },
-      { code: ACCOUNT.CASH_WITH_RIDER, debit: "0", credit: "1500", party: "rider:rider-1" },
+      { code: ACCOUNT.CASH_IN_HAND, debit: "1200", credit: "0", party: "rider:rider-1" },
+      { code: ESEWA, debit: "300", credit: "0", party: "rider:rider-1" },
+      { code: ACCOUNT.COD_HELD, debit: "0", credit: "1500", party: "rider:rider-1" },
     ]);
   });
 
-  it("moves nothing into revenue - both sides are the office's own assets", async () => {
+  it("credits 2005 to each vendor whose COD it is, leaving any remainder on the rider", async () => {
+    const db = fakeDb();
+    await postRiderRemittance(asDb(db), {
+      ...settlement,
+      vendor_shares: [
+        { vendorId: "vendor-b", amount: 500 },
+        { vendorId: "vendor-a", amount: 800 },
+      ],
+    });
+
+    expect(linesByAccount(db).filter((line) => line.code === ACCOUNT.COD_HELD)).toEqual([
+      { code: ACCOUNT.COD_HELD, debit: "0", credit: "800", party: "vendor:vendor-a" },
+      { code: ACCOUNT.COD_HELD, debit: "0", credit: "500", party: "vendor:vendor-b" },
+      { code: ACCOUNT.COD_HELD, debit: "0", credit: "200", party: "rider:rider-1" },
+    ]);
+  });
+
+  it("moves nothing into revenue - the office is only holding this money", async () => {
+    // None of a remittance is the office's to keep. The cut is recognised on
+    // the vendor statement that releases the COD, not on the way in.
     const db = fakeDb();
     await postRiderRemittance(asDb(db), settlement);
     expect(linesByAccount(db).some((line) => line.code.startsWith("4"))).toBe(false);
@@ -294,8 +171,8 @@ describe("postRiderRemittance", () => {
     });
 
     expect(linesByAccount(db)).toEqual([
-      { code: ACCOUNT.CASH_IN_HAND, debit: "1500", credit: "0", party: null },
-      { code: ACCOUNT.CASH_WITH_RIDER, debit: "0", credit: "1500", party: "rider:rider-1" },
+      { code: ACCOUNT.CASH_IN_HAND, debit: "1500", credit: "0", party: "rider:rider-1" },
+      { code: ACCOUNT.COD_HELD, debit: "0", credit: "1500", party: "rider:rider-1" },
     ]);
   });
 
@@ -334,6 +211,7 @@ describe("postVendorSettlement", () => {
     vendor_id: "vendor-1",
     amount: 1500,
     payable_amount: 1320,
+    paid_amount: 1320,
     payment_method: "Bank Transfer",
     payments: null,
     settlement_date: new Date("2026-08-07T00:00:00Z"),
@@ -341,39 +219,256 @@ describe("postVendorSettlement", () => {
     methodAccounts: METHOD_ACCOUNTS,
   };
 
-  it("pays the vendor when the payable is positive", async () => {
+  it("posts the whole cycle: COD released, cut earned, remainder paid out", async () => {
+    // The one entry that carries the money. Nothing was posted while these
+    // parcels were being delivered, so the gross COD comes off the float the
+    // rider remittances built up rather than netting against a running balance.
     const db = fakeDb();
     await postVendorSettlement(asDb(db), base);
 
     expect(linesByAccount(db)).toEqual([
-      { code: ACCOUNT.VENDOR_CONTROL, debit: "1320", credit: "0", party: "vendor:vendor-1" },
+      { code: ACCOUNT.COD_HELD, debit: "1500", credit: "0", party: "vendor:vendor-1" },
+      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "180", party: null },
       { code: PRABHU_BANK, debit: "0", credit: "1320", party: null },
     ]);
   });
 
+  it("books the office's cut as revenue, and only the cut", async () => {
+    // 1500 collected, 1320 paid out: the office keeps 180 and not a rupee more.
+    // Getting this wrong in either direction turns other people's money into
+    // income, which is the one mistake this ledger exists to prevent.
+    const db = fakeDb();
+    await postVendorSettlement(asDb(db), base);
+
+    const revenue = linesByAccount(db).filter((line) => line.code.startsWith("4"));
+    expect(revenue).toEqual([{ code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "180", party: null }]);
+  });
+
+  it("splits the cut between delivery and return revenue", async () => {
+    const db = fakeDb();
+    await postVendorSettlement(asDb(db), { ...base, return_charges: 50 });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.COD_HELD, debit: "1500", credit: "0", party: "vendor:vendor-1" },
+      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "130", party: null },
+      { code: ACCOUNT.RETURN_REVENUE, debit: "0", credit: "50", party: null },
+      { code: PRABHU_BANK, debit: "0", credit: "1320", party: null },
+    ]);
+  });
+
+  it("clamps a return share that exceeds the statement's own cut", async () => {
+    // The split is advisory - derived from parcels that may have been edited
+    // since. The total is not. A stale share must move which revenue account a
+    // rupee lands in, never whether the entry balances.
+    const db = fakeDb();
+    await postVendorSettlement(asDb(db), { ...base, return_charges: 9999 });
+
+    const revenue = linesByAccount(db).filter((line) => line.code.startsWith("4"));
+    expect(revenue).toEqual([{ code: ACCOUNT.RETURN_REVENUE, debit: "0", credit: "180", party: null }]);
+  });
+
   it("collects FROM the vendor when charges exceeded the COD", async () => {
     // payForSettlement models this direction explicitly; the ledger must
-    // follow it rather than posting a negative payout.
+    // follow it rather than posting a negative payout. The cut is still 1650
+    // here - the vendor pays the 150 the COD could not cover.
     const db = fakeDb();
     await postVendorSettlement(asDb(db), { ...base, payable_amount: -150, payment_method: "cash" });
 
     expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.COD_HELD, debit: "1500", credit: "0", party: "vendor:vendor-1" },
+      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "1650", party: null },
       { code: ACCOUNT.CASH_IN_HAND, debit: "150", credit: "0", party: null },
-      { code: ACCOUNT.VENDOR_CONTROL, debit: "0", credit: "150", party: "vendor:vendor-1" },
     ]);
   });
 
-  it("skips a statement that nets to zero", async () => {
+  it("posts a statement whose COD exactly covered its charges", async () => {
+    // No cash moves, but 1500 of COD stopped being owed and 1500 of revenue
+    // was earned. Skipping it would leave the float overstated forever.
     const db = fakeDb();
-    const outcome = await postVendorSettlement(asDb(db), { ...base, payable_amount: 0 });
-    expect(outcome).toEqual({ skipped: true, reason: "payable nets to zero" });
+    await postVendorSettlement(asDb(db), { ...base, payable_amount: 0 });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.COD_HELD, debit: "1500", credit: "0", party: "vendor:vendor-1" },
+      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "1500", party: null },
+    ]);
+  });
+
+  it("skips a statement that moves no money at all", async () => {
+    const db = fakeDb();
+    const outcome = await postVendorSettlement(asDb(db), { ...base, amount: 0, payable_amount: 0 });
+    expect(outcome).toEqual({ skipped: true, reason: "statement moves no money" });
     expect(db.journal_lines.createMany).not.toHaveBeenCalled();
   });
 
   it("falls back to the gross amount when payable_amount is null", async () => {
+    // Payable null means "nothing withheld", so the whole gross is owed out and
+    // there is no revenue line at all. 1320 of it has been paid; the last 180
+    // is still a debt to the vendor.
     const db = fakeDb();
     await postVendorSettlement(asDb(db), { ...base, payable_amount: null });
-    expect(linesByAccount(db)[0]).toMatchObject({ code: ACCOUNT.VENDOR_CONTROL, debit: "1500" });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.COD_HELD, debit: "1500", credit: "0", party: "vendor:vendor-1" },
+      { code: PRABHU_BANK, debit: "0", credit: "1320", party: null },
+      { code: ACCOUNT.VENDOR_CONTROL, debit: "0", credit: "180", party: "vendor:vendor-1" },
+    ]);
+  });
+
+  it("owes the whole payout when nothing has been paid yet", async () => {
+    // A statement the moment it is created: no cash has moved and it has no
+    // payment method to move it through. The payout is a debt, and posting it
+    // as one is what lets the entry exist at creation time at all.
+    const db = fakeDb();
+    await postVendorSettlement(asDb(db), { ...base, paid_amount: 0, payment_method: null });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.COD_HELD, debit: "1500", credit: "0", party: "vendor:vendor-1" },
+      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "180", party: null },
+      { code: ACCOUNT.VENDOR_CONTROL, debit: "0", credit: "1320", party: "vendor:vendor-1" },
+    ]);
+  });
+
+  it("hands prepaid charges back out of 2000 without shrinking revenue", async () => {
+    // Items net 1320, plus 200 the vendor prepaid through Billing: the payout
+    // is 1520, but the office still earned the full 180 of charges.
+    const db = fakeDb();
+    await postVendorSettlement(asDb(db), {
+      ...base,
+      payable_amount: 1520,
+      paid_amount: 1520,
+      vendor_credit_applied: 200,
+    });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.COD_HELD, debit: "1500", credit: "0", party: "vendor:vendor-1" },
+      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "180", party: null },
+      { code: ACCOUNT.VENDOR_CONTROL, debit: "200", credit: "0", party: "vendor:vendor-1" },
+      { code: PRABHU_BANK, debit: "0", credit: "1520", party: null },
+    ]);
+  });
+
+  it("closes a statement the vendor owed on entirely out of prepaid credit", async () => {
+    // No COD, 300 of charges, all paid in advance through Billing: nothing
+    // moves in cash, the credit in 2000 is used up and the revenue is booked.
+    const db = fakeDb();
+    await postVendorSettlement(asDb(db), {
+      ...base,
+      amount: 0,
+      payable_amount: 0,
+      paid_amount: 0,
+      vendor_credit_applied: 300,
+      payment_method: null,
+    });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "300", party: null },
+      { code: ACCOUNT.VENDOR_CONTROL, debit: "300", credit: "0", party: "vendor:vendor-1" },
+    ]);
+  });
+
+  it("splits the payout across cash paid and cash still owed", async () => {
+    // A part-paid statement. Under the old gate this posted nothing at all
+    // until the final instalment landed, so real cash sat outside the books.
+    const db = fakeDb();
+    await postVendorSettlement(asDb(db), { ...base, paid_amount: 500 });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.COD_HELD, debit: "1500", credit: "0", party: "vendor:vendor-1" },
+      { code: ACCOUNT.DELIVERY_REVENUE, debit: "0", credit: "180", party: null },
+      { code: PRABHU_BANK, debit: "0", credit: "500", party: null },
+      { code: ACCOUNT.VENDOR_CONTROL, debit: "0", credit: "820", party: "vendor:vendor-1" },
+    ]);
+  });
+});
+
+// ── 5b. Branch settlement ───────────────────────────────────────────────────
+
+describe("postBranchSettlement", () => {
+  const base = {
+    id: "brs-1",
+    statement_no: "BRS-001",
+    from_branch_id: "branch-1",
+    to_branch_id: "imadol",
+    gross_cod: 1000,
+    commission_amount: 100,
+    net_payable: 900,
+    paid_amount: 0,
+    payment_method: null,
+    payments: null,
+    settlement_date: new Date("2026-09-01T00:00:00Z"),
+    methodAccounts: METHOD_ACCOUNTS,
+  };
+
+  it("books the commission and leaves the whole net with the branch until paid", async () => {
+    const db = fakeDb();
+    await postBranchSettlement(asDb(db), base);
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.BRANCH_COMMISSION, debit: "100", credit: "0", party: "location:branch-1" },
+      { code: ACCOUNT.COD_WITH_BRANCH, debit: "900", credit: "0", party: "location:branch-1" },
+      { code: ACCOUNT.CASH_IN_HAND, debit: "0", credit: "1000", party: "location:branch-1" },
+    ]);
+  });
+
+  it("splits the net between cash received and what the branch still owes", async () => {
+    const db = fakeDb();
+    await postBranchSettlement(asDb(db), {
+      ...base,
+      paid_amount: 600,
+      payment_method: "fonepay, Cash",
+      payments: [
+        { method: "fonepay", amount: 400 },
+        { method: "Cash", amount: 200 },
+      ],
+    });
+
+    expect(linesByAccount(db)).toEqual([
+      { code: ACCOUNT.BRANCH_COMMISSION, debit: "100", credit: "0", party: "location:branch-1" },
+      { code: ESEWA, debit: "400", credit: "0", party: "location:branch-1" },
+      { code: ACCOUNT.CASH_IN_HAND, debit: "200", credit: "0", party: "location:branch-1" },
+      { code: ACCOUNT.COD_WITH_BRANCH, debit: "300", credit: "0", party: "location:branch-1" },
+      { code: ACCOUNT.CASH_IN_HAND, debit: "0", credit: "1000", party: "location:branch-1" },
+    ]);
+  });
+
+  it("clears 1015 entirely once the statement is fully paid", async () => {
+    const db = fakeDb();
+    await postBranchSettlement(asDb(db), {
+      ...base,
+      paid_amount: 900,
+      payment_method: "fonepay",
+      payments: [{ method: "fonepay", amount: 900 }],
+    });
+
+    expect(linesByAccount(db).map((line) => line.code)).not.toContain(ACCOUNT.COD_WITH_BRANCH);
+  });
+
+  it("never touches the COD float - riders already brought this COD in", async () => {
+    const db = fakeDb();
+    await postBranchSettlement(asDb(db), { ...base, paid_amount: 300, payment_method: "fonepay" });
+
+    expect(linesByAccount(db).map((line) => line.code)).not.toContain(ACCOUNT.COD_HELD);
+  });
+
+  it("refuses a payment method with no account of its own", async () => {
+    const db = fakeDb();
+    await expect(
+      postBranchSettlement(asDb(db), { ...base, paid_amount: 300, payment_method: "Khalti" }),
+    ).rejects.toThrow(/Khalti/);
+    expect(db.createdLines).toHaveLength(0);
+  });
+
+  it("skips a statement that moves no money", async () => {
+    const db = fakeDb();
+    const outcome = await postBranchSettlement(asDb(db), {
+      ...base,
+      gross_cod: 0,
+      commission_amount: 0,
+      net_payable: 0,
+    });
+
+    expect(wasPosted(outcome)).toBe(false);
+    expect(db.createdLines).toHaveLength(0);
   });
 });
 
@@ -480,5 +575,24 @@ describe("postOpeningBalance", () => {
       reference: "nothing",
     });
     expect(outcome).toEqual({ skipped: true, reason: "zero opening balance" });
+  });
+});
+
+describe("describeCarrierSettlement", () => {
+  it("credits 2005 to each vendor whose COD the 3PL collected", () => {
+    const described = describeCarrierSettlement({
+      id: "cs-1", statement_no: "CS-1", carrier_code: "ncm",
+      gross_cod: 1000, carrier_charges: 100, net_receivable: 900, paid_amount: 0,
+      payment_method: null, payments: null, settlement_date: new Date("2026-09-01"),
+      vendor_shares: [{ vendorId: "vendor-a", amount: 600 }, { vendorId: "vendor-b", amount: 300 }],
+    });
+    if ("skip" in described) throw new Error("expected lines");
+
+    const held = described.lines.filter((line) => line.accountCode === ACCOUNT.COD_HELD);
+    expect(held.map((line) => [line.party?.id ?? null, String(line.credit)])).toEqual([
+      ["vendor-a", "600"],
+      ["vendor-b", "300"],
+      [null, "100"],
+    ]);
   });
 });

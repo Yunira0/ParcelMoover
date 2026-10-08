@@ -27,11 +27,16 @@ const MANAGED_USER_TYPES = ["admin", "vendor", "rider"] as const;
 // unchanged" from "field blanked -> clear it" (see putText/putRate in
 // auth.service.ts, which already handle "" as "clear to null" - they just
 // never received it before).
+// A form that stringified a missing value sends "undefined" / "null"; that is
+// an absent field, not text to save (it once landed as a vendor's name).
+const isStringifiedNothing = (val: string) => /^(undefined|null)$/i.test(val.trim());
+
 const optionalAuthString = (maxLen: number, customMsg?: string) =>
   z
     .string()
     .optional()
-    .transform((val): string | undefined => (val === undefined ? undefined : val.trim()))
+    .transform((val): string | undefined =>
+      val === undefined || isStringifiedNothing(val) ? undefined : val.trim())
     .pipe(z.string().max(maxLen, customMsg).optional());
 
 // Optional string with a minimum length (e.g. clientName must be ≥ 2 chars).
@@ -41,7 +46,7 @@ const optionalMinMaxString = (minLen: number, maxLen: number) =>
     .optional()
     .transform((val): string | undefined => {
       const t = val?.trim();
-      return t || undefined;
+      return t && !isStringifiedNothing(t) ? t : undefined;
     })
     .pipe(z.string().min(minLen).max(maxLen).optional());
 
@@ -106,6 +111,8 @@ export const registerUserSchema = z
     extraWeightPercent: optionalAuthString(20),
     returnInsideValleyPercent: optionalAuthString(20),
     returnOutsideValleyPercent: optionalAuthString(20),
+    branchReturnInsideValleyPercent: optionalAuthString(20),
+    branchReturnOutsideValleyPercent: optionalAuthString(20),
     branchFlatInsideValley: optionalAuthString(20),
     branchFlatOutsideValley: optionalAuthString(20),
     branchFlatOutsideRingRoad: optionalAuthString(20),
@@ -125,12 +132,34 @@ export const registerUserSchema = z
     carrierCode: carrierCodeSchema,
   })
   .superRefine((data, ctx) => {
-    if (data.type === "vendor" && !data.clientName) {
+    if (data.type !== "vendor") return;
+
+    if (!data.clientName) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["clientName"],
         message: "clientName is required for vendor registration",
       });
+    }
+
+    // Bank details are required for a vendor, and only for a vendor.
+    //
+    // Every COD payout is a transfer to this account, and the vendor's own
+    // settlement request now quotes it back to them rather than letting them
+    // type one in per request - so a vendor registered without it cannot be
+    // paid and cannot ask to be. Riders hand cash over a counter and admins are
+    // not paid through this system at all, which is why the fields stay
+    // optional for them.
+    const required = [
+      ["bankName", data.bankName, "Bank name is required for a vendor"],
+      ["bankAccountNo", data.bankAccountNo, "Bank account number is required for a vendor"],
+      ["bankAccountHolder", data.bankAccountHolder, "Account holder name is required for a vendor"],
+    ] as const;
+
+    for (const [path, value, message] of required) {
+      if (!value?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+      }
     }
   });
 
@@ -201,6 +230,8 @@ export const updateManagedUserSchema = z.object({
   extraWeightPercent: optionalAuthString(20),
   returnInsideValleyPercent: optionalAuthString(20),
   returnOutsideValleyPercent: optionalAuthString(20),
+  branchReturnInsideValleyPercent: optionalAuthString(20),
+  branchReturnOutsideValleyPercent: optionalAuthString(20),
   branchFlatInsideValley: optionalAuthString(20),
   branchFlatOutsideValley: optionalAuthString(20),
   branchFlatOutsideRingRoad: optionalAuthString(20),
@@ -234,7 +265,7 @@ export type UpdatePasswordInput = z.infer<typeof updatePasswordSchema>;
 // ── Delegated admin permissions ───────────────────────────────────────────────
 
 export const updateAdminPermissionsSchema = z.object({
-  permissions: z.array(z.enum(ADMIN_PERMISSIONS)).max(10),
+  permissions: z.array(z.enum(ADMIN_PERMISSIONS)).max(ADMIN_PERMISSIONS.length),
 });
 
 export type UpdateAdminPermissionsInput = z.infer<typeof updateAdminPermissionsSchema>;
