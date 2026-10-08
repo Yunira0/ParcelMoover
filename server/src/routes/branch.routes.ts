@@ -10,13 +10,13 @@ import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import { paymentProofUpload } from "../lib/billingUpload";
 import {
   branchSettlementIdSchema, branchSettlementQuerySchema, branchTrackingQuerySchema, createBranchSchema, updateBranchSchema,
-  branchBillingPaymentSchema, branchBillingQuerySchema, branchBillingReviewSchema, cancelBranchSettlementSchema, createBranchSettlementSchema, payBranchSettlementSchema,
+  branchBillingPaymentSchema, branchBillingQuerySchema, branchBillingReviewSchema, cancelBranchSettlementSchema, createBranchSettlementSchema, payBranchSettlementSchema, updateBranchSettlementSchema,
 } from "../validators/branch.schema";
 import {
   branchOrdersController, branchOrdersExportController, branchOverviewController, createBranchController,
   createBranchSettlementController, getBranchSettlementController, listBranchesController,
   getBranchBillingStatusController, listBranchBalancesController, listBranchPaymentsController, listBranchSettlementsController,
-  cancelBranchSettlementController, payBranchSettlementController, reviewBranchPaymentController, submitBranchPaymentController, updateBranchController,
+  cancelBranchSettlementController, updateBranchSettlementController, payBranchSettlementController, reviewBranchPaymentController, submitBranchPaymentController, updateBranchController,
 } from "../controllers/branch.controller";
 
 const router = Router();
@@ -58,6 +58,8 @@ router.post("/settlements", staffOrAccountant, csrfProtection, branchWriteLimite
 router.get("/settlements/:id", branchReadLimiter, requireBranchWorkflowAccess, validate(branchSettlementIdSchema, "params"), getBranchSettlementController);
 // Office-recorded settlement payment: super_admin or accountant, matching payBranchSettlement.
 router.post("/settlements/:id/pay", csrfProtection, branchWriteLimiter, authorizeRoles("super_admin", "accountant"), validate(branchSettlementIdSchema, "params"), validate(payBranchSettlementSchema), payBranchSettlementController);
+// Edit an unpaid statement: same gate as editing a vendor statement.
+router.patch("/settlements/:id", csrfProtection, branchWriteLimiter, authorizeRoles("super_admin", "admin", "accountant"), requireAdminPermission("EDIT_SETTLEMENTS"), validate(branchSettlementIdSchema, "params"), validate(updateBranchSettlementSchema), updateBranchSettlementController);
 // Cancel an unpaid statement: same gate as cancelling a vendor statement.
 router.post("/settlements/:id/cancel", csrfProtection, branchWriteLimiter, authorizeRoles("super_admin", "admin", "accountant"), requireAdminPermission("EDIT_SETTLEMENTS"), validate(branchSettlementIdSchema, "params"), validate(cancelBranchSettlementSchema), cancelBranchSettlementController);
 // Branch credit control. A branch account can submit its own proof, while the
