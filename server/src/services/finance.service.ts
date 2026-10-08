@@ -27,6 +27,7 @@ import {
   PendingCodBill,
   PendingCodItem,
   SettlementDetailItem,
+  SettlementBillingPaymentsResult,
   SettlementDetailResult,
   SettlementListItem,
   SettlementsListResult,
@@ -1063,6 +1064,49 @@ export async function availableVendorCredit(db: Prisma.TransactionClient | typeo
         WHERE vendor_id = ${vendorId}::uuid AND payee_type = 'vendor' AND status::text <> 'cancelled') AS applied
   `;
   return Math.max(0, round2(Number(row?.paid ?? 0) - Number(row?.applied ?? 0)));
+}
+
+/**
+ * Billing money the vendor has sent that no statement has absorbed yet. The
+ * Make Payment page shows it before a payment is recorded by hand, because the
+ * two paths are not linked: an admin recording a vendor's transfer here while
+ * the same transfer sits in Billing counts it twice (once on the statement,
+ * once as credit handed back on a later one). Staff only - the route is
+ * restricted to the roles that can record payments.
+ */
+export async function getSettlementBillingPayments(
+  actor: Actor,
+  settlementId: string,
+): Promise<SettlementBillingPaymentsResult> {
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    select: { payee_type: true, vendor_id: true },
+  });
+  if (!settlement) throw new AppError(404, "Settlement not found");
+  if (settlement.payee_type !== "vendor" || !settlement.vendor_id) {
+    return { availableCredit: 0, pendingPayments: [] };
+  }
+
+  const [availableCredit, pending] = await Promise.all([
+    availableVendorCredit(prisma, settlement.vendor_id),
+    prisma.vendor_payments.findMany({
+      where: { vendor_id: settlement.vendor_id, status: "pending" },
+      orderBy: { created_at: "asc" },
+      select: { id: true, amount: true, method: true, reference: true, created_at: true },
+    }),
+  ]);
+
+  return {
+    availableCredit,
+    pendingPayments: pending.map((p) => ({
+      id: p.id,
+      amount: Number(p.amount),
+      method: p.method,
+      reference: p.reference,
+      submittedAt: p.created_at.toISOString(),
+    })),
+  };
 }
 
 /** What payForSettlement does to a vendor statement's collections once it is fully paid. */

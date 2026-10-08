@@ -45,6 +45,7 @@ import {
   revertSettlementController,
   cancelSettlementController,
   getSettlementDetailController,
+  getSettlementBillingPaymentsController,
   getSettlementDocumentController,
 } from "../controllers/finance.controller";
 
@@ -118,6 +119,18 @@ financeRouter.get(
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   getSettlementDetailController,
+);
+
+// GET /api/finance/settlements/:id/billing-payments — the vendor's unapplied
+// and still-pending Billing payments, so Make Payment can warn before the same
+// transfer is recorded twice. Staff only (same audience as pay); deliberately
+// not part of the Partner API.
+financeRouter.get(
+  "/settlements/:id/billing-payments",
+  authMiddleware,
+  authorizeRoles("super_admin", "accountant", "admin"),
+  financeReadLimiter,
+  getSettlementBillingPaymentsController,
 );
 
 // GET /api/finance/settlements/:id/documents/:doc — one payment proof for a
