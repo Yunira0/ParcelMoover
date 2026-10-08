@@ -8,6 +8,8 @@
 //
 //   npm run admins:role-report                  read-only report
 //   npm run admins:role-report -- --apply       align each one (audited)
+//                                               - also runs on every server start (see "start"
+//                                               in package.json), so a deploy aligns them
 //   node dist/scripts/admin-role-report.js ...  (production)
 //   add --fail-on-mismatch to exit 1 when any account disagrees (post-deploy check)
 import "dotenv/config";
