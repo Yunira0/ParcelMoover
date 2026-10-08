@@ -18,12 +18,17 @@ failed=0
 
 check() {
   local title=$1; shift
+  local output status
   echo "::group::$title"
-  if docker exec "$container" "$@"; then
-    echo "::endgroup::"
-  else
-    echo "::endgroup::"
-    echo "::warning title=$title::Failed - expand the \"$title\" group in this step's log."
+  output=$(docker exec "$container" "$@" 2>&1); status=$?
+  echo "$output"
+  echo "::endgroup::"
+  if [[ $status -ne 0 ]]; then
+    # The warning carries the end of the output, so the reason shows on the run
+    # summary without opening the log. %0A is a newline in a workflow command.
+    local summary
+    summary=$(echo "$output" | grep -v '^\s*$' | tail -n 8 | sed ':a;N;$!ba;s/\n/%0A/g')
+    echo "::warning title=$title failed::$summary"
     failed=1
   fi
 }
