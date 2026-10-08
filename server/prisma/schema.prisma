@@ -857,6 +857,11 @@ model settlements {
   // handed back on this statement so they are not deducted a second time.
   // Already included in payable_amount. Vendor statements only.
   vendor_credit_applied                Decimal                   @default(0) @db.Decimal(12, 2)
+  // VAT already inside each delivery charge, as a percentage, captured when the
+  // statement is created so a later rate change cannot restate it. Shown as a
+  // split on the staff screens; payable_amount is unaffected. Null on statements
+  // created before VAT was shown, and on rider statements.
+  vat_rate                             Decimal?                  @db.Decimal(5, 2)
   settlement_date                      DateTime?                 @db.Date
   status                               settlement_status         @default(pending)
   remark                               String?

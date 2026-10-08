@@ -376,6 +376,8 @@ export interface SettlementDetail {
   payableAmount: number;
   /** Delivery charges prepaid through Billing, handed back on this statement. Inside payableAmount. */
   vendorCreditApplied?: number;
+  /** VAT % included in each delivery charge. Staff only; absent on older statements. */
+  vatRate?: number;
   /** Total recorded so far across every instalment. */
   paidAmount: number;
   /** What the payee is still owed. */

@@ -288,6 +288,12 @@ export interface SettlementDetailResult {
   payableAmount: number;
   /** Delivery charges the vendor prepaid through Billing, handed back here. Included in payableAmount. */
   vendorCreditApplied: number;
+  /**
+   * VAT % already included in each delivery charge. Staff only - never sent to
+   * a vendor or over the Partner API - and absent on statements created before
+   * VAT was shown.
+   */
+  vatRate?: number;
   /** Total recorded so far across every instalment. */
   paidAmount: number;
   /** ABS(payableAmount) - paidAmount — what the payee is still owed. */

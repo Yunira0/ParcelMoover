@@ -15,6 +15,8 @@ import { apiErrorMessage } from '../utils/serverValidation';
 import './vendor/VendorBilling.css';
 import './SettlementCreatePage.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { DeliveryChargeCells, DeliveryChargeHeads } from '../components/DeliveryChargeCells';
+import { DELIVERY_CHARGE_VAT_RATE, splitVat, sumVatSplits, vatColumns } from '../utils/vat';
 
 type PayeeType = 'rider' | 'vendor';
 
@@ -264,7 +266,7 @@ const SettlementCreatePage: React.FC = () => {
       'Order Type',
       isVendor ? 'Destination' : 'Location',
       'COD',
-      ...(isVendor ? ['Delivery Charge', 'Net Payable'] : []),
+      ...(isVendor ? ['Delivery Charge', `VAT ${DELIVERY_CHARGE_VAT_RATE}%`, 'Net Payable'] : []),
     ];
     const rows: CellValue[][] = rowsToExport.map((order, index) => [
       index + 1,
@@ -276,17 +278,22 @@ const SettlementCreatePage: React.FC = () => {
       order.orderType,
       isVendor ? order.destination : order.location || '-',
       order.codAmount,
-      ...(isVendor ? [order.deliveryCharge, order.netPayable] : []),
+      ...(isVendor ? [...vatColumns(splitVat(order.deliveryCharge, DELIVERY_CHARGE_VAT_RATE)), order.netPayable] : []),
     ]);
 
     // Totals under the numeric columns; pad out the leading text columns.
-    const numericColumns = isVendor ? 3 : 1;
+    const numericColumns = isVendor ? 4 : 1;
     const sum = (pick: (o: UnsettledOrderItem) => number) =>
       rowsToExport.reduce((total, order) => total + pick(order), 0);
     rows.push([
       ...new Array(headers.length - numericColumns).fill(''),
       sum((o) => o.codAmount),
-      ...(isVendor ? [sum((o) => o.deliveryCharge), sum((o) => o.netPayable)] : []),
+      ...(isVendor
+        ? [
+            ...vatColumns(sumVatSplits(rowsToExport.map((o) => o.deliveryCharge), DELIVERY_CHARGE_VAT_RATE)),
+            sum((o) => o.netPayable),
+          ]
+        : []),
     ]);
 
     await downloadExcel(
@@ -447,7 +454,7 @@ const SettlementCreatePage: React.FC = () => {
                       <th className="scp-cod-head">COD</th>
                       {payeeType === 'vendor' && (
                         <>
-                          <th className="scp-num">Delivery Charge</th>
+                          <DeliveryChargeHeads vatRate={DELIVERY_CHARGE_VAT_RATE} className="scp-num" />
                           <th className="scp-num">Net Payable</th>
                         </>
                       )}
@@ -491,9 +498,12 @@ const SettlementCreatePage: React.FC = () => {
                         </td>
                         {payeeType === 'vendor' && (
                           <>
-                            <td className="scp-num">
-                              Rs. {order.deliveryCharge.toLocaleString()}
-                            </td>
+                            <DeliveryChargeCells
+                              charge={order.deliveryCharge}
+                              vatRate={DELIVERY_CHARGE_VAT_RATE}
+                              className="scp-num"
+                              format={(value) => `Rs. ${value.toLocaleString()}`}
+                            />
                             <td className="scp-num scp-num-strong">
                               Rs. {order.netPayable.toLocaleString()}
                             </td>
