@@ -267,6 +267,27 @@ export interface SettlementDetailItem {
   deliveredAt: string | null;
 }
 
+/** A Billing payment the vendor has submitted but staff have not reviewed yet. */
+export interface PendingBillingPayment {
+  id: string;
+  amount: number;
+  method: string;
+  reference: string | null;
+  submittedAt: string;
+}
+
+/**
+ * Money the vendor has already sent through Billing that has not reached a
+ * statement yet. Shown before a payment is recorded by hand on a statement the
+ * vendor owes on, so the same transfer is not counted twice. Staff only.
+ */
+export interface SettlementBillingPaymentsResult {
+  /** Verified Billing payments not yet applied to any statement. */
+  availableCredit: number;
+  /** Submitted, not yet verified. Verifying one pays this statement down automatically. */
+  pendingPayments: PendingBillingPayment[];
+}
+
 export interface SettlementDetailResult {
   id: string;
   statementId: string;
