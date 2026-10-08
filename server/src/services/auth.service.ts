@@ -23,8 +23,6 @@ type ManagedUserType = "admin" | "vendor" | "rider";
 
 interface UpdateManagedUserInput {
   type: ManagedUserType;
-  /** Admin accounts only: their base role (admin, accountant or sales). */
-  role?: "admin" | "accountant" | "sales";
   fullName?: string;
   phone?: string;
   email?: string;
@@ -164,9 +162,8 @@ function putRate(obj: Record<string, unknown>, key: string, val: string | number
 // vendors. Leaving `admin` in place would silently grant a sales account
 // full admin access instead of the intended vendor-scoped view.
 //
-// Department only picks the starting role. Editing it later must not
-// silently change access, so an existing account's role changes through the
-// explicit `role` field on the admin edit form (changeAdminBaseRole below).
+// Department decides the role, on creation and on every edit since
+// (alignRoleToDepartment below), so the label and the access never drift apart.
 //
 // The "Accountant" department works the same way for the finance-only
 // `accountant` role (utils/financeRoles.ts): it replaces `admin` so the
@@ -177,25 +174,27 @@ const DEPARTMENT_ROLES: Record<string, string> = {
 };
 
 /**
- * Moves an existing admin account to another base role, audited. Refused for
- * your own account (no locking yourself out) and for a super admin, whose
- * access the super-admin switch decides.
+ * Gives an admin account the role its department implies (Sales, Accountant,
+ * otherwise admin), audited. A super admin is left alone - the super-admin
+ * switch decides their access - and you can't change your own (no locking
+ * yourself out). `actorUserId` is null for the bulk alignment script.
+ * Returns whether the role changed.
  */
-async function changeAdminBaseRole(
+export async function alignRoleToDepartment(
   tx: Pick<typeof prisma, "roles" | "user_roles" | "audit_logs">,
-  actorUserId: string,
+  actorUserId: string | null,
   userId: string,
   adminId: string,
-  role: string,
-) {
+  department: string | null | undefined,
+): Promise<boolean> {
+  const role = roleForDepartment(department);
   const held = (await tx.user_roles.findMany({ where: { user_id: userId }, include: { roles: true } }))
     .map((userRole) => userRole.roles.code);
   const base = held.filter((code) => BASE_ROLES.includes(code));
-  if (base.length === 1 && base[0] === role) return;
-  if (held.includes("super_admin")) {
-    throw new AppError(400, "A super admin already has full access; use the super admin switch instead");
+  if (held.includes("super_admin") || (base.length === 1 && base[0] === role)) return false;
+  if (userId === actorUserId) {
+    throw new AppError(400, "You can't change your own department to one with different access");
   }
-  if (userId === actorUserId) throw new AppError(400, "You cannot change your own role");
 
   await setBaseRole(tx, userId, role);
   await tx.audit_logs.create({
@@ -205,13 +204,14 @@ async function changeAdminBaseRole(
       entity_id: adminId,
       action: "CHANGE_ADMIN_ROLE",
       old_data: { roles: base },
-      new_data: { role },
+      new_data: { role, department: department ?? null },
     },
   });
+  return true;
 }
 
 /** The role an admin account starts with: Sales or Accountant by department, otherwise admin. */
-const roleForDepartment = (department: string | null | undefined) =>
+export const roleForDepartment = (department: string | null | undefined) =>
   DEPARTMENT_ROLES[(department ?? "").trim().toLowerCase()] ?? "admin";
 
 /** The base roles an admin account holds exactly one of. super_admin sits on top and is set separately. */
@@ -498,8 +498,8 @@ export async function updateManagedUserProfile(
         u.branch_scoped = await deriveBranchScoped(tx, data.locationId || null);
       }
       if (joinedAt) u.joined_at = joinedAt;
-      // Department is a label past creation; only an explicit `role` changes access.
-      if (data.role) await changeAdminBaseRole(tx, actorUserId, userId, id, data.role);
+      // The department decides the access: changing it changes the role.
+      if (data.department !== undefined) await alignRoleToDepartment(tx, actorUserId, userId, id, data.department);
       Object.assign(u, documentPaths);
       const updatedAdmin = await tx.admins.update({ where: { id }, data: u });
       return updatedAdmin;

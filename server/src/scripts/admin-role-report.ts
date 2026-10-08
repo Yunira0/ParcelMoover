@@ -1,24 +1,27 @@
-// Lists admin accounts whose access (role) doesn't match their department.
-// Read-only: fix each one from the admin edit form's Role field.
+// Lists admin accounts whose access (role) doesn't match their department, and
+// with --apply gives each the role its department implies.
 //
-// Department picks an account's role only when it is created, so a later
-// department edit leaves the two apart - e.g. "Sales" on an account that still
-// has full admin access.
+// Department decides the role on creation and on every edit, but accounts
+// edited before that rule - or created before the Sales/Accountant roles
+// existed - can still disagree, e.g. "Accountant" on an account with full admin
+// access. Super admins are never touched.
 //
-//   npm run admins:role-report          (development)
-//   npm run admins:role-report:prod     (production build)
-//   add --fail-on-mismatch to exit 1 when any account disagrees
+//   npm run admins:role-report                  read-only report
+//   npm run admins:role-report -- --apply       align each one (audited)
+//   node dist/scripts/admin-role-report.js ...  (production)
+//   add --fail-on-mismatch to exit 1 when any account disagrees (post-deploy check)
 import "dotenv/config";
 import prisma from "../lib/prisma";
+import { alignRoleToDepartment, roleForDepartment } from "../services/auth.service";
 
 const BASE_ROLES = ["admin", "accountant", "sales"];
-const roleForDepartment = (department: string | null) =>
-  ({ sales: "sales", accountant: "accountant" } as Record<string, string>)[(department ?? "").trim().toLowerCase()] ?? "admin";
 
 async function main() {
   const admins = await prisma.admins.findMany({
     where: { users: { deleted_at: null } },
     select: {
+      id: true,
+      user_id: true,
       department: true,
       position: true,
       users: { select: { full_name: true, email: true, user_roles: { select: { roles: { select: { code: true } } } } } },
@@ -26,31 +29,44 @@ async function main() {
     orderBy: { users: { full_name: "asc" } },
   });
 
-  const mismatches = admins.flatMap((admin) => {
+  const mismatches = admins.filter((admin) => {
     const roles = admin.users.user_roles.map((userRole) => userRole.roles.code);
-    if (roles.includes("super_admin")) return [];
+    if (roles.includes("super_admin")) return false;
     const base = roles.filter((code) => BASE_ROLES.includes(code));
-    const expected = roleForDepartment(admin.department);
-    if (base.length === 1 && base[0] === expected) return [];
-    return [{
+    return !(base.length === 1 && base[0] === roleForDepartment(admin.department));
+  });
+
+  console.log(`${admins.length} admin account(s) checked, ${mismatches.length} where role and department disagree.`);
+  if (mismatches.length === 0) return;
+  console.table(
+    mismatches.map((admin) => ({
       name: admin.users.full_name,
       email: admin.users.email,
       department: admin.department ?? "-",
       designation: admin.position ?? "-",
-      role: base.join(", ") || "(none)",
-      departmentSuggests: expected,
-    }];
-  });
+      role: admin.users.user_roles.map((userRole) => userRole.roles.code).filter((code) => BASE_ROLES.includes(code)).join(", ") || "(none)",
+      departmentSuggests: roleForDepartment(admin.department),
+    })),
+  );
 
-  console.log(`${admins.length} admin account(s) checked, ${mismatches.length} where role and department disagree.`);
-  if (mismatches.length > 0) console.table(mismatches);
-  // For the post-deploy check: a mismatch is worth flagging on the deploy run.
-  if (mismatches.length > 0 && process.argv.includes("--fail-on-mismatch")) process.exitCode = 1;
-  await prisma.$disconnect();
+  if (process.argv.includes("--apply")) {
+    for (const admin of mismatches) {
+      await prisma.$transaction((tx) => alignRoleToDepartment(tx, null, admin.user_id, admin.id, admin.department));
+      console.log(`  ${admin.users.full_name}: now ${roleForDepartment(admin.department)}`);
+    }
+    console.log(`Aligned ${mismatches.length} account(s); each change is in the audit log as CHANGE_ADMIN_ROLE.`);
+    return;
+  }
+  console.log("Read-only: add --apply to give each the role its department implies.");
+  if (process.argv.includes("--fail-on-mismatch")) process.exitCode = 1;
 }
 
-main().catch(async (error) => {
-  console.error(error);
-  await prisma.$disconnect();
-  process.exit(1);
-});
+main()
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+    process.exit();
+  });

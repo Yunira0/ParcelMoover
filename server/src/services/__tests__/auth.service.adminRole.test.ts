@@ -67,49 +67,58 @@ beforeEach(() => {
   mocked.user_roles.findMany.mockResolvedValue([]);
 });
 
-describe("updateManagedUserProfile - admin role", () => {
-  it("moves an admin to the sales role, and logs it", async () => {
-    const { tx, held } = stubTx(["admin"]);
-
-    await edit("super-1", { department: "Sales", role: "sales" });
-
-    expect([...held]).toEqual(["sales"]);
-    expect(tx.audit_logs.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ action: "CHANGE_ADMIN_ROLE", old_data: { roles: ["admin"] }, new_data: { role: "sales" } }),
-    });
-  });
-
-  it("leaves access alone when only the department changes", async () => {
+describe("updateManagedUserProfile - department decides the role", () => {
+  it("moves an admin to the sales role when their department becomes Sales, and logs it", async () => {
     const { tx, held } = stubTx(["admin"]);
 
     await edit("super-1", { department: "Sales" });
 
-    expect([...held]).toEqual(["admin"]);
-    expect(tx.user_roles.create).not.toHaveBeenCalled();
+    expect([...held]).toEqual(["sales"]);
+    expect(tx.audit_logs.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ action: "CHANGE_ADMIN_ROLE", old_data: { roles: ["admin"] }, new_data: { role: "sales", department: "Sales" } }),
+    });
   });
 
-  it("writes nothing when the role is unchanged", async () => {
+  it("gives any other department the admin role", async () => {
+    const { held } = stubTx(["accountant"]);
+
+    await edit("super-1", { department: "Operation" });
+
+    expect([...held]).toEqual(["admin"]);
+  });
+
+  it("writes nothing when the department already matches the role", async () => {
     const { tx } = stubTx(["accountant"]);
 
-    await edit("super-1", { role: "accountant" });
+    await edit("super-1", { department: "Accountant" });
 
     expect(tx.user_roles.create).not.toHaveBeenCalled();
     expect(tx.user_roles.delete).not.toHaveBeenCalled();
     expect(tx.audit_logs.create).not.toHaveBeenCalled();
   });
 
-  it("refuses to change your own role", async () => {
+  it("leaves access alone when the department isn't part of the edit", async () => {
+    const { tx } = stubTx(["admin"]);
+
+    await edit("super-1", { fullName: "Renamed" });
+
+    expect(tx.user_roles.findMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses a department change that would change your own access", async () => {
     mocked.admins.findUnique.mockResolvedValue({ id: "admin-1", user_id: "super-1" });
     const { held } = stubTx(["admin"]);
 
-    await expect(edit("super-1", { role: "sales" })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(edit("super-1", { department: "Sales" })).rejects.toMatchObject({ statusCode: 400 });
     expect([...held]).toEqual(["admin"]);
   });
 
-  it("refuses to change a super admin's base role", async () => {
-    const { held } = stubTx(["super_admin", "admin"]);
+  it("never changes a super admin's access", async () => {
+    const { tx, held } = stubTx(["super_admin", "admin"]);
 
-    await expect(edit("super-1", { role: "sales" })).rejects.toMatchObject({ statusCode: 400 });
+    await edit("super-1", { department: "Sales" });
+
     expect(held.has("admin")).toBe(true);
+    expect(tx.audit_logs.create).not.toHaveBeenCalled();
   });
 });
