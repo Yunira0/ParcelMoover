@@ -62,14 +62,19 @@ const JournalEntryPage: React.FC = () => {
   const [posted, setPosted] = useState<{ id: string; entryNo: string } | null>(null);
 
   useEffect(() => {
-    listAccounts()
-      .then((rows) => setAccounts(rows.filter((account) => account.isActive && isPostableByHand(account))))
+    // Cash and bank are left to Payment and Receipt, as in Tally: a journal
+    // moves value between ledgers, never money in or out.
+    Promise.all([listAccounts(), listAccounts('cash_bank')])
+      .then(([rows, cashBank]) => {
+        const cashBankCodes = new Set(cashBank.map((account) => account.code));
+        setAccounts(rows.filter((account) => account.isActive && isPostableByHand(account) && !cashBankCodes.has(account.code)));
+      })
       .catch((err) => setError(err));
   }, []);
 
   const byCode = useMemo(() => new Map(accounts.map((account) => [account.code, account])), [accounts]);
   const accountOptions = useMemo(
-    () => accounts.map((account) => ({ id: account.code, label: `${account.name} · ${account.code}` })),
+    () => accounts.map((account) => ({ id: account.code, label: account.name })),
     [accounts],
   );
 

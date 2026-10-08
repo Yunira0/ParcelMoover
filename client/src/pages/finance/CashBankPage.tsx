@@ -159,7 +159,7 @@ const CashBankPage: React.FC = () => {
                       return (
                         <tr key={account.code} className="jv-row" onClick={() => navigate(`/finance/ledger/${account.code}`)}>
                           <td className="jv-indent-1">
-                            {account.name} <span className="tly-muted">· {account.code}</span>
+                            {account.name}
                           </td>
                           <td className="tly-amt">{drCr(ledger.openingBalance, debitNormal)}</td>
                           <td className="tly-amt">{formatAmount(ledger.totalDebit)}</td>

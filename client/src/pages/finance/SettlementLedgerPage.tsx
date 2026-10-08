@@ -428,7 +428,7 @@ const SettlementLedgerPage: React.FC = () => {
                       const net = group.debit - group.credit;
                       return (
                         <tr key={group.code} className="jv-row" onClick={() => navigate(`/finance/ledger/${group.code}`)}>
-                          <td className="jv-indent-1">{group.name} <span className="tly-muted">· {group.code}</span></td>
+                          <td className="jv-indent-1">{group.name}</td>
                           <td className="tly-amt">{net > 0 ? formatAmount(net) : ''}</td>
                           <td className="tly-amt">{net < 0 ? formatAmount(-net) : ''}</td>
                         </tr>

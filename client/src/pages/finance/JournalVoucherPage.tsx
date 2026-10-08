@@ -4,6 +4,7 @@ import TallyPage, { type TallyAction } from '../../components/finance/TallyPage'
 import ConfirmDialog from '../../components/ConfirmDialog';
 import FormField from '../../components/FormField';
 import { dayBookAction, printAction, quitAction, voucherActions } from '../../components/finance/tallyKeys';
+import { compactLines } from '../../components/finance/compactLines';
 import { hasAdminPermission } from '../../utils/auth';
 import { getJournalEntry, reverseEntry, type JournalEntry } from '../../services/accounting.service';
 import { formatAmount } from '../../utils/format';
@@ -98,7 +99,7 @@ const JournalVoucherPage: React.FC = () => {
     quitAction(goBack),
   ];
 
-  const lines = entry?.lines ?? [];
+  const lines = compactLines(entry?.lines ?? []);
   const blanks = Math.max(0, MIN_ROWS - lines.length);
 
   return (
@@ -144,7 +145,7 @@ const JournalVoucherPage: React.FC = () => {
               <tbody>
                 {lines.map((line, index) => (
                   <tr key={index} className={line.credit > 0 ? 'tly-credit-line' : undefined}>
-                    <td>{line.trackingId ?? line.accountCode}</td>
+                    <td>{line.trackingId ?? ''}</td>
                     <td>
                       {line.accountName}
                       {line.partyName && <> — {line.partyName}</>}
