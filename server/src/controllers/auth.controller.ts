@@ -457,6 +457,9 @@ export const getVendorsController = async (req: Request, res: Response) => {
     const statusFilter = typeof req.query.status === "string" ? req.query.status.trim() : "";
     const companyFilter = typeof req.query.company === "string" ? req.query.company.trim() : "";
     const locationFilter = typeof req.query.location === "string" ? req.query.location.trim() : "";
+    // One sales rep's book, for Sales Overview. Staff only: a sales actor is
+    // already pinned to their own vendors above and can't pick another rep.
+    const salesUserFilter = typeof req.query.salesUserId === "string" ? req.query.salesUserId.trim() : "";
 
     if (search) {
       // search_text (business_name + client_name + phone + email, lowercased)
@@ -472,6 +475,12 @@ export const getVendorsController = async (req: Request, res: Response) => {
     }
     if (locationFilter) {
       where.locations = { name: locationFilter };
+    }
+    if (salesUserFilter && isStaff) {
+      if (!UUID_RE.test(salesUserFilter)) {
+        return res.status(400).json({ success: false, message: "salesUserId must be a valid id" });
+      }
+      where.sales_user_id = salesUserFilter;
     }
 
     // "High volume" isn't a column on vendors - it's derived from a count

@@ -1234,7 +1234,7 @@ function parseOverviewQuery(query: Request["query"], idKey: string) {
   const id = str(idKey);
   const dateFrom = str("dateFrom");
   const dateTo = str("dateTo");
-  const isDay = (v: string) => /^d{4}-d{2}-d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+  const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
   if (id && !UUID_REGEX.test(id)) return { error: `${idKey} must be a valid uuid` } as const;
   if ((dateFrom && !isDay(dateFrom)) || (dateTo && !isDay(dateTo))) {
     return { error: "dateFrom and dateTo must be YYYY-MM-DD" } as const;

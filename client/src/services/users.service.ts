@@ -213,6 +213,8 @@ export const getVendors = async (params?: {
   company?: string;
   location?: string;
   highVolume?: string;
+  /** One sales rep's vendors (staff only - a sales account always gets its own). */
+  salesUserId?: string;
 }) => {
   const response = await api.get('/auth/users/vendors', { params });
   return response.data;
