@@ -167,7 +167,7 @@ function App() {
               picker and date range instead of a vendor. */}
           <Route
             path="/rider-overview"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><RiderOverview /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderOverview /></RoleGuard>}
           />
           {/* Per-sales-rep read of the orders list — scoped to every vendor a
               sales rep owns (vendors.sales_user_id) instead of one vendor.

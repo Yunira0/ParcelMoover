@@ -299,7 +299,7 @@ orderRouter.get(
 orderRouter.get(
   "/rider-overview",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "accountant", "rider"),
+  authorizeRoles("super_admin", "admin", "rider"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   riderOverviewController,
@@ -387,12 +387,13 @@ orderRouter.patch(
 );
 
 // PATCH /orders/:id — edit parcel details (receiver, route, weight, COD, …).
-// Status changes stay on /:id/status; this route never moves a parcel.
+// Status changes stay on /:id/status; this route never moves a parcel. The
+// accountant edits too: correcting COD and order details is finance work.
 orderRouter.patch(
   "/:id",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff"),
   requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
   validate(uuidParamSchema, "params"),

@@ -251,19 +251,19 @@ const OrderDetailPage: React.FC = () => {
   }
 
   const isEditBlocked = EDIT_BLOCKED_STATUSES.includes(order.status);
-  const canEditNow = isAdmin ? !isEditBlocked : isVendorActor && VENDOR_EDITABLE_STATUSES.includes(order.status);
+  // Office staff edit order details: admins and the accountant (finance corrections).
+  const isOfficeEditor = isAdmin || isAccountantUser();
+  const canEditNow = isOfficeEditor ? !isEditBlocked : isVendorActor && VENDOR_EDITABLE_STATUSES.includes(order.status);
   // Hidden outright for a terminal parcel or a viewer with no edit permission
   // at all (rider/sales); disabled-with-reason only for the vendor window
   // that closes once ops has the parcel, since that's a temporary, explainable
   // state worth surfacing rather than a settled one worth hiding.
   const showEditDisabled = !canEditNow && !isEditBlocked && isVendorActor;
-  // Narrow escape hatch: super_admin or an admin holding EDIT_SETTLEMENTS may
-  // still fix the COD amount on an otherwise-locked (delivered/RTV/RTO)
-  // parcel — every other field stays locked. Server re-enforces this exactly;
-  // this only decides whether to offer the affordance.
-  // The accountant holds EDIT_SETTLEMENTS for statements, not orders - the
-  // order edit API refuses it, so the control would only fail.
-  const canOverrideCod = isSuperAdmin || (isAdmin && hasAdminPermission('EDIT_SETTLEMENTS'));
+  // Narrow escape hatch: super_admin, the accountant, or an admin holding
+  // EDIT_SETTLEMENTS may still fix the COD amount on an otherwise-locked
+  // (delivered/RTV/RTO) parcel — every other field stays locked. Server
+  // re-enforces this exactly; this only decides whether to offer the affordance.
+  const canOverrideCod = isSuperAdmin || isAccountantUser() || (isAdmin && hasAdminPermission('EDIT_SETTLEMENTS'));
   const codEditable = canEditNow || canOverrideCod;
 
   return (
