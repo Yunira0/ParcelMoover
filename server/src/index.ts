@@ -55,6 +55,7 @@ async function startServer() {
     startWebhookDelivery();
     startLedgerPostingSweep();
     startCancelledOrderTrashSweep();
+    startAnalyticsPersistence();
   });
 }
 
@@ -313,6 +314,29 @@ function startLedgerPostingSweep() {
       console.error("[Ledger] posting sweep failed:", error);
     }
   }, LEDGER_SWEEP_INTERVAL_MS).unref();
+}
+
+// pm-stats counts requests in Redis, which on our host does not save to disk.
+// Copy them to Postgres every 5 minutes so a Redis restart keeps the history;
+// once a day, drop copies older than 90 days. Idempotent, so both release
+// slots may run it. Silent unless it fails.
+const ANALYTICS_PERSIST_INTERVAL_MS = 5 * 60 * 1000;
+const ANALYTICS_CLEANUP_EVERY_RUNS = 288; // once a day at 5-minute runs
+
+function startAnalyticsPersistence() {
+  let runs = 0;
+  let failureLogged = false;
+  setInterval(async () => {
+    try {
+      const { persistCounters, deleteOldCounters } = await import("./services/analytics/persist");
+      await persistCounters();
+      if (runs++ % ANALYTICS_CLEANUP_EVERY_RUNS === 0) await deleteOldCounters();
+      failureLogged = false;
+    } catch (error) {
+      if (!failureLogged) console.error("[Analytics] saving request counts to Postgres failed:", error);
+      failureLogged = true;
+    }
+  }, ANALYTICS_PERSIST_INTERVAL_MS).unref();
 }
 
 startServer().catch((error) => {

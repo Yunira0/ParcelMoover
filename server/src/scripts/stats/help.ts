@@ -17,7 +17,7 @@ COMMANDS
 OPTIONS
   --days <n>       users: days in the trend, 1-${MAX_DAYS} (default 30)
   --outdated       riders: list who still needs to update the app
-  --last <time>    api: 1h, 24h or 7d (default 1h)
+  --last <time>    api: 1h, 24h, 7d or 30d (default 1h)
   --all            vendors: list every vendor, not just the top 15
   --branch <name>  business: only orders from one branch, e.g. Pokhara
   --json           Raw numbers for scripts

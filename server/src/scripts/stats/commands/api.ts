@@ -40,7 +40,8 @@ export function renderApi(report: ApiReport): string[] {
   const asOf = new Date(report.asOf);
   const from = new Date(report.from);
   const { label, slots, slotMs } = API_WINDOWS[report.window];
-  const range = report.window === "7d"
+  const byDate = report.window === "7d" || report.window === "30d";
+  const range = byDate
     ? `${shortDay(nepalDay(from))} – ${shortDay(nepalDay(asOf))}`
     : `${nepalTime(from)}–${nepalTime(asOf)} NPT`;
   const lines = [heading("API TRAFFIC", label, range), ""];
@@ -87,13 +88,17 @@ export function renderApi(report: ApiReport): string[] {
     }
 
     const minCalls = report.window === "1h" ? 20 : 50;
+    // Speed per request type is only in Redis (8 days), so rank on the
+    // requests that have it.
+    const timed = (r: (typeof routes)[number]) => r.buckets.reduce((a, b) => a + b, 0);
     const slowest = routes
-      .filter((r) => r.requests >= minCalls)
+      .filter((r) => timed(r) >= minCalls)
       .map((r) => ({ ...r, p95: percentileMs(r.buckets, 0.95) ?? 0 }))
       .sort((a, b) => b.p95 - a.p95)
       .slice(0, 5);
     lines.push("", paint("dim", `  ${"Slowest requests".padEnd(38)}${"Calls".padStart(8)}${"Slow 5%".padStart(10)}  ${"Errors".padStart(8)}`));
     if (slowest.length === 0) lines.push(paint("dim", `  Not enough requests yet to rank them (each needs ${minCalls}+).`));
+    if (report.window === "30d") lines.push(paint("dim", "  Speed per request covers the last 7 days only."));
     for (const r of slowest) {
       const slow = r.p95 > SLOW_MS;
       lines.push(
@@ -117,8 +122,8 @@ export function renderApi(report: ApiReport): string[] {
   lines.push(
     "",
     paint("dim", "  Slow 5% = 5 in every 100 requests take this long or longer. ▲ = over 1 second."),
-    paint("dim", "  Errors = requests the server failed. Counts start over if the cache (Redis) restarts."),
-    paint("dim", "  Try: pm-stats api --last 24h   ·   --last 7d"),
+    paint("dim", "  Errors = requests the server failed."),
+    paint("dim", "  Try: pm-stats api --last 24h   ·   --last 7d   ·   --last 30d"),
   );
   return lines;
 }
@@ -146,7 +151,7 @@ function chunkSums(values: number[], size: number): number[] {
 }
 
 function axis(width: number, from: Date, to: Date, window: ApiWindow): string {
-  const label = (d: Date) => (window === "7d" ? shortDay(nepalDay(d)).replace(/ \d{4}$/, "") : nepalTime(d));
+  const label = (d: Date) => (window === "7d" || window === "30d" ? shortDay(nepalDay(d)).replace(/ \d{4}$/, "") : nepalTime(d));
   const mid = new Date((from.getTime() + to.getTime()) / 2);
   const [a, b, c] = [label(from), label(mid), label(to)];
   if (width < a.length + b.length + c.length + 4) return a.padEnd(width - c.length) + c;

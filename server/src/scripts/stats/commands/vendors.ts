@@ -66,7 +66,6 @@ export function renderVendors(report: VendorsReport, all = false): string[] {
   lines.push(
     "",
     paint("dim", "  Failed = we rejected the call or it hit an error. Webhooks = order updates we send to the vendor."),
-    paint("dim", "  Call counts start over if the cache (Redis) restarts."),
   );
   return lines;
 }
