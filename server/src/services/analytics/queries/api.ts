@@ -5,12 +5,14 @@ import type Redis from "ioredis";
 import {
   hourKey, LATENCY_BUCKETS_MS, minuteKey, RECENT_ERRORS_KEY, TRAFFIC_APPS, type TrafficApp,
 } from "../trafficKeys";
+import { readTrafficSlots } from "./counters";
 import { getServerStats, type ServerStats } from "./server";
 
 export const API_WINDOWS = {
   "1h": { slots: 60, slotMs: 60_000, key: minuteKey, label: "last 1 hour" },
   "24h": { slots: 24, slotMs: 3_600_000, key: hourKey, label: "last 24 hours" },
   "7d": { slots: 168, slotMs: 3_600_000, key: hourKey, label: "last 7 days" },
+  "30d": { slots: 720, slotMs: 3_600_000, key: hourKey, label: "last 30 days" },
 } as const;
 export type ApiWindow = keyof typeof API_WINDOWS;
 
@@ -116,32 +118,30 @@ export function windowKeys(window: ApiWindow, now: Date): { keys: string[]; from
 export async function getApiReport(redis: Redis, window: ApiWindow): Promise<ApiReport> {
   const now = new Date();
   const { keys, from } = windowKeys(window, now);
-  let slots: Record<string, string>[] = keys.map(() => ({}));
-  let recentErrors: RecentError[] = [];
-  let redisError: string | null = null;
+  // Hours Redis no longer has come from the Postgres copy. Their speed per
+  // request type is not copied, so "Slowest requests" covers Redis's 8 days.
+  const { slots, extra, redisError } = await readTrafficSlots(redis, keys);
+  const summary = summarize([...slots, extra]);
+  summary.series = summary.series.slice(0, slots.length);
 
+  let recentErrors: RecentError[] = [];
   try {
-    const pipeline = redis.pipeline();
-    for (const key of keys) pipeline.hgetall(key);
-    pipeline.lrange(RECENT_ERRORS_KEY, 0, 9);
-    const results = (await pipeline.exec()) ?? [];
-    slots = keys.map((_, i) => (results[i]?.[1] as Record<string, string> | undefined) ?? {});
-    recentErrors = ((results[keys.length]?.[1] as string[] | undefined) ?? []).flatMap((raw) => {
+    recentErrors = (await redis.lrange(RECENT_ERRORS_KEY, 0, 9)).flatMap((raw) => {
       try {
         return [JSON.parse(raw) as RecentError];
       } catch {
         return [];
       }
     });
-  } catch (error) {
-    redisError = error instanceof Error ? error.message : String(error);
+  } catch {
+    // Redis down: already reported through redisError.
   }
 
   return {
     asOf: now.toISOString(),
     window,
     from: from.toISOString(),
-    summary: summarize(slots),
+    summary,
     recentErrors,
     server: await getServerStats(redis),
     redisError,

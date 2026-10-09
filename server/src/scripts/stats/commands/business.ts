@@ -8,14 +8,20 @@ export async function businessCommand(options: { json: boolean; branch: string |
 
 const COLUMNS: Column[] = [{ width: 16, align: "left" }, { width: 14 }, { width: 14 }, { width: 9 }, { width: 15 }];
 
+// Below this many last week, a percentage exaggerates (5 → 18 reads "▲ 260%"),
+// so the change is shown as a plain difference instead ("▲ +13").
+const SMALL_BASE = 20;
+
 // "▲ 8%" against the same time last week. upIsGood decides the colour only;
 // the arrow always shows the direction.
-export function change(m: Measure, upIsGood: boolean): Cell {
+export function change(m: Measure, upIsGood: boolean, format: (n: number) => string = num): Cell {
   if (m.lastWeek === 0) return m.today === 0 ? "–" : { text: "new", style: upIsGood ? "good" : "warn" };
-  const pct = Math.round(((m.today - m.lastWeek) / m.lastWeek) * 100);
-  if (pct === 0) return "0%";
-  const up = pct > 0;
-  return { text: `${up ? "▲" : "▼"} ${Math.abs(pct)}%`, style: up === upIsGood ? "good" : "warn" };
+  const diff = m.today - m.lastWeek;
+  const pct = Math.round((diff / m.lastWeek) * 100);
+  if (diff === 0 || (m.lastWeek >= SMALL_BASE && pct === 0)) return m.lastWeek < SMALL_BASE ? "same" : "0%";
+  const up = diff > 0;
+  const size = m.lastWeek < SMALL_BASE ? `${up ? "+" : "-"}${format(Math.abs(diff))}` : `${Math.abs(pct)}%`;
+  return { text: `${up ? "▲" : "▼"} ${size}`, style: up === upIsGood ? "good" : "warn" };
 }
 
 export function renderBusiness(report: BusinessReport): string[] {
@@ -38,7 +44,7 @@ export function renderBusiness(report: BusinessReport): string[] {
   ];
   for (const [label, m, upIsGood, format] of rows) {
     lines.push(formatRow(COLUMNS, [
-      label, { text: format(m.today), style: "accent" }, format(m.lastWeek), change(m, upIsGood), format(m.yesterday),
+      label, { text: format(m.today), style: "accent" }, format(m.lastWeek), change(m, upIsGood, format), format(m.yesterday),
     ]));
   }
 

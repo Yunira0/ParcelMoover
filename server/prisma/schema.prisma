@@ -2086,3 +2086,15 @@ model user_daily_activity {
   @@id([day, user_id])
   @@index([last_seen_at(sort: Desc)], map: "idx_user_daily_activity_last_seen")
 }
+
+// Lasting copy of pm-stats request counts kept in Redis (one row per Redis
+// hash field). Written by services/analytics/persist.ts, read by pm-stats.
+model analytics_counters {
+  bucket     String
+  field      String
+  count      BigInt
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@id([bucket, field])
+  @@index([updated_at], map: "idx_analytics_counters_updated_at")
+}
