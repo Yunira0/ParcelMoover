@@ -37,7 +37,8 @@ const VendorKycStartPage: React.FC = () => {
     setFormError('');
     try {
       await startVendorKycVerification(vendorId, values, {
-        citizenshipDoc: files.citizenship,
+        citizenshipDoc: files.citizenshipFront,
+        citizenshipDocBack: files.citizenshipBack,
         panVatDoc: files.panVat,
         businessCertDoc: files.businessCert,
       });
@@ -139,9 +140,9 @@ const VendorKycStartPage: React.FC = () => {
               <h2 className="kyc-aside-title"><Files size={16} aria-hidden="true" /> Documents on file</h2>
               <ul className="kyc-doc-list">
                 <li>
-                  <span className={`kyc-doc-dot${prefill.docsOnFile.citizenship ? ' is-on-file' : ''}`} aria-hidden="true" />
+                  <span className={`kyc-doc-dot${(prefill.docsOnFile.citizenshipFront && prefill.docsOnFile.citizenshipBack) ? ' is-on-file' : ''}`} aria-hidden="true" />
                   <span>Citizenship</span>
-                  <span className="kyc-doc-status">{prefill.docsOnFile.citizenship ? 'On file' : 'Required'}</span>
+                  <span className="kyc-doc-status">{(prefill.docsOnFile.citizenshipFront && prefill.docsOnFile.citizenshipBack) ? 'On file' : 'Required'}</span>
                 </li>
                 <li>
                   <span className={`kyc-doc-dot${prefill.docsOnFile.panVat ? ' is-on-file' : ''}`} aria-hidden="true" />

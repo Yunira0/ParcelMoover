@@ -11,10 +11,14 @@ vi.mock("../../lib/tokenRevocation", () => ({
   isTokenRevoked: vi.fn(),
   isIssuedBeforeUserRevocation: vi.fn(),
 }));
+vi.mock("../../services/analytics/track", () => ({
+  recordUserActivity: vi.fn(),
+}));
 
 import { authMiddleware } from "../auth.middleware";
 import prisma from "../../lib/prisma";
 import { isTokenRevoked, isIssuedBeforeUserRevocation } from "../../lib/tokenRevocation";
+import { recordUserActivity } from "../../services/analytics/track";
 import { ACCESS_TOKEN_AUDIENCE, JWT_ISSUER } from "../../utils/jwtConfig";
 
 const JWT_SECRET = "test-jwt-secret";
@@ -26,6 +30,7 @@ function signAccessToken(payload: Record<string, unknown>) {
 const mockedPrisma = prisma as unknown as { users: { findFirst: ReturnType<typeof vi.fn> } };
 const mockedIsTokenRevoked = isTokenRevoked as unknown as ReturnType<typeof vi.fn>;
 const mockedIsIssuedBeforeUserRevocation = isIssuedBeforeUserRevocation as unknown as ReturnType<typeof vi.fn>;
+const mockedRecordUserActivity = recordUserActivity as unknown as ReturnType<typeof vi.fn>;
 
 function makeRes() {
   const res: Partial<Response> & { statusCode?: number; body?: unknown } = {};
@@ -67,6 +72,7 @@ describe("authMiddleware", () => {
     mockedIsTokenRevoked.mockResolvedValue(false);
     mockedIsIssuedBeforeUserRevocation.mockResolvedValue(false);
     mockedPrisma.users.findFirst.mockResolvedValue(activeUser);
+    mockedRecordUserActivity.mockClear();
   });
 
   afterEach(() => {
@@ -177,6 +183,7 @@ describe("authMiddleware", () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.body).toMatchObject({ success: false, message: "User not found or inactive" });
+    expect(mockedRecordUserActivity).not.toHaveBeenCalled();
   });
 
   it("calls next() and populates req.user for a valid token", async () => {
@@ -190,6 +197,18 @@ describe("authMiddleware", () => {
     expect(res.status).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith();
     expect(req.user).toMatchObject({ id: "user-1", roles: ["admin"] });
+    expect(mockedRecordUserActivity).toHaveBeenCalledWith("user-1", ["admin"], { platform: null, version: null });
+  });
+
+  it("passes the rider app's platform and version to activity tracking", async () => {
+    const token = signAccessToken({ id: "user-1" });
+    const req = makeReq({
+      headers: { authorization: `Bearer ${token}`, "x-app-platform": "android", "x-app-version": "1.4.3" },
+    });
+
+    await authMiddleware(req, makeRes(), vi.fn());
+
+    expect(mockedRecordUserActivity).toHaveBeenCalledWith("user-1", ["admin"], { platform: "android", version: "1.4.3" });
   });
 
   it("supports a Bearer token in the Authorization header", async () => {
@@ -202,6 +221,19 @@ describe("authMiddleware", () => {
 
     expect(next).toHaveBeenCalledWith();
     expect(req.user).toMatchObject({ id: "user-1" });
+  });
+
+  it("does not clear a separate cookie session when a Bearer token is rejected", async () => {
+    const req = makeReq({
+      headers: { authorization: "Bearer invalid-token" },
+      cookies: { accessToken: "dashboard-cookie", csrfToken: "dashboard-csrf" },
+    });
+    const res = makeRes();
+
+    await authMiddleware(req, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.clearCookie).not.toHaveBeenCalled();
   });
 
   it("blocks a must-change-password user from a non-allowlisted route", async () => {
@@ -217,6 +249,7 @@ describe("authMiddleware", () => {
     const forwardedError = next.mock.calls[0]?.[0];
     expect(forwardedError).toBeInstanceOf(AppError);
     expect((forwardedError as AppError).statusCode).toBe(403);
+    expect(mockedRecordUserActivity).not.toHaveBeenCalled();
   });
 
   it("allows a must-change-password user to reach the allowlisted change-password route", async () => {

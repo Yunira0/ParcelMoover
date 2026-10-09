@@ -92,15 +92,20 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ to, icon: Icon, label, badge,
 
 /** `end` matches the path exactly. A parent path like /accounting needs it, or
  *  it stays active on every child route and lights up alongside them. */
-interface SubItemProps { to: string; icon: LucideIcon; label: string; badge?: number; end?: boolean }
+interface SubItemProps { to: string; icon: LucideIcon; label: string; badge?: number; end?: boolean; voucherType?: 'receipt' | 'payment'; voucherSource?: 'cash' | 'bank' }
 
-const SubItem: React.FC<SubItemProps> = ({ to, icon: Icon, label, badge, end }) => {
+const SubItem: React.FC<SubItemProps> = ({ to, icon: Icon, label, badge, end, voucherType, voucherSource }) => {
   const { collapsed } = useSidebarCollapse();
+  const { pathname, search } = useLocation();
+  const voucherParams = new URLSearchParams(search);
+  const voucherActive = voucherType != null && pathname === '/finance/voucher/new'
+    && voucherParams.get('type') === voucherType
+    && voucherParams.get('source') === voucherSource;
   return (
     <NavLink
       to={to}
       end={end}
-      className={({ isActive }) => `sidebar-subitem ${isActive ? 'active' : ''}`}
+      className={({ isActive }) => `sidebar-subitem ${isActive || voucherActive ? 'active' : ''}`}
       title={collapsed ? label : undefined}
     >
       <Icon size={15} style={{ flexShrink: 0 }} />
@@ -409,7 +414,9 @@ const BranchSidebar: React.FC = () => {
         <SidebarItem to="/branches/settlement" icon={Banknote} label="Branch COD" />
         <SidebarItem to="/branches/billing" icon={Wallet} label="Branch Payments" />
         <SidebarItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
-        <SidebarItem to="/finance/carrier-cod" icon={Truck} label="3PL COD" />
+        {/* No 3PL COD here: carrier statements are settled centrally from
+            Imadol, so the API refuses a branch and the route is outside the
+            branch workspace. */}
 
         <SidebarSection label="Customer Experience" />
         <SidebarItem to="/tickets" icon={Ticket} label="Tickets" />
@@ -427,7 +434,7 @@ const BranchSidebar: React.FC = () => {
 // ── Finance menu ────────────────────────────────────────────────────────────
 // Shared by the head-office admin sidebar and the finance-only accountant
 // sidebar, so both always offer the same Finance screens.
-const FinanceNav: React.FC<{ canReadBooks: boolean }> = ({ canReadBooks }) => (
+const FinanceNav: React.FC<{ canReadBooks: boolean; showOverview?: boolean }> = ({ canReadBooks, showOverview }) => (
   <>
     {/* Accounting. Gated on the same permission the routes and the API
         check, so the section simply isn't there for staff who weren't
@@ -448,6 +455,11 @@ const FinanceNav: React.FC<{ canReadBooks: boolean }> = ({ canReadBooks }) => (
         so an admin without the grant sees those and nothing else here. */}
     <SidebarSection label="Finance" />
     <div className="sidebar-subnav">
+      {/* The accountant has this as their home item above the section. */}
+      {showOverview && canReadBooks && (
+        <SubItem to="/accounting" icon={LayoutDashboard} label="Overview" end />
+      )}
+
       {/* Branch COD mirrors Vendor COD below: the statements and the
           deposits that clear them are one conversation, so they sit in one
           disclosure rather than as two siblings. */}
@@ -461,7 +473,9 @@ const FinanceNav: React.FC<{ canReadBooks: boolean }> = ({ canReadBooks }) => (
       </SidebarGroup>
 
       <SubItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
-      <SubItem to="/finance/carrier-cod" icon={Truck} label="3PL COD" />
+      {/* Unlike Rider and Vendor COD, carrier statements sit behind the books
+          grant, matching the route and the API. */}
+      {canReadBooks && <SubItem to="/finance/carrier-cod" icon={Truck} label="3PL COD" />}
 
       {/* Vendor COD keeps its three screens together: the settlements
           themselves, what the vendor has asked to be paid before any of it
@@ -488,13 +502,13 @@ const FinanceNav: React.FC<{ canReadBooks: boolean }> = ({ canReadBooks }) => (
           <SidebarGroup
             label="Cash & Bank"
             icon={Wallet}
-            match={['/finance/cash-bank', '/accounting/transactions/cash', '/accounting/transactions/bank']}
+            match={['/finance/cash-bank', '/finance/voucher/new', '/accounting/transactions/cash', '/accounting/transactions/bank']}
           >
             <SubItem to="/finance/cash-bank" icon={Wallet} label="Overview" end />
-            <SubItem to="/accounting/transactions/cash/receipts" icon={Receipt} label="Cash Receipts" />
-            <SubItem to="/accounting/transactions/cash/payments" icon={Banknote} label="Cash Payments" />
-            <SubItem to="/accounting/transactions/bank/receipts" icon={Receipt} label="Bank Receipts" />
-            <SubItem to="/accounting/transactions/bank/payments" icon={CreditCard} label="Bank Payments" />
+            <SubItem to="/accounting/transactions/cash/receipts" icon={Receipt} label="Cash Receipts" voucherType="receipt" voucherSource="cash" />
+            <SubItem to="/accounting/transactions/cash/payments" icon={Banknote} label="Cash Payments" voucherType="payment" voucherSource="cash" />
+            <SubItem to="/accounting/transactions/bank/receipts" icon={Receipt} label="Bank Receipts" voucherType="receipt" voucherSource="bank" />
+            <SubItem to="/accounting/transactions/bank/payments" icon={CreditCard} label="Bank Payments" voucherType="payment" voucherSource="bank" />
           </SidebarGroup>
 
           {/* One ledger, three groupings of it: any account from the
@@ -521,8 +535,9 @@ const FinanceNav: React.FC<{ canReadBooks: boolean }> = ({ canReadBooks }) => (
 );
 
 // ── Accountant sidebar ──────────────────────────────────────────────────────
-// Finance-only account: the whole Finance menu (books included) and nothing
-// else. ProtectedRoute sends any other URL back to the finance overview.
+// Finance-only account: the whole Finance menu (books included) plus read-only
+// orders and overviews. ProtectedRoute sends any other URL back to the finance
+// overview.
 const AccountantSidebar: React.FC = () => {
   const { collapsed, mobileOpen } = useSidebarCollapse();
   return (
@@ -530,6 +545,10 @@ const AccountantSidebar: React.FC = () => {
       <SidebarToggleBtn />
       <div className="sidebar-nav">
         <SidebarItem to="/accounting" icon={LayoutDashboard} label="Finance Overview" end />
+        {/* Where to check a figure against the orders behind it, and correct one. */}
+        <SidebarItem to="/orders" icon={Package} label="Orders" />
+        <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
+        <SidebarItem to="/branches" icon={Building2} label="Branch Overview" end />
         <FinanceNav canReadBooks />
       </div>
 
@@ -603,7 +622,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           </SidebarGroup>
         )}
 
-        <FinanceNav canReadBooks={canReadBooks} />
+        <FinanceNav canReadBooks={canReadBooks} showOverview />
 
         <SidebarSection label="Operations" />
         <div className="sidebar-subnav">

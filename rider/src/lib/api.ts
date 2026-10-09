@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { Capacitor } from '@capacitor/core'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
 
@@ -27,8 +28,13 @@ function getCookie(name: string): string | null {
   return match ? decodeURIComponent(match[1]) : null
 }
 
+// Lets the server count riders per app (Android APK vs browser) and version.
+const APP_PLATFORM = Capacitor.isNativePlatform() ? Capacitor.getPlatform() : 'web'
+
 // Attach access token (Bearer) and CSRF token on every request
 api.interceptors.request.use((config) => {
+  config.headers['X-App-Platform'] = APP_PLATFORM
+  config.headers['X-App-Version'] = __APP_VERSION__
   const token = getStoredToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
@@ -103,13 +109,15 @@ export interface RiderUser {
 }
 
 export async function loginRider(payload: LoginPayload): Promise<RiderUser> {
+  // Keep the rider session Bearer-only so it cannot replace a dashboard cookie
+  // when both apps run on the same host.
   const { data } = await api.post<{
     success: boolean
     message: string
     data: RiderUser
     accessToken: string
     csrfToken: string
-  }>('/auth/login', payload)
+  }>('/auth/login', payload, { headers: { 'X-Auth-Mode': 'bearer' } })
 
   const roles: string[] = (data.data as any).roles ?? []
   if (!roles.includes('rider')) {

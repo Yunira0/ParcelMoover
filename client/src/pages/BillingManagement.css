@@ -140,3 +140,26 @@
 .billing-search {
   margin-bottom: var(--space-4);
 }
+
+/* Clear (×) at the end of the search box, shown while it holds a term. */
+.search-box-clear {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--border-radius-default);
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  justify-content: center;
+  padding: var(--space-1);
+}
+
+.search-box-clear:hover {
+  color: var(--color-text-default);
+}
+
+.search-box-clear:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}

@@ -7,6 +7,7 @@ import Pagination from '../../components/Pagination';
 import StatusChip from '../../components/StatusChip';
 import Button from '../../components/Button';
 import SalesOverviewFilterBar from '../../components/sales/SalesOverviewFilterBar';
+import SalesVendorsTable from '../../components/sales/SalesVendorsTable';
 import MerchantOverviewCards from '../../components/merchant/MerchantOverviewCards';
 import {
   getSalesOverview,
@@ -14,7 +15,9 @@ import {
   fetchAllSalesOrders,
   SALES_METRIC_STATUSES,
   SALES_METRIC_SETTLEMENT,
+  salesVendorName,
   type SalesMetricKey,
+  type SalesVendor,
   type SalesOverviewFilters,
   type SalesOverviewSummary,
 } from '../../services/salesOverview.service';
@@ -39,6 +42,13 @@ const SalesOverview: React.FC = () => {
   const [dateFrom, setDateFrom] = useState(() => searchParams.get('dateFrom') || '');
   const [dateTo, setDateTo] = useState(() => searchParams.get('dateTo') || '');
   const [activeCard, setActiveCard] = useState<SalesMetricKey | null>(null);
+  // A vendor picked from the rep's vendor table narrows the cards and orders to it.
+  const [selectedVendor, setSelectedVendor] = useState<SalesVendor | null>(null);
+  const [vendorFor, setVendorFor] = useState(salesUserId);
+  if (vendorFor !== salesUserId) {
+    setVendorFor(salesUserId);
+    setSelectedVendor(null);
+  }
 
   const [summary, setSummary] = useState<SalesOverviewSummary | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -50,13 +60,17 @@ const SalesOverview: React.FC = () => {
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
 
+  // With a rep picked, orders wait until one of their vendors is clicked.
+  const showOrders = !salesUserId || selectedVendor !== null;
+
   const filters: SalesOverviewFilters = useMemo(
     () => ({
       salesUserId: salesUserId || undefined,
+      vendorId: selectedVendor?.id,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
     }),
-    [salesUserId, dateFrom, dateTo],
+    [salesUserId, selectedVendor, dateFrom, dateTo],
   );
 
   // Keep the URL shareable.
@@ -78,6 +92,12 @@ const SalesOverview: React.FC = () => {
 
   useEffect(() => {
     let active = true;
+    if (!showOrders) {
+      setOrders([]);
+      setMeta(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     const statusFilter = activeCard ? (SALES_METRIC_STATUSES[activeCard] ?? undefined) : undefined;
@@ -101,7 +121,7 @@ const SalesOverview: React.FC = () => {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [filters, pageSizeChoice, pager.request, activeCard]);
+  }, [filters, pageSizeChoice, pager.request, activeCard, showOrders]);
 
   useEffect(() => pager.reset(), [filters, activeCard, pager.reset]);
   useEffect(() => { setSelectedIds(new Set()); }, [pager.request, activeCard]);
@@ -239,50 +259,63 @@ const SalesOverview: React.FC = () => {
         onSelect={setActiveCard}
       />
 
-      {error && <p className="order-load-error">{error}</p>}
+      {salesUserId && (
+        <SalesVendorsTable
+          salesUserId={salesUserId}
+          selectedVendor={selectedVendor}
+          onSelectVendor={setSelectedVendor}
+        />
+      )}
 
-      <div className="order-toolbar">
-        <div className="order-toolbar-left">
-          <span className="vendor-overview-count">
-            {loading ? 'Loading…' : `${totalCount} order${totalCount === 1 ? '' : 's'}`}
-            {selectedIds.size > 0 && <> · {selectedIds.size} selected</>}
-          </span>
-        </div>
-        <div className="order-toolbar-right">
-          <Button variant="primary" onClick={handleExport} disabled={loading || exporting || totalCount === 0}>
-            <Download size={14} /> {exporting ? 'Preparing…' : selectedIds.size > 0 ? `Download (${selectedIds.size})` : 'Download'}
-          </Button>
-        </div>
-      </div>
+      {showOrders && (
+        <>
+          {error && <p className="order-load-error">{error}</p>}
 
-      <Table
-        columns={columns}
-        data={orders}
-        selectedIds={selectedIds}
-        onToggleRow={toggleRowSelection}
-        allSelected={allVisibleSelected}
-        someSelected={someVisibleSelected}
-        onToggleAll={toggleVisibleSelection}
-        loading={loading && orders.length === 0}
-        loadingMessage="Loading orders..."
-        emptyMessage="No orders found for this sales rep and range."
-        minWidth="1500px"
-        tableClassName="orders-table merchant-overview-table"
-      />
+          <div className="order-toolbar sales-orders-anchor">
+            <div className="order-toolbar-left">
+              <span className="vendor-overview-count">
+                {loading ? 'Loading…' : `${totalCount} order${totalCount === 1 ? '' : 's'}`}
+                {selectedVendor && <> · {salesVendorName(selectedVendor)}</>}
+                {selectedIds.size > 0 && <> · {selectedIds.size} selected</>}
+              </span>
+            </div>
+            <div className="order-toolbar-right">
+              <Button variant="primary" onClick={handleExport} disabled={loading || exporting || totalCount === 0}>
+                <Download size={14} /> {exporting ? 'Preparing…' : selectedIds.size > 0 ? `Download (${selectedIds.size})` : 'Download'}
+              </Button>
+            </div>
+          </div>
 
-      <Pagination
-        ariaLabel="Sales orders pagination"
-        page={pager.page}
-        totalPages={totalPages}
-        cursor={pager.controls(meta as unknown as import('../../hooks/useCursorPagination').CursorMetaLike)}
-        pageSize={pageSizeChoice}
-        pageSizeLabel="orders"
-        onPageSizeChange={(size) => {
-          setPageSizeChoice(size);
-          pager.reset();
-        }}
-        summary={meta ? `${totalCount} order${totalCount === 1 ? '' : 's'}` : undefined}
-      />
+          <Table
+            columns={columns}
+            data={orders}
+            selectedIds={selectedIds}
+            onToggleRow={toggleRowSelection}
+            allSelected={allVisibleSelected}
+            someSelected={someVisibleSelected}
+            onToggleAll={toggleVisibleSelection}
+            loading={loading && orders.length === 0}
+            loadingMessage="Loading orders..."
+            emptyMessage={selectedVendor ? 'No orders found for this vendor and range.' : 'No orders found for this sales rep and range.'}
+            minWidth="1500px"
+            tableClassName="orders-table merchant-overview-table"
+          />
+
+          <Pagination
+            ariaLabel="Sales orders pagination"
+            page={pager.page}
+            totalPages={totalPages}
+            cursor={pager.controls(meta as unknown as import('../../hooks/useCursorPagination').CursorMetaLike)}
+            pageSize={pageSizeChoice}
+            pageSizeLabel="orders"
+            onPageSizeChange={(size) => {
+              setPageSizeChoice(size);
+              pager.reset();
+            }}
+            summary={meta ? `${totalCount} order${totalCount === 1 ? '' : 's'}` : undefined}
+          />
+        </>
+      )}
     </div>
   );
 };

@@ -11,6 +11,7 @@ import { getOrderCod } from '../../services/finance.service';
 import { formatCurrency as formatCurrencyBase, formatDate } from '../../utils/format';
 import { toBsDateTimeCell } from '../../utils/nepaliDate';
 import { downloadExcel } from '../../utils/excel';
+import { useSessionState } from '../../hooks/useSessionState';
 import './VendorFinance.css';
 import ReceiverPhones from '../../components/ReceiverPhones';
 
@@ -31,9 +32,11 @@ const statusLabel = (item: OrderCodItem) =>
   item.status === 'settled' ? 'Settled' : isPartlyPaid(item) ? 'Partially paid' : 'Not Settled';
 
 const VendorOrderPayments: React.FC = () => {
-  const [tab, setTab] = useState<TabValue>('all');
+  // Kept for the browser tab, so leaving and coming back keeps the filter
+  // until it is changed by hand.
+  const [tab, setTab] = useSessionState<TabValue>('vendor-order-payments:tab', 'all');
   const [page, setPage] = useState(1);
-  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  const [pageSizeChoice, setPageSizeChoice] = useSessionState('vendor-order-payments:pageSize', PAGE_SIZE);
   const [items, setItems] = useState<OrderCodItem[]>([]);
   const [settledCount, setSettledCount] = useState(0);
   const [notSettledCount, setNotSettledCount] = useState(0);
@@ -72,13 +75,13 @@ const VendorOrderPayments: React.FC = () => {
     };
   }, [tab, page, pageSizeChoice]);
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (items.length === 0) return;
 
     // A real workbook rather than a comma-joined .csv: a CSV lands entirely in
     // column A for anyone whose Excel uses ';' as its list separator, and the
     // amounts arrive as text you cannot sum.
-    downloadExcel(
+    await downloadExcel(
       `order-cod-${tab}-page-${page}`,
       'Order COD',
       ['Tracking ID', 'Receiver', 'Phone', 'Alternate Number', 'Created At', 'Delivered Date', 'Status', 'Net Payable'],

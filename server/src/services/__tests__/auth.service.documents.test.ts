@@ -93,7 +93,19 @@ describe("registerUserBySuperAdmin - vendor documents", () => {
 
     await expect(
       registerUserBySuperAdmin("actor-1", { ...validVendorInput }),
-    ).rejects.toMatchObject({ statusCode: 400, message: "Citizenship document is required for vendor" });
+    ).rejects.toMatchObject({ statusCode: 400, message: "Citizenship document (front side) is required for vendor" });
+    expect(mockedPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a vendor with only the front side of the citizenship", async () => {
+    mockedPrisma.users.findUnique.mockResolvedValue(actorWithRoles(["super_admin"]));
+
+    await expect(
+      registerUserBySuperAdmin("actor-1", {
+        ...validVendorInput,
+        citizenshipDocPath: "uploads/registration/citizenship.pdf",
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, message: "Citizenship document (back side) is required for vendor" });
     expect(mockedPrisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -105,6 +117,7 @@ describe("registerUserBySuperAdmin - vendor documents", () => {
     await registerUserBySuperAdmin("actor-1", {
       ...validVendorInput,
       citizenshipDocPath: "uploads/registration/citizenship.pdf",
+      citizenshipDocBackPath: "uploads/registration/citizenship-back.pdf",
       panVatDocPath: "uploads/registration/pan.pdf",
     });
 
@@ -112,6 +125,7 @@ describe("registerUserBySuperAdmin - vendor documents", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           citizenship_doc: "uploads/registration/citizenship.pdf",
+          citizenship_doc_back: "uploads/registration/citizenship-back.pdf",
           pan_vat_doc: "uploads/registration/pan.pdf",
           business_cert_doc: null,
           // Assigned, not defaulted: the current system default at creation.

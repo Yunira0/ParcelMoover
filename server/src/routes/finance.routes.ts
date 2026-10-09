@@ -19,6 +19,7 @@ import {
   revertSettlementSchema,
   cancelSettlementSchema,
   createCarrierSettlementSchema,
+  updateCarrierSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
 import {
@@ -30,6 +31,7 @@ import {
   getCarrierSettlementController,
   listCarrierSettlementsController,
   payCarrierSettlementController,
+  updateCarrierSettlementController,
   unsettledCarrierOrdersController,
 } from "../controllers/carrierSettlement.controller";
 import {
@@ -45,6 +47,7 @@ import {
   revertSettlementController,
   cancelSettlementController,
   getSettlementDetailController,
+  getSettlementBillingPaymentsController,
   getSettlementDocumentController,
 } from "../controllers/finance.controller";
 
@@ -118,6 +121,18 @@ financeRouter.get(
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   getSettlementDetailController,
+);
+
+// GET /api/finance/settlements/:id/billing-payments — the vendor's unapplied
+// and still-pending Billing payments, so Make Payment can warn before the same
+// transfer is recorded twice. Staff only (same audience as pay); deliberately
+// not part of the Partner API.
+financeRouter.get(
+  "/settlements/:id/billing-payments",
+  authMiddleware,
+  authorizeRoles("super_admin", "accountant", "admin"),
+  financeReadLimiter,
+  getSettlementBillingPaymentsController,
 );
 
 // GET /api/finance/settlements/:id/documents/:doc — one payment proof for a
@@ -238,14 +253,16 @@ financeRouter.get(
 );
 
 // ── 3PL (NCM / Upaya) COD settlements ── head office only (enforced in the service).
-// Same gate as the vendor/rider statements above: an admin without Finance
-// access must not be able to read, create or pay carrier statements either.
-const carrierStaff = [authMiddleware, authorizeRoles("super_admin", "admin", "accountant"), requireStaffPermission("FINANCE_ACCESS")] as const;
+// Behind the books grant: carrier statements move head-office money, so a plain
+// admin needs ACCOUNTING_ACCESS (super_admin and the accountant always pass).
+const carrierStaff = [authMiddleware, authorizeRoles("super_admin", "admin", "accountant"), requireAdminPermission("ACCOUNTING_ACCESS")] as const;
 financeRouter.get("/carrier-cod/:carrier/unsettled", ...carrierStaff, financeReadLimiter, unsettledCarrierOrdersController);
 financeRouter.get("/carrier-settlements", ...carrierStaff, financeReadLimiter, listCarrierSettlementsController);
 financeRouter.post("/carrier-settlements", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(createCarrierSettlementSchema), createCarrierSettlementController);
 financeRouter.get("/carrier-settlements/:id", ...carrierStaff, financeReadLimiter, getCarrierSettlementController);
 financeRouter.post("/carrier-settlements/:id/pay", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(paySettlementSchema), payCarrierSettlementController);
+// Edit an unpaid statement: same gate as cancelling it.
+financeRouter.patch("/carrier-settlements/:id", ...carrierStaff, csrfProtection, requireAdminPermission("EDIT_SETTLEMENTS"), settlementCreateLimiter, validate(updateCarrierSettlementSchema), updateCarrierSettlementController);
 financeRouter.post("/carrier-settlements/:id/cancel", ...carrierStaff, csrfProtection, requireAdminPermission("EDIT_SETTLEMENTS"), settlementCreateLimiter, validate(cancelSettlementSchema), cancelCarrierSettlementController);
 financeRouter.post("/carrier-settlements/:id/documents", ...carrierStaff, csrfProtection, settlementCreateLimiter, carrierSettlementFileUpload, attachCarrierSettlementDocumentsController);
 financeRouter.get("/carrier-settlements/:id/documents/:documentId", ...carrierStaff, financeReadLimiter, getCarrierSettlementDocumentController);

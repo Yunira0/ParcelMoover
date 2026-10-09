@@ -4,6 +4,7 @@ import {
   getCodSettlementRequestById,
   getRegisteredBankDetails,
   listCodSettlementRequests,
+  listSettleableStatements,
   updateCodSettlementRequestStatus,
 } from "../services/codSettlementRequest.service";
 import {
@@ -74,6 +75,19 @@ export async function createCodSettlementRequestController(req: Request, res: Re
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to raise the COD settlement request",
+    });
+  }
+}
+
+export async function listSettleableStatementsController(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+    const data = await listSettleableStatements({ id: req.user.id, roles: req.user.roles }, req.params.id as string);
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load statements",
     });
   }
 }

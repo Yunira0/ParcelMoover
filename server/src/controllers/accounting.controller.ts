@@ -19,6 +19,7 @@ import {
   listTransactions,
   reverseEntry,
   searchParties,
+  searchPartiesPage,
   getPartyStatement,
   setPeriodStatus,
   voidExpense,
@@ -26,6 +27,7 @@ import {
   type TransactionQuery,
 } from "../services/accounting/accounting.service";
 import { createAccount, listChart, setOpeningBalance, updateAccount } from "../services/accounting/masters.service";
+import { listBranchCodOutstanding, receiveBranchCod } from "../services/branch-billing.service";
 
 function fail(res: Response, error: any, fallback: string) {
   return res.status(error?.statusCode || 500).json({
@@ -200,7 +202,12 @@ export async function getPartySettlementLedgerController(req: Request, res: Resp
 
 export async function searchPartiesController(req: Request, res: Response) {
   try {
-    return ok(res, await searchParties(String(req.query.q ?? "")));
+    const query = String(req.query.q ?? "");
+    if (req.query.paged === "true") {
+      const types = String(req.query.types ?? "rider,vendor,user").split(",") as Array<"rider" | "vendor" | "user">;
+      return ok(res, await searchPartiesPage(query, types, Number(req.query.offset ?? 0), Number(req.query.limit ?? 30)));
+    }
+    return ok(res, await searchParties(query));
   } catch (error) {
     return fail(res, error, "Search failed");
   }
@@ -295,6 +302,22 @@ export async function createManualEntryController(req: Request, res: Response) {
     return res.status(201).json({ success: true, data: await createManualEntry(req.user!, req.body) });
   } catch (error) {
     return fail(res, error, "Failed to post the journal entry");
+  }
+}
+
+export async function listBranchCodOutstandingController(_req: Request, res: Response) {
+  try {
+    return ok(res, await listBranchCodOutstanding());
+  } catch (error) {
+    return fail(res, error, "Failed to load branch COD balances");
+  }
+}
+
+export async function receiveBranchCodController(req: Request, res: Response) {
+  try {
+    return res.status(201).json({ success: true, data: await receiveBranchCod(req.user!, req.body) });
+  } catch (error) {
+    return fail(res, error, "Failed to receive branch COD");
   }
 }
 

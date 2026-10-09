@@ -1,0 +1,20 @@
+.ktm-map { position: relative; width: 100%; height: 100%; min-height: 280px; overflow: hidden; isolation: isolate; touch-action: none; cursor: grab; color: var(--ktm-ink); }
+.ktm-map:active { cursor: grabbing; }
+.ktm-map--static, .ktm-map--static:active { touch-action: auto; cursor: default; }
+.ktm-map--pin, .ktm-map--pin:active { cursor: crosshair; }
+.ktm-map:focus-visible { outline: 3px solid #dd5d3c; outline-offset: -3px; }
+.ktm-map__canvas, .ktm-map__overlays { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ktm-map__overlays { pointer-events: none; overflow: visible; }
+.ktm-map__pin { pointer-events: auto; cursor: pointer; }
+.ktm-map__pin:focus { outline: none; }
+.ktm-map__pin:focus-visible > path { stroke: var(--ktm-ink); stroke-width: 4px; }
+.ktm-map__notice { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: 320px; background: var(--ktm-paper); padding: 18px 22px; border-radius: 12px; box-shadow: 0 8px 30px #25352b20; font: 13px/1.5 sans-serif; }
+.ktm-map__notice button { display: block; margin-top: 8px; border: 0; background: var(--ktm-ink); color: var(--ktm-paper); padding: 8px 12px; border-radius: 5px; cursor: pointer; }
+.ktm-map__detail { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); padding: 8px 14px; border-radius: 20px; background: var(--ktm-paper); font: 11px sans-serif; box-shadow: 0 3px 12px #25352b14; }
+.ktm-map__credit { position: absolute; right: 10px; bottom: 8px; color: var(--ktm-ink); background: var(--ktm-paper); font: 10px/1.5 sans-serif; padding: 2px 5px; text-decoration: none; border-radius: 3px; }
+.ktm-map__credit:hover { text-decoration: underline; }
+.ktm-map__scale { position: absolute; left: 22px; bottom: 14px; font: 10px sans-serif; color: var(--ktm-ink); pointer-events: none; }
+.ktm-map__scale span { display: block; height: 5px; border: 1px solid currentColor; border-top: 0; }
+.ktm-map__scale small { display: block; margin-top: 3px; }
+/* SMIL motion is opt-in; reduced-motion users see the static route origin. */
+@media (prefers-reduced-motion: reduce) { .ktm-map__courier--moving { display: none; } }

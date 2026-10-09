@@ -173,6 +173,7 @@ const FormField: React.FC<FormFieldProps> = ({
         />
       ) : type === 'searchable-select' ? (
         <SearchableSelect
+          ariaLabel={label || undefined}
           options={searchableOptions}
           value={value === undefined ? '' : String(value)}
           onChange={onChange}

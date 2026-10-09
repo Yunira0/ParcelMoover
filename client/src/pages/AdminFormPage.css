@@ -227,6 +227,15 @@
   color: var(--color-text-caption);
 }
 
+.afp-file-field .afp-field-error {
+  margin-top: 0;
+  overflow-wrap: anywhere;
+}
+
+.afp-file-chip .afp-file-size {
+  flex: 0 0 auto;
+}
+
 /* Hint */
 .afp-hint {
   color: var(--color-text-caption);

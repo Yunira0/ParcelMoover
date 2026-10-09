@@ -28,3 +28,8 @@
 .sales-overview-page .tracking-cell .tracking-id-link:hover {
   text-decoration: underline;
 }
+
+/* Where "pick a vendor" scrolls to: clear of the sticky top bar (68px). */
+.sales-overview-page .sales-orders-anchor {
+  scroll-margin-top: calc(68px + var(--space-4));
+}

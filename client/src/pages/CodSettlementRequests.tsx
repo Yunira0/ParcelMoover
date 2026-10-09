@@ -1,25 +1,31 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { Banknote } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import Table from '../components/Table';
 import FilterDropdown from '../components/FilterDropdown';
+import ClearableFilter from '../components/ClearableFilter';
 import Pagination from '../components/Pagination';
 import { Banner } from './accounting/ui';
 import { isSalesUser } from '../utils/auth';
 import {
   COD_REQUEST_STATUS_LABELS,
+  getCodSettlementRequestById,
   getCodSettlementRequests,
+  getSettleableStatements,
   isLiveCodRequest,
   updateCodSettlementRequestStatus,
   type CodSettlementRequest,
   type CodSettlementRequestStatus,
+  type SettleableStatement,
 } from '../services/codSettlementRequests.service';
-import { getSettlements, type SettlementListItem } from '../services/finance.service';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { settlementStatusLabel } from '../utils/settlementStatus';
 import { formatCurrency } from '../utils/format';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { toBsDate } from '../utils/nepaliDate';
+import { useSessionState } from '../hooks/useSessionState';
 import './CodSettlementRequests.css';
 
 // Staff side of vendor COD settlement requests.
@@ -42,7 +48,9 @@ const CodSettlementRequests: React.FC = () => {
   // Sales sees its own vendors' requests read-only; settling stays with admins.
   const readOnly = isSalesUser();
   const [requests, setRequests] = useState<CodSettlementRequest[]>([]);
-  const [status, setStatus] = useState('');
+  // Kept for the browser tab, so leaving and coming back keeps the filter
+  // until it is cleared by hand.
+  const [status, setStatus] = useSessionState('cod-settlement-requests:status', '');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -50,11 +58,11 @@ const CodSettlementRequests: React.FC = () => {
   const [rejectReason, setRejectReason] = useState('');
   // Settling names the statement that answers the request - see openSettle.
   const [settling, setSettling] = useState<CodSettlementRequest | null>(null);
-  const [statementOptions, setStatementOptions] = useState<SettlementListItem[]>([]);
+  const [statementOptions, setStatementOptions] = useState<SettleableStatement[]>([]);
   const [statementChoice, setStatementChoice] = useState('');
   const [statementsLoading, setStatementsLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [pageSize, setPageSize] = useSessionState('cod-settlement-requests:pageSize', PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -81,10 +89,27 @@ const CodSettlementRequests: React.FC = () => {
     void load();
   }, [load]);
 
-  // Changing the status filter resets to the first page of the new result set.
+  // Notifications link to /cod-settlement-requests/:id. The request may be on
+  // any page of the list, so it is fetched on its own and pinned above it.
+  const { id: linkedId } = useParams();
+  const [linked, setLinked] = useState<CodSettlementRequest | null>(null);
   useEffect(() => {
+    if (!linkedId) {
+      setLinked(null);
+      return;
+    }
+    let active = true;
+    getCodSettlementRequestById(linkedId)
+      .then((response) => { if (active) setLinked(response.data); })
+      .catch((err) => { if (active) setError(apiErrorMessage(err, 'Could not open that request')); });
+    return () => { active = false; };
+  }, [linkedId, requests]);
+
+  // Changing the status filter resets to the first page of the new result set.
+  const changeStatus = (next: string) => {
+    setStatus(next);
     setPage(1);
-  }, [status]);
+  };
 
   // Settling/rejecting the last request on a page (other than the first)
   // leaves `page` pointing past the end of the now-shorter list, which reads
@@ -119,7 +144,8 @@ const CodSettlementRequests: React.FC = () => {
     }
   };
 
-  // The vendor's statements, newest first, to pick the one that pays this out.
+  // Only statements that can still settle this: the server leaves out
+  // cancelled ones and any already linked to another request.
   const openSettle = async (request: CodSettlementRequest) => {
     setRejecting(null);
     setSettling(request);
@@ -127,14 +153,23 @@ const CodSettlementRequests: React.FC = () => {
     setStatementOptions([]);
     setStatementsLoading(true);
     try {
-      const response = await getSettlements('vendor', request.vendorId, 1, 50);
-      setStatementOptions(response.data.filter((s) => s.status !== 'cancelled'));
+      setStatementOptions(await getSettleableStatements(request.id));
     } catch (err) {
       setError(apiErrorMessage(err, "Could not load this vendor's statements"));
     } finally {
       setStatementsLoading(false);
     }
   };
+
+  const closeReject = useCallback(() => {
+    setRejecting(null);
+    setRejectReason('');
+  }, []);
+
+  const closeSettle = useCallback(() => {
+    setSettling(null);
+    setStatementChoice('');
+  }, []);
 
   const columns = [
     { header: 'REQUEST', accessor: (r: CodSettlementRequest) => r.requestNo, width: '140px' },
@@ -196,98 +231,80 @@ const CodSettlementRequests: React.FC = () => {
         <h1>
           <Banknote size={20} /> COD Settlement Requests
         </h1>
-        <p>
-          {readOnly
-            ? 'Payout requests from your vendors. Head office settles or rejects them.'
-            : 'Vendors asking to be paid out. Settling or rejecting a request releases their hold and lets them raise the next one — the payout itself is still recorded through Settlements.'}
-        </p>
       </header>
 
       {error && <Banner tone="danger">{error}</Banner>}
 
       <div className="cod-request-toolbar">
-        <FilterDropdown
-          label="STATUS"
-          value={status}
-          options={STATUS_FILTER_OPTIONS}
-          onChange={setStatus}
-          placeholder="All statuses"
-        />
+        <ClearableFilter
+          active={Boolean(status)}
+          onClear={() => changeStatus('')}
+          clearLabel="Clear status filter"
+          align="end"
+        >
+          <FilterDropdown
+            label="STATUS"
+            value={status}
+            options={STATUS_FILTER_OPTIONS}
+            onChange={changeStatus}
+            placeholder="All statuses"
+          />
+        </ClearableFilter>
       </div>
 
-      {settling && (
+      <ConfirmDialog
+        isOpen={Boolean(settling)}
+        title={settling ? `Settle ${settling.requestNo}` : ''}
+        confirmLabel="Confirm settle"
+        busy={Boolean(settling) && busyId === settling?.id}
+        confirmDisabled={!statementChoice}
+        onConfirm={() => settling && void act(settling, 'settled', undefined, statementChoice)}
+        onCancel={closeSettle}
+      >
+        <FormField
+          label="Statement"
+          required
+          type="select"
+          value={statementChoice}
+          onChange={setStatementChoice}
+          placeholder={
+            statementsLoading
+              ? 'Loading statements…'
+              : statementOptions.length
+                ? 'Choose a statement'
+                : 'No unused statements for this vendor'
+          }
+          options={statementOptions.map((s) => ({
+            value: s.id,
+            label: `${s.statementId} · ${formatCurrency(s.amount)} · ${settlementStatusLabel(s.status)}`,
+          }))}
+        />
+      </ConfirmDialog>
+
+      {/* Rejecting is destructive from the vendor's side — they are told no and
+          have to raise another — so the confirm takes `danger`. */}
+      <ConfirmDialog
+        isOpen={Boolean(rejecting)}
+        title={rejecting ? `Reject ${rejecting.requestNo}` : ''}
+        message="The vendor will see this reason."
+        confirmLabel="Confirm rejection"
+        danger
+        busy={Boolean(rejecting) && busyId === rejecting?.id}
+        confirmDisabled={!rejectReason.trim()}
+        onConfirm={() => rejecting && void act(rejecting, 'rejected', rejectReason.trim())}
+        onCancel={closeReject}
+      >
+        <FormField label="Reason" required type="textarea" value={rejectReason} onChange={setRejectReason} />
+      </ConfirmDialog>
+
+      {linked && (
         <section className="cod-request-card">
-          <h2>Settle {settling.requestNo}</h2>
-          <p>
-            Pick the COD statement that pays this request out — create it in Settlements first if it
-            doesn't exist yet. The vendor sees the statement and whether it has been paid.
-          </p>
-          <FormField
-            label="Statement"
-            required
-            type="select"
-            value={statementChoice}
-            onChange={setStatementChoice}
-            placeholder={
-              statementsLoading
-                ? 'Loading statements…'
-                : statementOptions.length
-                  ? 'Choose a statement'
-                  : 'No statements for this vendor yet'
-            }
-            options={statementOptions.map((s) => ({
-              value: s.id,
-              label: `${s.statementId} · ${formatCurrency(s.amount)} · ${settlementStatusLabel(s.status)}`,
-            }))}
-          />
-          <div className="cod-request-actions">
-            <Button
-              variant="primary"
-              disabled={!statementChoice || busyId === settling.id}
-              onClick={() => act(settling, 'settled', undefined, statementChoice)}
-            >
-              Confirm settle
-            </Button>
-            <Button variant="outline" onClick={() => { setSettling(null); setStatementChoice(''); }}>
-              Cancel
-            </Button>
-          </div>
+          <h2>{linked.requestNo}</h2>
+          <Table selectable={false} columns={columns} data={[linked]} minWidth="1080px" />
         </section>
       )}
 
-      {rejecting && (
-        <section className="cod-request-card">
-          <h2>Reject {rejecting.requestNo}</h2>
-          <p>
-            The vendor is blocked from raising another request until this closes, so tell them what to
-            fix. They will see this reason.
-          </p>
-          <FormField
-            label="Reason"
-            required
-            type="textarea"
-            value={rejectReason}
-            onChange={setRejectReason}
-          />
-          <div className="cod-request-actions">
-            {/* Rejecting is destructive from the vendor's side — the vendor is
-                told no and has to raise another. `danger`, not the brand
-                colour: primary would invite the click. */}
-            <Button
-              variant="danger"
-              disabled={!rejectReason.trim() || busyId === rejecting.id}
-              onClick={() => act(rejecting, 'rejected', rejectReason.trim())}
-            >
-              Confirm rejection
-            </Button>
-            <Button variant="outline" onClick={() => { setRejecting(null); setRejectReason(''); }}>
-              Cancel
-            </Button>
-          </div>
-        </section>
-      )}
-
-      <Table columns={columns} data={requests} loading={loading} minWidth="1080px" />
+      <Table selectable={false} columns={columns} data={requests} loading={loading} minWidth="1080px" />
 
       <Pagination
         ariaLabel="COD settlement requests pagination"

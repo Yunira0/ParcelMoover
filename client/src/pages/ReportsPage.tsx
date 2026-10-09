@@ -179,7 +179,7 @@ const ReportsPage: React.FC = () => {
         toBsDateTimeCell(o.createdAtRaw || o.createdAt) || '',
         ...statusTimelineCells(o.statusTimestamps),
       ]);
-      downloadExcel(
+      await downloadExcel(
         `${report}-${bucket}-report.xlsx`,
         `${REPORTS[report].label} ${bucket}`,
         headers,

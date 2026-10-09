@@ -32,7 +32,8 @@ export async function dedupeInFlight<T>(key: string | null, compute: () => Promi
 
 // Only the default, unfiltered list is cached, so actor scope forms the key.
 export function ordersListCacheKey(vendorId?: string, riderId?: string) {
-  return `${ORDERS_LIST_CACHE_PREFIX}${vendorId ?? "none"}:${riderId ?? "none"}`;
+  // Retire keys written before date/sort filters were excluded from the cache.
+  return `${ORDERS_LIST_CACHE_PREFIX}v2:${vendorId ?? "none"}:${riderId ?? "none"}`;
 }
 
 // Cache invalidation is best-effort; a Redis outage must not block a write.

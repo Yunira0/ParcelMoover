@@ -110,6 +110,15 @@ export async function getStatusCounts(
 // See finance.service.ts: payableAmount = collected - delivery_charge is the
 // vendor-payout definition used everywhere.
 
+// The parcels whose COD is the vendor's to be paid: delivered ones, plus a
+// partial delivery whose remaining items went back to the vendor - its
+// collected cash survives the return and goes on the vendor statement like any
+// other (getUnsettledOrders offers it), so leaving it out made Deposited and
+// Pending deposit disagree with the statements and the credit balance.
+// Needs the cod_collections join aliased `cc`.
+const VENDOR_COD_PARCEL_SQL = Prisma.sql`(p.status IN ('delivered','partially_delivered')
+  OR (p.status = 'returned_to_vendor' AND cc.collected_amount > 0))`;
+
 export interface MerchantOverviewMetric {
   count: number;
   amount: number;
@@ -277,7 +286,7 @@ export async function getMerchantOverview(
       JOIN settlement_items si ON si.cod_collection_id = cc.id
       JOIN settlements s ON s.id = si.settlement_id AND s.status = 'settled' AND s.payee_type = 'vendor'
       WHERE p.deleted_at IS NULL
-        AND p.status IN ('delivered','partially_delivered')
+        AND ${VENDOR_COD_PARCEL_SQL}
         ${depositedVendorCondition}
         ${branchCondition}
         ${depositedDateFilter}
@@ -294,7 +303,7 @@ export async function getMerchantOverview(
       FROM parcels p
       LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
       WHERE p.deleted_at IS NULL
-        AND p.status IN ('delivered','partially_delivered')
+        AND ${VENDOR_COD_PARCEL_SQL}
         ${depositedVendorCondition}
         ${branchCondition}
         ${depositedDateFilter}
@@ -314,7 +323,7 @@ export async function getMerchantOverview(
       JOIN settlement_items si ON si.cod_collection_id = cc.id
       JOIN settlements s ON s.id = si.settlement_id AND s.status = 'partially_paid' AND s.payee_type = 'vendor'
       WHERE p.deleted_at IS NULL
-        AND p.status IN ('delivered','partially_delivered')
+        AND ${VENDOR_COD_PARCEL_SQL}
         ${depositedVendorCondition}
         ${branchCondition}
         ${depositedDateFilter}
@@ -499,7 +508,7 @@ export async function getSalesOverview(
       JOIN settlement_items si ON si.cod_collection_id = cc.id
       JOIN settlements s ON s.id = si.settlement_id AND s.status = 'settled' AND s.payee_type = 'vendor'
       WHERE p.deleted_at IS NULL
-        AND p.status IN ('delivered','partially_delivered')
+        AND ${VENDOR_COD_PARCEL_SQL}
         ${salesCondition}
         ${branchCondition}
         ${dateFilter}
@@ -511,7 +520,7 @@ export async function getSalesOverview(
       FROM parcels p
       LEFT JOIN cod_collections cc ON cc.parcel_id = p.id
       WHERE p.deleted_at IS NULL
-        AND p.status IN ('delivered','partially_delivered')
+        AND ${VENDOR_COD_PARCEL_SQL}
         ${salesCondition}
         ${branchCondition}
         ${dateFilter}
@@ -530,7 +539,7 @@ export async function getSalesOverview(
       JOIN settlement_items si ON si.cod_collection_id = cc.id
       JOIN settlements s ON s.id = si.settlement_id AND s.status = 'partially_paid' AND s.payee_type = 'vendor'
       WHERE p.deleted_at IS NULL
-        AND p.status IN ('delivered','partially_delivered')
+        AND ${VENDOR_COD_PARCEL_SQL}
         ${salesCondition}
         ${branchCondition}
         ${dateFilter}
@@ -600,7 +609,8 @@ export async function getRiderOverview(
   // for staff picking a rider to inspect, and is ignored (not merely
   // narrowed) for anyone else so a rider account can't read another rider's
   // figures by passing their id.
-  const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
+  // The office accountant reads every rider's figures, like staff.
+  const isStaff = actor.roles.some((role) => role === "super_admin" || role === "admin" || role === "accountant");
   let effectiveRiderId = riderId;
   if (!isStaff) {
     const rider = await prisma.riders.findFirst({
@@ -755,7 +765,9 @@ export async function getRiderOverview(
         AND cc.collected_at IS NOT NULL
         AND cc.rider_payment_status = 'pending'
         AND cc.carrier_code IS NULL
-        AND p.status NOT IN ('cancelled','returned_to_vendor')
+        AND p.status <> 'cancelled'
+        -- A returned partial delivery keeps its cash (riderLegParcelFilter).
+        AND (p.status <> 'returned_to_vendor' OR cc.collected_amount > 0)
         AND p.order_type <> 'return'
         ${riderCollector}
         ${branchCondition}

@@ -1,5 +1,4 @@
 import React, { useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { CheckCircle2, Download, Upload, XCircle } from 'lucide-react';
 import Button from '../components/Button';
 import {
@@ -32,7 +31,8 @@ const SAMPLE_ROWS = [
 
 // ── Template download ─────────────────────────────────────────────────────────
 
-function downloadTemplate() {
+async function downloadTemplate() {
+  const XLSX = await import('xlsx');
   const wb = XLSX.utils.book_new();
   const data = [COLUMNS as unknown as string[], ...SAMPLE_ROWS];
   const ws = XLSX.utils.aoa_to_sheet(data);
@@ -151,6 +151,8 @@ function toApiRows(rows: ParsedRow[]): BulkImportRateRow[] {
 const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported }) => {
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
+  const [readingFile, setReadingFile] = useState(false);
+  const fileReadVersion = useRef(0);
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -160,21 +162,34 @@ const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported
   const invalidRows = parsedRows.filter((r) => r._error);
 
   const handleFile = (file: File) => {
+    const readVersion = ++fileReadVersion.current;
+    setReadingFile(true);
+    setParsedRows([]);
     setFileName(file.name);
     setError('');
     setResults(null);
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        const XLSX = await import('xlsx');
+        if (readVersion !== fileReadVersion.current) return;
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const raw: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
         setParsedRows(parseSheet(raw));
       } catch {
+        if (readVersion !== fileReadVersion.current) return;
         setError('Could not read file. Make sure it is a valid .xlsx or .csv file.');
+      } finally {
+        if (readVersion === fileReadVersion.current) setReadingFile(false);
       }
+    };
+    reader.onerror = () => {
+      if (readVersion !== fileReadVersion.current) return;
+      setReadingFile(false);
+      setError('Could not read file. Please try again.');
     };
     reader.readAsArrayBuffer(file);
   };
@@ -274,7 +289,7 @@ const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported
             the area name alone is ambiguous.
           </p>
         </div>
-        <Button variant="outline" onClick={downloadTemplate}>
+        <Button variant="outline" onClick={() => { void downloadTemplate().catch(() => setError('Could not download the template. Check your connection and try again.')); }}>
           <Download size={15} /> Download Template
         </Button>
       </div>
@@ -298,7 +313,7 @@ const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported
         />
         <Upload size={28} className="di-dropzone-icon" />
         {fileName ? (
-          <span className="di-dropzone-filename">{fileName}</span>
+          <span className="di-dropzone-filename">{readingFile ? 'Reading file…' : fileName}</span>
         ) : (
           <>
             <span className="di-dropzone-primary">Drop file here or click to browse</span>
@@ -400,7 +415,7 @@ const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported
       <div className="di-actions">
         <Button
           variant="primary"
-          disabled={submitting || validRows.length === 0}
+          disabled={submitting || readingFile || validRows.length === 0}
           onClick={handleSubmit}
         >
           {submitting

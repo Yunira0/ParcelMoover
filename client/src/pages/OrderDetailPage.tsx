@@ -1,10 +1,9 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package, ShieldAlert } from 'lucide-react';
 import {
-  getOrderByTrackingId,
   addOrderRemark,
-  subscribeToOrderStatusChanged,
   updateOrderStatus,
   redirectOrder,
   forwardOrder,
@@ -15,7 +14,7 @@ import {
   type UpdateOrderInput,
 } from '../services/orders.service';
 import OrderDetailHeader, { STATUS_LABEL } from '../components/order-detail/OrderDetailHeader';
-import { getCurrentUserRoles, isVendorSide, hasAdminPermission } from '../utils/auth';
+import { getCurrentUserRoles, isAccountantUser, isVendorSide, hasAdminPermission } from '../utils/auth';
 import OrderInfoCards from '../components/order-detail/OrderInfoCards';
 import OrderTimeline from '../components/order-detail/OrderTimeline';
 import OrderRemarks from '../components/order-detail/OrderRemarks';
@@ -25,6 +24,8 @@ import OrderRedirectLog from '../components/order-detail/OrderRedirectLog';
 import RedirectOrderModal from '../components/RedirectOrderModal';
 import ForwardOrderModal from '../components/ForwardOrderModal';
 import { printLabels } from '../utils/printLabels';
+import { queryKeys } from '../queries/keys';
+import { orderDetailQuery } from '../queries/orders';
 import './OrderDetailPage.css';
 
 // Statuses whose transition needs structured extra data (a rider pick, COD
@@ -77,9 +78,23 @@ const VENDOR_EDITABLE_STATUSES: ParcelStatus[] = [
 const OrderDetailPage: React.FC = () => {
   const { trackingId } = useParams<{ trackingId: string }>();
   const navigate = useNavigate();
-  const [order, setOrder] = useState<OrderDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const orderKey = queryKeys.orders.detail(trackingId ?? '');
+  // A revisit paints the cached parcel at once and refetches behind it; any
+  // order change in this tab refetches it too (queryClient.ts). A failed
+  // background refetch keeps the parcel on screen rather than blanking it.
+  const orderQuery = useQuery({
+    ...orderDetailQuery(trackingId ?? ''),
+    enabled: Boolean(trackingId),
+  });
+  const order: OrderDetail | null = orderQuery.data?.success ? orderQuery.data.data : null;
+  const loading = orderQuery.isPending && Boolean(trackingId);
+  const error = orderQuery.isError
+    ? 'Failed to load order details. Please try again.'
+    : orderQuery.data && !orderQuery.data.success ? 'Order not found.' : null;
+  // Every mutation used below announces itself, which already started the
+  // refetch - wait for that one instead of starting a second.
+  const fetchOrder = () => orderQuery.refetch({ cancelRefetch: false });
   const [replyingTo, setReplyingTo] = useState<OrderRemark | null>(null);
   const [highlightedRemarkId, setHighlightedRemarkId] = useState<string | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,7 +114,7 @@ const OrderDetailPage: React.FC = () => {
   const [overrideSaving, setOverrideSaving] = useState(false);
   const [overrideError, setOverrideError] = useState('');
 
-  // Redirect (customer moved) — admin/super_admin only, same as the server route.
+  // Redirect (customer moved) and forwarding: admins and the accountant, same as the server routes.
   const isAdmin = getCurrentUserRoles().some((r) => ['admin', 'super_admin'].includes(r));
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [redirectSaving, setRedirectSaving] = useState(false);
@@ -121,44 +136,14 @@ const OrderDetailPage: React.FC = () => {
     await fetchOrder();
   };
 
-  const fetchOrder = useCallback(async () => {
-    if (!trackingId) return;
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await getOrderByTrackingId(trackingId);
-      if (response.success) {
-        setOrder(response.data);
-      } else {
-        setError('Order not found.');
-      }
-    } catch {
-      setError('Failed to load order details. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, [trackingId]);
-
-  useEffect(() => {
-    fetchOrder();
-  }, [fetchOrder]);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToOrderStatusChanged(() => {
-      fetchOrder();
-    });
-    return unsubscribe;
-  }, [fetchOrder]);
-
   const handleAddRemark = async (remark: string, parentRemarkId?: string | null) => {
     if (!order) return;
     const response = await addOrderRemark(order.id, remark, parentRemarkId);
     if (response.success) {
       const newRemark = response.data;
-      setOrder((prev) => {
-        if (!prev) return prev;
-        return { ...prev, remarks: [...prev.remarks, newRemark] };
-      });
+      queryClient.setQueryData<{ success: boolean; data: OrderDetail }>(orderKey, (prev) =>
+        prev?.success ? { ...prev, data: { ...prev.data, remarks: [...prev.data.remarks, newRemark] } } : prev,
+      );
       setHighlightedRemarkId(newRemark.id);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
       highlightTimeoutRef.current = setTimeout(() => setHighlightedRemarkId(null), 2500);
@@ -245,7 +230,7 @@ const OrderDetailPage: React.FC = () => {
     );
   }
 
-  if (error || !order) {
+  if (!order) {
     return (
       <div className="od-page">
         <div className="od-container">
@@ -266,17 +251,19 @@ const OrderDetailPage: React.FC = () => {
   }
 
   const isEditBlocked = EDIT_BLOCKED_STATUSES.includes(order.status);
-  const canEditNow = isAdmin ? !isEditBlocked : isVendorActor && VENDOR_EDITABLE_STATUSES.includes(order.status);
+  // Office staff edit order details: admins and the accountant (finance corrections).
+  const isOfficeEditor = isAdmin || isAccountantUser();
+  const canEditNow = isOfficeEditor ? !isEditBlocked : isVendorActor && VENDOR_EDITABLE_STATUSES.includes(order.status);
   // Hidden outright for a terminal parcel or a viewer with no edit permission
   // at all (rider/sales); disabled-with-reason only for the vendor window
   // that closes once ops has the parcel, since that's a temporary, explainable
   // state worth surfacing rather than a settled one worth hiding.
   const showEditDisabled = !canEditNow && !isEditBlocked && isVendorActor;
-  // Narrow escape hatch: super_admin or an admin holding EDIT_SETTLEMENTS may
-  // still fix the COD amount on an otherwise-locked (delivered/RTV/RTO)
-  // parcel — every other field stays locked. Server re-enforces this exactly;
-  // this only decides whether to offer the affordance.
-  const canOverrideCod = isSuperAdmin || hasAdminPermission('EDIT_SETTLEMENTS');
+  // Narrow escape hatch: super_admin, the accountant, or an admin holding
+  // EDIT_SETTLEMENTS may still fix the COD amount on an otherwise-locked
+  // (delivered/RTV/RTO) parcel — every other field stays locked. Server
+  // re-enforces this exactly; this only decides whether to offer the affordance.
+  const canOverrideCod = isSuperAdmin || isAccountantUser() || (isAdmin && hasAdminPermission('EDIT_SETTLEMENTS'));
   const codEditable = canEditNow || canOverrideCod;
 
   return (
@@ -390,11 +377,14 @@ const OrderDetailPage: React.FC = () => {
               onReply={handleReply}
               highlightedRemarkId={highlightedRemarkId}
             />
-            <OrderRemarkInput
-              onSubmit={handleAddRemark}
-              replyingTo={replyingTo}
-              onCancelReply={() => setReplyingTo(null)}
-            />
+            {/* The accountant reads orders only; the remark API refuses it. */}
+            {!isAccountantUser() && (
+              <OrderRemarkInput
+                onSubmit={handleAddRemark}
+                replyingTo={replyingTo}
+                onCancelReply={() => setReplyingTo(null)}
+              />
+            )}
           </div>
         </div>
 
@@ -408,7 +398,7 @@ const OrderDetailPage: React.FC = () => {
           <div className="od-section-header od-section-header-divided">
             <h2>Redirect / Forward Log</h2>
             <span className="od-section-count">{order.redirectLog.length}</span>
-            {isAdmin && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
+            {isOfficeEditor && (order.status === 'delivered' || REDIRECTABLE_STATUSES.includes(order.status)) && (
               <button
                 type="button"
                 className="od-section-action"

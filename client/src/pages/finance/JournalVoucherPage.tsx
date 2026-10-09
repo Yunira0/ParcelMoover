@@ -1,8 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import FormField from '../../components/FormField';
+import { dayBookAction, printAction, quitAction, voucherActions } from '../../components/finance/tallyKeys';
+import { compactLines } from '../../components/finance/compactLines';
+import { hasAdminPermission } from '../../utils/auth';
 import { getJournalEntry, reverseEntry, type JournalEntry } from '../../services/accounting.service';
-import { formatMoney } from '../../utils/format';
+import { formatAmount } from '../../utils/format';
+import { useBackOr } from '../../hooks/useBackOr';
 
 /**
  * One journal entry as a voucher.
@@ -21,6 +27,7 @@ const MIN_ROWS = 8;
 const JournalVoucherPage: React.FC = () => {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const goBack = useBackOr('/accounting/transactions/journal');
 
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,17 +58,22 @@ const JournalVoucherPage: React.FC = () => {
     };
   }, [entry]);
 
-  const reverse = async () => {
-    if (!entry) return;
-    const reason = window.prompt('Reason for reversing this voucher:');
-    // An empty reason is a cancelled prompt or a shrug. Neither is a reason,
-    // and this entry is about to become permanent history either way.
-    if (!reason?.trim()) return;
+  // The reason is required: this entry is about to become permanent history.
+  const [askReason, setAskReason] = useState(false);
+  const [reason, setReason] = useState('');
+  const reverse = () => {
+    setReason('');
+    setAskReason(true);
+  };
+  const closeReason = useCallback(() => setAskReason(false), []);
 
+  const confirmReverse = async () => {
+    if (!entry || reason.trim().length < 3) return;
     setReversing(true);
     setError(null);
     try {
       await reverseEntry(entry.id, reason.trim());
+      setAskReason(false);
       await load();
     } catch (err) {
       setError(err);
@@ -71,20 +83,23 @@ const JournalVoucherPage: React.FC = () => {
   };
 
   const actions: TallyAction[] = [
-    { key: 'F5', label: 'Print', onSelect: () => window.print() },
+    ...(hasAdminPermission('ACCOUNTING_ACCESS') ? voucherActions(navigate) : []),
+    printAction(),
     {
-      key: 'F8',
-      label: 'Reverse',
-      onSelect: () => void reverse(),
+      // Tally's Alt+X cancels a voucher. Here that is a reversal: the original
+      // stays on record, answered by an equal and opposite entry.
+      key: 'Alt+X',
+      label: 'Cancel voucher',
+      onSelect: reverse,
       // A voided voucher has already been answered by its reversal. Reversing
       // it again would just be a third entry saying nothing.
       disabled: !entry || entry.status === 'voided' || reversing,
     },
-    { key: 'F12', label: 'Day book', onSelect: () => navigate('/accounting/transactions/journal') },
-    { key: 'Escape', label: 'Back', onSelect: () => navigate(-1) },
+    dayBookAction(navigate),
+    quitAction(goBack),
   ];
 
-  const lines = entry?.lines ?? [];
+  const lines = compactLines(entry?.lines ?? []);
   const blanks = Math.max(0, MIN_ROWS - lines.length);
 
   return (
@@ -94,6 +109,7 @@ const JournalVoucherPage: React.FC = () => {
       actions={actions}
       error={error}
       loading={loading}
+      menu
     >
       {entry && (
         <div className="tly-voucher">
@@ -129,7 +145,7 @@ const JournalVoucherPage: React.FC = () => {
               <tbody>
                 {lines.map((line, index) => (
                   <tr key={index} className={line.credit > 0 ? 'tly-credit-line' : undefined}>
-                    <td>{line.trackingId ?? line.accountCode}</td>
+                    <td>{line.trackingId ?? ''}</td>
                     <td>
                       {line.accountName}
                       {line.partyName && <> — {line.partyName}</>}
@@ -140,8 +156,8 @@ const JournalVoucherPage: React.FC = () => {
                         </>
                       )}
                     </td>
-                    <td className="tly-amt">{line.debit > 0 ? formatMoney(line.debit) : ''}</td>
-                    <td className="tly-amt">{line.credit > 0 ? formatMoney(line.credit) : ''}</td>
+                    <td className="tly-amt">{line.debit > 0 ? formatAmount(line.debit) : ''}</td>
+                    <td className="tly-amt">{line.credit > 0 ? formatAmount(line.credit) : ''}</td>
                   </tr>
                 ))}
 
@@ -170,8 +186,8 @@ const JournalVoucherPage: React.FC = () => {
                 <tr>
                   <td />
                   <td style={{ textAlign: 'right' }}>Total</td>
-                  <td className="tly-amt">{formatMoney(totals.debit)}</td>
-                  <td className="tly-amt">{formatMoney(totals.credit)}</td>
+                  <td className="tly-amt">{formatAmount(totals.debit)}</td>
+                  <td className="tly-amt">{formatAmount(totals.credit)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -191,6 +207,20 @@ const JournalVoucherPage: React.FC = () => {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={askReason}
+        title={`Cancel ${entry?.entryNo ?? 'voucher'}`}
+        message="Posts an equal and opposite entry. The original stays on record, marked cancelled."
+        confirmLabel="Cancel voucher"
+        cancelLabel="Keep it"
+        danger
+        busy={reversing}
+        confirmDisabled={reason.trim().length < 3}
+        onConfirm={() => void confirmReverse()}
+        onCancel={closeReason}
+      >
+        <FormField label="Reason" required type="textarea" value={reason} onChange={setReason} />
+      </ConfirmDialog>
     </TallyPage>
   );
 };

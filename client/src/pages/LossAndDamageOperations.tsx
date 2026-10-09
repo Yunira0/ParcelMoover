@@ -165,7 +165,7 @@ const LossAndDamageOperations: React.FC = () => {
       toBsDateTimeCell(order.lastUpdatedAt) || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('loss-and-damage-orders.xlsx', 'Loss and Damage', headers, csvRows);
+    await downloadExcel('loss-and-damage-orders.xlsx', 'Loss and Damage', headers, csvRows);
   };
 
   const selectedOrders = orders.filter((order) => selectedIds.has(order.id));

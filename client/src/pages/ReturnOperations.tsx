@@ -41,7 +41,7 @@ import {
   type ReturnManifestParcel,
 } from '../services/returnManifests.service';
 import { printReturnManifests } from '../utils/printReturnManifest';
-import { searchVendors } from '../services/users.service';
+import { searchVendors } from '../queries/lookups';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { addOrdersToBranchManifest } from '../services/transitManifests.service';
 import './ReturnOperations.css';
@@ -861,7 +861,7 @@ const ReturnOperations: React.FC = () => {
       order.remarks || '',
       ...statusTimelineCells(order.statusTimestamps),
     ]);
-    downloadExcel('return-orders.xlsx', 'Return Orders', headers, csvRows);
+    await downloadExcel('return-orders.xlsx', 'Return Orders', headers, csvRows);
   };
 
   const selectedOrders = visibleOrders.filter((o) => selectedIds.has(o.id));

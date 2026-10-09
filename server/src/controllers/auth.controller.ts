@@ -68,6 +68,7 @@ export const registerUserController = async (req: Request, res: Response) => {
       ...req.body,
       idDocumentPath: docPath(files?.idDocument?.[0]),
       citizenshipDocPath: docPath(files?.citizenshipDoc?.[0]),
+      citizenshipDocBackPath: docPath(files?.citizenshipDocBack?.[0]),
       panDocPath: docPath(files?.panDoc?.[0]),
       panVatDocPath: docPath(files?.panVatDoc?.[0]),
       experienceLetterDocPath: docPath(files?.experienceLetterDoc?.[0]),
@@ -177,6 +178,7 @@ export const updateManagedUserController = async (req: Request, res: Response) =
       type,
       idDocumentPath: docPath(files?.idDocument?.[0]),
       citizenshipDocPath: docPath(files?.citizenshipDoc?.[0]),
+      citizenshipDocBackPath: docPath(files?.citizenshipDocBack?.[0]),
       panDocPath: docPath(files?.panDoc?.[0]),
       panVatDocPath: docPath(files?.panVatDoc?.[0]),
       experienceLetterDocPath: docPath(files?.experienceLetterDoc?.[0]),
@@ -313,25 +315,30 @@ export const login = async (req: Request, res: Response) => {
       audience: CSRF_TOKEN_AUDIENCE,
     });
 
-    res.cookie("accessToken", result.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      // "none" is required for the frontend/backend to sit on different
-      // origins (e.g. two separate Railway services) - "lax" silently drops
-      // the cookie on cross-site XHR/fetch. Browsers only allow "none" when
-      // secure is also true, which holds in production (HTTPS).
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    // The rider app keeps its token for Authorization: Bearer. A cookie here
+    // would replace a staff dashboard session on the same host (ports do not
+    // isolate cookies), so Bearer-only logins must leave browser cookies alone.
+    if (req.header("X-Auth-Mode") !== "bearer") {
+      res.cookie("accessToken", result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        // "none" is required for the frontend/backend to sit on different
+        // origins (e.g. two separate Railway services) - "lax" silently drops
+        // the cookie on cross-site XHR/fetch. Browsers only allow "none" when
+        // secure is also true, which holds in production (HTTPS).
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
 
-    res.cookie("csrfToken", csrfToken, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+      res.cookie("csrfToken", csrfToken, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -450,6 +457,9 @@ export const getVendorsController = async (req: Request, res: Response) => {
     const statusFilter = typeof req.query.status === "string" ? req.query.status.trim() : "";
     const companyFilter = typeof req.query.company === "string" ? req.query.company.trim() : "";
     const locationFilter = typeof req.query.location === "string" ? req.query.location.trim() : "";
+    // One sales rep's book, for Sales Overview. Staff only: a sales actor is
+    // already pinned to their own vendors above and can't pick another rep.
+    const salesUserFilter = typeof req.query.salesUserId === "string" ? req.query.salesUserId.trim() : "";
 
     if (search) {
       // search_text (business_name + client_name + phone + email, lowercased)
@@ -465,6 +475,12 @@ export const getVendorsController = async (req: Request, res: Response) => {
     }
     if (locationFilter) {
       where.locations = { name: locationFilter };
+    }
+    if (salesUserFilter && isStaff) {
+      if (!UUID_RE.test(salesUserFilter)) {
+        return res.status(400).json({ success: false, message: "salesUserId must be a valid id" });
+      }
+      where.sales_user_id = salesUserFilter;
     }
 
     // "High volume" isn't a column on vendors - it's derived from a count
@@ -963,8 +979,11 @@ export const logoutController = async (req: Request, res: Response) => {
       }
     }
 
-    res.clearCookie("accessToken", { path: "/" });
-    res.clearCookie("csrfToken", { path: "/" });
+    // Revoking a Bearer token must not log out a separate cookie session.
+    if (!authHeader?.startsWith("Bearer ")) {
+      res.clearCookie("accessToken", { path: "/" });
+      res.clearCookie("csrfToken", { path: "/" });
+    }
 
     return sendSuccess(res, 200, "Logged out successfully");
   } catch (error: any) {
@@ -987,16 +1006,19 @@ export const changePasswordController = async (req: Request, res: Response) => {
 
     const { token } = await changePassword(userId, currentPassword, newPassword);
 
-    // Every other session (e.g. a stolen token) was just revoked - reissue a
-    // fresh cookie so this session, which just proved it holds the correct
-    // current password, keeps working.
-    res.cookie("accessToken", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    // Every other session was just revoked. Cookie clients need a new cookie;
+    // Bearer clients use the replacement token returned below.
+    // Bearer clients receive the replacement token in the response body.
+    // Do not overwrite an unrelated dashboard cookie on the same host.
+    if (!req.headers.authorization?.startsWith("Bearer ")) {
+      res.cookie("accessToken", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        path: "/",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
 
     // Mirrors login's response shape (top-level accessToken) so Bearer-only
     // clients (no cookies) can pick up the freshly-reissued token instead of

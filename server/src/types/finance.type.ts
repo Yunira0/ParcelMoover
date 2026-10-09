@@ -234,6 +234,8 @@ export interface UnsettledOrdersResult {
   totalNetPayable: number;
   /** Vendor leg only: prepaid delivery charges a new statement would hand back. */
   availableCredit: number;
+  /** True when the eligible set exceeded UNSETTLED_ORDERS_CAP and was trimmed. */
+  capped: boolean;
 }
 
 export interface SettlementDetailItem {
@@ -265,6 +267,27 @@ export interface SettlementDetailItem {
   deliveredAt: string | null;
 }
 
+/** A Billing payment the vendor has submitted but staff have not reviewed yet. */
+export interface PendingBillingPayment {
+  id: string;
+  amount: number;
+  method: string;
+  reference: string | null;
+  submittedAt: string;
+}
+
+/**
+ * Money the vendor has already sent through Billing that has not reached a
+ * statement yet. Shown before a payment is recorded by hand on a statement the
+ * vendor owes on, so the same transfer is not counted twice. Staff only.
+ */
+export interface SettlementBillingPaymentsResult {
+  /** Verified Billing payments not yet applied to any statement. */
+  availableCredit: number;
+  /** Submitted, not yet verified. Verifying one pays this statement down automatically. */
+  pendingPayments: PendingBillingPayment[];
+}
+
 export interface SettlementDetailResult {
   id: string;
   statementId: string;
@@ -286,6 +309,12 @@ export interface SettlementDetailResult {
   payableAmount: number;
   /** Delivery charges the vendor prepaid through Billing, handed back here. Included in payableAmount. */
   vendorCreditApplied: number;
+  /**
+   * VAT % already included in each delivery charge. Staff only - never sent to
+   * a vendor or over the Partner API - and absent on statements created before
+   * VAT was shown.
+   */
+  vatRate?: number;
   /** Total recorded so far across every instalment. */
   paidAmount: number;
   /** ABS(payableAmount) - paidAmount — what the payee is still owed. */

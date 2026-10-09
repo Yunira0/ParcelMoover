@@ -1,0 +1,150 @@
+name: Rider APK release
+
+# Builds the signed PM Rider APK and publishes it as a GitHub Release that the
+# in-app updater (rider/src/lib/appUpdater.ts) picks up.
+#
+# Runs ONLY when someone pushes a rider-v* tag - commits to main (server,
+# dashboard or rider) never publish an APK on their own. To release:
+#   1. bump "version" in rider/package.json
+#   2. add the matching section to rider/CHANGELOG.md
+#   3. merge to main, then: git tag rider-v1.4.1 && git push origin rider-v1.4.1
+# Full guide: docs/RIDER_APP_RELEASES.md
+on:
+  push:
+    tags: ['rider-v*']
+
+concurrency:
+  group: rider-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rider
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need history + tags for the "anything changed?" guard
+
+      - name: Refuse a release with no rider changes
+        working-directory: .
+        run: |
+          PREV=$(git describe --tags --abbrev=0 --match 'rider-v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          if [ -n "$PREV" ] && git diff --quiet "$PREV" "$GITHUB_REF_NAME" -- rider/; then
+            echo "::error::Nothing in rider/ changed since $PREV - refusing to ship an identical APK"
+            exit 1
+          fi
+          echo "Previous rider release: ${PREV:-none}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: rider/package-lock.json
+
+      - name: Tag matches package.json and CHANGELOG has notes
+        run: node scripts/release-manifest.mjs check "$GITHUB_REF_NAME"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21   # Capacitor 8 / AGP 8.13
+          cache: gradle
+
+      - name: Build web bundle
+        env:
+          # The APK talks to production directly (the PWA uses relative /api).
+          VITE_API_URL: ${{ vars.RIDER_API_URL || 'https://portal.parcelmoover.com/api' }}
+        run: |
+          npm ci
+          npm run build
+          npx cap sync android
+
+      - name: Restore signing key
+        env:
+          RIDER_KEYSTORE_BASE64: ${{ secrets.RIDER_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$RIDER_KEYSTORE_BASE64" ]; then
+            echo "::error::RIDER_KEYSTORE_BASE64 secret is missing - see docs/RIDER_APP_RELEASES.md"
+            exit 1
+          fi
+          echo "$RIDER_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/pm-rider-release.jks"
+
+      - name: Build signed release APK
+        working-directory: rider/android
+        env:
+          RIDER_KEYSTORE_PATH: ${{ runner.temp }}/pm-rider-release.jks
+          RIDER_KEYSTORE_PASSWORD: ${{ secrets.RIDER_KEYSTORE_PASSWORD }}
+          RIDER_KEY_ALIAS: ${{ vars.RIDER_KEY_ALIAS || 'pm-rider' }}
+          RIDER_KEY_PASSWORD: ${{ secrets.RIDER_KEY_PASSWORD || secrets.RIDER_KEYSTORE_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Verify signature, key and version
+        id: apk
+        env:
+          EXPECTED_CERT: ${{ vars.RIDER_SIGNING_CERT_SHA256 }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+
+          CERTS=$("$BT/apksigner" verify --print-certs "$APK")
+          echo "$CERTS"
+          # apksigner prints "Signer #1 certificate SHA-256 digest: …" or, in newer
+          # build-tools, "V2 Signer: certificate SHA-256 digest: …" - match both.
+          CERT=$(echo "$CERTS" | awk -F': ' '/certificate SHA-256 digest/ {print $NF; exit}' | tr 'A-F' 'a-f')
+          if [ -z "$CERT" ]; then
+            echo "::error::Could not read the APK's signing certificate from apksigner output"
+            exit 1
+          fi
+          if [ -n "$EXPECTED_CERT" ]; then
+            EXPECTED=$(echo "$EXPECTED_CERT" | tr -d ': ' | tr 'A-F' 'a-f')
+            if [ "$CERT" != "$EXPECTED" ]; then
+              echo "::error::APK is signed with $CERT but riders have $EXPECTED installed - this update would be rejected on every phone"
+              exit 1
+            fi
+          else
+            echo "::warning::Set the RIDER_SIGNING_CERT_SHA256 repo variable so a swapped key can't slip through"
+          fi
+
+          CODE=$("$BT/aapt2" dump badging "$APK" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")
+          EXPECTED_CODE=$(node -e "const [a,b,c]=require('./package.json').version.split('.').map(Number);console.log(a*10000+b*100+c)")
+          if [ "$CODE" != "$EXPECTED_CODE" ]; then
+            echo "::error::APK versionCode $CODE != expected $EXPECTED_CODE"
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/release"
+          cp "$APK" "$RUNNER_TEMP/release/pm-rider-$VERSION.apk"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Write update.json and release notes
+        run: |
+          node scripts/release-manifest.mjs build \
+            --apk "$RUNNER_TEMP/release/pm-rider-${{ steps.apk.outputs.version }}.apk" \
+            --tag "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --out "$RUNNER_TEMP/release"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # --latest matters: the app reads releases/latest/download/update.json
+          gh release create "$GITHUB_REF_NAME" \
+            "$RUNNER_TEMP/release/pm-rider-${{ steps.apk.outputs.version }}.apk" \
+            "$RUNNER_TEMP/release/update.json" \
+            --title "PM Rider ${{ steps.apk.outputs.version }}" \
+            --notes-file "$RUNNER_TEMP/release/release-notes.md" \
+            --verify-tag \
+            --latest
+
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pm-rider-release.jks"

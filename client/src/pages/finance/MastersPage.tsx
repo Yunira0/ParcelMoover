@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
-import Button from '../../components/Button';
+import { dayBookAction, printAction, quitAction } from '../../components/finance/tallyKeys';
 import ToggleSwitch from '../../components/ToggleSwitch';
 import FormField from '../../components/FormField';
 import NepaliDatePicker from '../../components/NepaliDatePicker';
@@ -17,6 +18,7 @@ import {
   type AccountClass,
   type AccountNode,
 } from '../../services/accounting.service';
+import { useBackOr } from '../../hooks/useBackOr';
 
 /**
  * Masters — the chart of accounts, as a tree you can add to and edit.
@@ -53,12 +55,38 @@ const blankForm = (): FormState => ({
   description: '',
 });
 
+/** The thousand-block each type's codes live in: 1xxx assets … 5xxx expenses. */
+const CODE_BLOCK: Record<AccountClass, number> = {
+  fixed_asset: 1,
+  intangible_asset: 1,
+  current_asset: 1,
+  long_term_liability: 2,
+  current_liability: 2,
+  capital: 3,
+  reserves: 3,
+  direct_income: 4,
+  indirect_income: 4,
+  direct_expense: 5,
+  indirect_expense: 5,
+};
+
+/** The next free code in the type's block, after the highest one in use. */
+function nextCode(nodes: AccountNode[], subType: AccountClass): string {
+  const block = CODE_BLOCK[subType];
+  const used = nodes
+    .map((node) => Number(node.code))
+    .filter((code) => Number.isInteger(code) && Math.floor(code / 1000) === block);
+  return String(used.length ? Math.max(...used) + 1 : block * 1000);
+}
+
 /** Depth-first walk, so the tree can be rendered as indented rows. */
 function flatten(nodes: AccountNode[]): AccountNode[] {
   return nodes.flatMap((node) => [node, ...flatten(node.children)]);
 }
 
 const MastersPage: React.FC = () => {
+  const navigate = useNavigate();
+  const goBack = useBackOr('/accounting');
 
   const [chart, setChart] = useState<AccountNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,10 +135,18 @@ const MastersPage: React.FC = () => {
     [rows, page, pageSize],
   );
 
+  // A form replaces the list, so opening one from a row far down the list has
+  // to bring the screen back to the top. Only one form is open at a time.
+  const formRef = useRef<HTMLFormElement>(null);
+  const showForm = () => requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
   const openAdd = () => {
-    setForm(blankForm());
+    const blank = blankForm();
+    setForm({ ...blank, code: nextCode(rows, blank.subType) });
     setEditing('');
+    setOpening(null);
     setNotice('');
+    showForm();
   };
 
   const openEdit = (node: AccountNode) => {
@@ -125,7 +161,9 @@ const MastersPage: React.FC = () => {
       description: node.description ?? '',
     });
     setEditing(node.code);
+    setOpening(null);
     setNotice('');
+    showForm();
   };
 
   const save = async (event: React.FormEvent) => {
@@ -180,6 +218,7 @@ const MastersPage: React.FC = () => {
     setOpeningParty(null);
     setEditing(null);
     setNotice('');
+    showForm();
   };
 
   const openingAccount = useMemo(() => rows.find((row) => row.code === opening) ?? null, [rows, opening]);
@@ -213,254 +252,270 @@ const MastersPage: React.FC = () => {
     }
   };
 
-  // One action, because this screen does one thing. Refresh repeated the
-  // browser's own, and Day book and Back repeated the nav and the back button:
-  // three keys to memorise for things the app already does, sitting beside the
-  // one that matters.
-  const actions: TallyAction[] = [{ key: 'F4', label: 'Add account', onSelect: openAdd, primary: true }];
+  const formOpen = editing !== null || (opening !== null && openingAccount !== null);
+  const closeForm = () => {
+    setEditing(null);
+    setOpening(null);
+  };
+
+  const openingReady =
+    Boolean(openingForm.amount) &&
+    Boolean(openingForm.asOf) &&
+    openingForm.reference.trim().length >= 2 &&
+    !(openingAccount?.isControl && !openingParty);
+
+  // While a master form is open the screen is that form, as Tally's Ledger
+  // Creation is: Ctrl+A accepts it, Esc quits back to the list. Otherwise it
+  // is the list, and Alt+C creates — Tally's key for a new master.
+  const actions: TallyAction[] = formOpen
+    ? [
+        {
+          key: 'Ctrl+A',
+          label: saving ? 'Saving…' : 'Accept',
+          onSelect: () => formRef.current?.requestSubmit(),
+          disabled: saving || (opening !== null && !openingReady),
+          primary: true,
+        },
+        quitAction(closeForm),
+      ]
+    : [
+        { key: 'Alt+C', label: 'Create', onSelect: openAdd, primary: true },
+        printAction(),
+        dayBookAction(navigate),
+        quitAction(goBack),
+      ];
+
+  const formTitle = opening !== null
+    ? 'Opening Balance'
+    : editing === '' ? 'Ledger Creation' : 'Ledger Alteration';
 
   return (
     <TallyPage
-      title="Masters — Chart of Accounts"
-      period={`${rows.length} account${rows.length === 1 ? '' : 's'}`}
+      title={formOpen ? formTitle : 'Chart of Accounts'}
+      period={formOpen ? undefined : `${rows.length} ledger${rows.length === 1 ? '' : 's'}`}
+      periodLabel={formOpen ? undefined : 'Masters'}
       actions={actions}
       error={error}
       loading={loading}
+      menu={!formOpen}
     >
       {notice && <p className="tly-note">{notice}</p>}
 
       {opening !== null && openingAccount && (
-        <form className="tly-voucher" onSubmit={saveOpening}>
-          <div className="tly-titlebar">
-            <h2 className="tly-title">Opening balance — {openingAccount.code} {openingAccount.name}</h2>
+        <form ref={formRef} className="tly-voucher jv" onSubmit={saveOpening}>
+          <div className="jv-meta">
+            <div className="jv-meta-field">
+              <span>Ledger :</span>
+              <strong>{openingAccount.name} · {openingAccount.code}</strong>
+            </div>
           </div>
 
-          <p className="tly-note">
+          <p className="tly-note" style={{ margin: '0 var(--space-4)' }}>
             A starting position nothing in the system can produce — cash a rider was already holding when
             the books began, or a bank account opened with money in it. It posts against Opening Balance
             Equity, so the books stay balanced. The reference is its identity: recording the same one
             twice changes nothing rather than doubling the figure.
           </p>
 
-          <div className="tly-form-grid">
+          <div className="jv-form">
+            <span className="jv-form-label">Amount :</span>
             <FormField
               label="Amount"
-              required
+              hideLabel
               type="number"
               value={openingForm.amount}
               onChange={(amount) => setOpeningForm({ ...openingForm, amount })}
               placeholder="5000"
-              hint={
-                openingAccount.normalSide === 'debit'
-                  ? 'Positive is what this account holds. Negative reverses it.'
-                  : 'Positive is what this account owes. Negative reverses it.'
-              }
             />
-            <label className="tly-form-date" aria-label="As of">
-              <span>As of</span>
-              <NepaliDatePicker
-                value={openingForm.asOf}
-                onChange={(asOf) => setOpeningForm({ ...openingForm, asOf })}
-                placeholder="Date the position is stated as of"
-              />
-            </label>
+            <span className="jv-form-hint">
+              {openingAccount.normalSide === 'debit'
+                ? 'Positive is what this account holds (Dr). Negative reverses it.'
+                : 'Positive is what this account owes (Cr). Negative reverses it.'}
+            </span>
+
+            <span className="jv-form-label">As on :</span>
+            <NepaliDatePicker
+              value={openingForm.asOf}
+              onChange={(asOf) => setOpeningForm({ ...openingForm, asOf })}
+              placeholder="Date the position is stated as of"
+              aria-label="As on"
+            />
+
+            <span className="jv-form-label">Reference :</span>
             <FormField
               label="Reference"
-              required
+              hideLabel
               value={openingForm.reference}
               onChange={(reference) => setOpeningForm({ ...openingForm, reference })}
               placeholder="Migration from spreadsheet, Shrawan 2083"
-              gridColumn="1 / -1"
             />
+
+            {openingAccount.isControl && (
+              <>
+                {/* A control account's balance is the sum of its subledger, so
+                    an opening with nobody named would sit in the total and in
+                    none of the per-party ledgers meant to add up to it. */}
+                <span className="jv-form-label">{openingAccount.subledgerType === 'vendor' ? 'Vendor' : 'Rider'} :</span>
+                <PartyPicker
+                  types={openingAccount.subledgerType === 'vendor' ? ['vendor'] : ['rider']}
+                  value={openingParty}
+                  onChange={setOpeningParty}
+                  prompt=""
+                />
+              </>
+            )}
           </div>
 
-          {openingAccount.isControl && (
-            <div className="tly-form-party">
-              {/* A control account's balance is the sum of its subledger, so an
-                  opening with nobody named would sit in the total and in none of
-                  the per-party ledgers that are meant to add up to it. */}
-              <PartyPicker
-                types={openingAccount.subledgerType === 'vendor' ? ['vendor'] : ['rider']}
-                value={openingParty}
-                onChange={setOpeningParty}
-                prompt={`Which ${openingAccount.subledgerType ?? 'party'} is this opening balance for?`}
-              />
-            </div>
-          )}
-
-          <div className="tly-form-actions">
-            <Button type="button" variant="outline" onClick={() => setOpening(null)}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={
-                saving ||
-                !openingForm.amount ||
-                !openingForm.asOf ||
-                openingForm.reference.trim().length < 2 ||
-                (openingAccount.isControl && !openingParty)
-              }
-            >
+          <nav className="jv-menu" aria-label="Form menu">
+            <button type="submit" className="jv-menu-item is-primary" disabled={saving || !openingReady}>
               {saving ? 'Posting…' : 'Accept'}
-            </Button>
-          </div>
+            </button>
+            <button type="button" className="jv-menu-item" onClick={closeForm}>Quit</button>
+          </nav>
         </form>
       )}
 
       {editing !== null && (
-        <form className="tly-voucher" onSubmit={save}>
-          <div className="tly-titlebar">
-            <h2 className="tly-title">{editing === '' ? 'Create account' : `Edit ${current?.code}`}</h2>
-          </div>
-
+        <form ref={formRef} className="tly-voucher jv" onSubmit={save}>
           {locked && (
-            <p className="tly-note">
-              {current?.lineCount} posted line(s) reference this account, so its type and normal side are
+            <p className="tly-note" style={{ margin: 'var(--space-3) var(--space-4) 0' }}>
+              {current?.lineCount} posted line(s) reference this ledger, so its type and normal side are
               fixed. Changing either would not correct those entries — it would silently change what every
-              one of them means. Create a new account and point future postings at it instead.
+              one of them means. Create a new ledger and point future postings at it instead.
             </p>
           )}
 
-          {/* The design system's FormField, the same control every other form
-              in the app is built from, rather than bare inputs borrowing the
-              filter strip's styling. The two locked fields say why they are
-              locked rather than just going grey. */}
-          <div className="tly-form-grid">
+          {/* Tally's master form: a label column, one field per row. The
+              locked fields say why they are locked rather than just going grey. */}
+          <div className="jv-form">
+            <span className="jv-form-label">Name :</span>
+            <FormField label="Name" hideLabel value={form.name} onChange={(name) => setForm({ ...form, name })} placeholder="Nabil Bank" />
+
+            <span className="jv-form-label">Code :</span>
+            <FormField label="Code" hideLabel value={form.code} onChange={() => {}} disabled />
+            <span className="jv-form-hint">
+              {editing === ''
+                ? 'Generated from the type: the next free number in its block.'
+                : 'A code identifies the ledger everywhere it has been posted.'}
+            </span>
+
+            <span className="jv-form-label">Under :</span>
             <FormField
-              label="Code"
-              required
-              value={form.code}
-              onChange={(code) => setForm({ ...form, code })}
-              disabled={editing !== ''}
-              placeholder="1200"
-              hint={editing === '' ? undefined : 'A code identifies the account everywhere it has been posted.'}
-            />
-            <FormField
-              label="Name"
-              required
-              value={form.name}
-              onChange={(name) => setForm({ ...form, name })}
-              placeholder="Nabil Bank"
-            />
-            <FormField
-              label="Type"
+              label="Under"
+              hideLabel
               type="select"
               value={form.subType}
               // The side follows the type, because getting that pair wrong
-              // inverts the account and almost nobody wants an asset on the
-              // credit side. It stays editable underneath for the one case
-              // that wants the other side: a contra account.
+              // inverts the account. It stays editable underneath for the one
+              // case that wants the other side: a contra account.
               onChange={(next) => {
                 const subType = next as AccountClass;
-                setForm({ ...form, subType, normalSide: CLASS_NORMAL_SIDE[subType] });
+                setForm({
+                  ...form,
+                  subType,
+                  normalSide: CLASS_NORMAL_SIDE[subType],
+                  ...(editing === '' ? { code: nextCode(rows, subType) } : {}),
+                });
               }}
               disabled={locked}
-              options={ACCOUNT_CLASSES.map((subType) => ({
-                value: subType,
-                label: ACCOUNT_CLASS_LABELS[subType],
-              }))}
-              hint={locked ? 'Fixed — this account has posted lines.' : undefined}
+              options={ACCOUNT_CLASSES.map((subType) => ({ value: subType, label: ACCOUNT_CLASS_LABELS[subType] }))}
             />
+            {locked && <span className="jv-form-hint">Fixed — this ledger has posted lines.</span>}
+
+            <span className="jv-form-label">Normal side :</span>
             <FormField
               label="Normal side"
+              hideLabel
               type="select"
               value={form.normalSide}
               onChange={(next) => setForm({ ...form, normalSide: next as 'debit' | 'credit' })}
               disabled={locked}
               options={[
-                { value: 'debit', label: 'debit' },
-                { value: 'credit', label: 'credit' },
+                { value: 'debit', label: 'Debit (Dr)' },
+                { value: 'credit', label: 'Credit (Cr)' },
               ]}
-              hint={locked ? 'Fixed — this account has posted lines.' : undefined}
             />
+
+            <span className="jv-form-label">Description :</span>
             <FormField
               label="Description"
+              hideLabel
               value={form.description}
               onChange={(description) => setForm({ ...form, description })}
-              placeholder="What lands in this account, and when"
-              gridColumn="1 / -1"
+              placeholder="What lands in this ledger, and when"
             />
           </div>
 
-          {/* Real Buttons, not `tly-key` styled ones. The key panel's flat rows
-              are right for a list of shortcuts and wrong for a form's commit:
-              this is the design system's primary action, and it should look
-              like every other one in the app. */}
-          <div className="tly-form-actions">
-            <Button type="button" variant="outline" onClick={() => setEditing(null)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={saving}>
+          <nav className="jv-menu" aria-label="Form menu">
+            <button type="submit" className="jv-menu-item is-primary" disabled={saving}>
               {saving ? 'Saving…' : 'Accept'}
-            </Button>
-          </div>
+            </button>
+            <button type="button" className="jv-menu-item" onClick={closeForm}>Quit</button>
+          </nav>
         </form>
       )}
 
-      <div className="tly-scroll">
-        <table className="tly-sheet">
-          <thead>
-            <tr>
-              <th style={{ width: '8%' }}>Code</th>
-              <th>Name</th>
-              <th style={{ width: '18%' }}>Type</th>
-              <th style={{ width: '10%' }}>Normal side</th>
-              <th style={{ width: '24%' }}>&nbsp;</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pagedRows.map((node) => (
-              <tr key={node.code} className={node.isActive ? undefined : 'tly-muted'}>
-                <td>{node.code}</td>
-                <td style={{ paddingLeft: `calc(var(--space-3) + ${node.depth} * var(--space-5))` }}>
-                  {node.children.length > 0 ? <strong>{node.name}</strong> : node.name}
-                  {node.isControl && (
-                    <span className="tly-muted"> · control ({node.subledgerType})</span>
-                  )}
-                </td>
-                <td>
-                  {node.subType ? ACCOUNT_CLASS_LABELS[node.subType] : <span className="tly-muted">—</span>}
-                </td>
-                <td>{node.normalSide}</td>
-                <td>
-                  <div className="tly-row-actions">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(node)}>
-                      Edit
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => openOpening(node)}>
-                      Opening
-                    </Button>
-                    <span className="tly-toggle">
-                      <ToggleSwitch
-                        checked={node.isActive}
-                        onChange={() => void toggleActive(node)}
-                        ariaLabel={`${node.isActive ? 'Deactivate' : 'Activate'} ${node.code} ${node.name}`}
-                      />
-                      <span>{node.isActive ? 'Active' : 'Inactive'}</span>
-                    </span>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {!formOpen && (
+        <div className="tly-voucher jv">
+          <div className="tly-scroll">
+            <table className="tly-sheet jv-sheet jv-report">
+              <thead>
+                <tr>
+                  <th className="jv-col-account">Particulars</th>
+                  <th style={{ width: '9%' }}>Code</th>
+                  <th style={{ width: '18%' }}>Under</th>
+                  <th style={{ width: '8%' }}>Side</th>
+                  <th style={{ width: '22%' }}>&nbsp;</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedRows.map((node) => (
+                  <tr key={node.code} className={node.isActive ? undefined : 'tly-muted'}>
+                    <td style={{ paddingLeft: `calc(var(--space-3) + ${node.depth} * var(--space-5))` }}>
+                      {node.children.length > 0 ? <strong>{node.name}</strong> : node.name}
+                      {node.isControl && <span className="tly-muted"> · control ({node.subledgerType})</span>}
+                      {!node.isActive && <span className="tly-muted"> (inactive)</span>}
+                    </td>
+                    <td>{node.code}</td>
+                    <td>{node.subType ? ACCOUNT_CLASS_LABELS[node.subType] : <span className="tly-muted">—</span>}</td>
+                    <td>{node.normalSide === 'debit' ? 'Dr' : 'Cr'}</td>
+                    <td>
+                      <div className="jv-row-actions">
+                        <button type="button" className="jv-link" onClick={() => openEdit(node)}>Alter</button>
+                        <button type="button" className="jv-link" onClick={() => openOpening(node)}>Opening</button>
+                        <span className="tly-toggle">
+                          <ToggleSwitch
+                            checked={node.isActive}
+                            onChange={() => void toggleActive(node)}
+                            ariaLabel={`${node.isActive ? 'Deactivate' : 'Activate'} ${node.code} ${node.name}`}
+                          />
+                          <span>{node.isActive ? 'Active' : 'Inactive'}</span>
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      <Pagination
-        ariaLabel="Chart of accounts pagination"
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
-        pageSize={pageSize}
-        pageSizeLabel="accounts"
-        onPageSizeChange={(size) => {
-          setPageSize(size);
-          setPage(1);
-        }}
-        summary={`${rows.length} account${rows.length === 1 ? '' : 's'}`}
-      />
+          <div className="jv-pagination">
+            <Pagination
+              ariaLabel="Chart of accounts pagination"
+              page={page}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              pageSize={pageSize}
+              pageSizeLabel="ledgers"
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                setPage(1);
+              }}
+              summary={`${rows.length} ledger${rows.length === 1 ? '' : 's'}`}
+            />
+          </div>
+        </div>
+      )}
     </TallyPage>
   );
 };

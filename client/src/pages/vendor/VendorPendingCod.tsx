@@ -6,6 +6,7 @@ import type { PendingCodBill } from '../../services/finance.service';
 import { getPendingCod } from '../../services/finance.service';
 import { formatCurrency } from '../../utils/format';
 import { toBsDate } from '../../utils/nepaliDate';
+import { useSessionState } from '../../hooks/useSessionState';
 import './VendorFinance.css';
 import ReceiverPhones from '../../components/ReceiverPhones';
 
@@ -16,7 +17,8 @@ const PAGE_SIZE = 20;
 const VendorPendingCod: React.FC = () => {
   const [bill, setBill] = useState<PendingCodBill | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
+  // Kept for the browser tab, so coming back keeps the chosen page size.
+  const [pageSizeChoice, setPageSizeChoice] = useSessionState('vendor-pending-cod:pageSize', PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -65,8 +67,11 @@ const VendorPendingCod: React.FC = () => {
 
   return (
     <div className="vendor-finance-page">
+      {/* Says which "pending" this is: the dashboard's Pending COD also counts
+          orders already on a statement, and before delivery charges. */}
       <PageHeader
         title="Pending COD Orders"
+        subtitle="Delivered orders not yet on a statement. Payable is after delivery charges."
       />
 
       {loading ? (

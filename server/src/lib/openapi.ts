@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   publicAddRemarkSchema,
   publicBulkStatusSchema,
+  publicBulkCreateOrderSchema,
   publicCancelOrderSchema,
   publicCreateOrderSchema,
   publicCreateTicketSchema,
@@ -13,8 +14,10 @@ import {
   publicTicketReplySchema,
   publicUpdateOrderSchema,
   publicVendorPaymentsQuerySchema,
+  publicCreateCodSettlementRequestSchema,
 } from "../validators/publicApi.schema";
 import { listTicketsQuerySchema } from "../validators/ticket.schema";
+import { listCodSettlementRequestsQuerySchema } from "../validators/codSettlementRequest.schema";
 
 // Hand-assembled OpenAPI 3.1 document for the vendor Partner API. Request
 // schemas are generated from the same Zod schemas the routes validate
@@ -24,7 +27,10 @@ import { listTicketsQuerySchema } from "../validators/ticket.schema";
 type JsonSchema = Record<string, unknown>;
 
 function toSchema(zodSchema: z.ZodType): JsonSchema {
-  const json = z.toJSONSchema(zodSchema) as JsonSchema;
+  // Document the wire input, not Zod's transformed output. Some request
+  // validators trim/coerce fields, and output JSON Schema cannot represent
+  // those transforms (which would make /openapi.json fail entirely).
+  const json = z.toJSONSchema(zodSchema, { io: "input" }) as JsonSchema;
   delete json.$schema;
   return json;
 }
@@ -62,7 +68,7 @@ const idempotencyKeyHeader = {
   in: "header",
   required: true,
   schema: { type: "string", format: "uuid" },
-  description: "Client-generated UUID. Replaying the same key with the same body returns the original response instead of repeating the action.",
+  description: "Client-generated UUID. Replay is scoped to this vendor, operation, and resource. Repeating the same request returns its original response; an unresolved key from the previous cache format returns 409 and requires reconciliation.",
 };
 
 const errorResponse = { "$ref": "#/components/schemas/ErrorResponse" };
@@ -96,9 +102,9 @@ export function buildOpenApiDocument(baseUrl: string) {
     openapi: "3.1.0",
     info: {
       title: "ParcelMoover Partner API",
-      version: "1.2.0",
+      version: "1.3.0",
       description:
-        "Vendor-facing API for placing and tracking orders, quoting delivery rates, and raising support tickets. " +
+        "Vendor-facing API for placing and tracking orders, quoting delivery rates, raising COD settlement requests, and raising support tickets. " +
         "Every request authenticates with a vendor API key (Settings → Developer → API Keys). " +
         "Mutating endpoints require a client-generated `Idempotency-Key` header (a UUID) so retries never double-execute. " +
         "Orders can be created with `orderType: \"exchange\"`; once ops confirms delivery, a linked return parcel is " +
@@ -106,7 +112,14 @@ export function buildOpenApiDocument(baseUrl: string) {
         "`allowPartialDelivery: true` to flag that a partial delivery is acceptable - the outcome (`partialDeliveryRemarks`, " +
         "`partialCodCollected`) is still reported by ops/rider, readable via the order endpoints. Returns raised via " +
         "`POST /orders/{trackingId}/return-request` open a pending request for staff review rather than moving the " +
-        "order through the return-to-vendor workflow directly.",
+        "order through the return-to-vendor workflow directly. " +
+        "Voucher campaign administration, KYC decisions/document-retention maintenance and delivery-status corrections " +
+        "remain staff/system operations and are not exposed by the Partner API. Staff continuation of a partial delivery " +
+        "preserves its collected cash; a completed delivery with settled or statement-linked cash cannot be reversed. " +
+        "When operators enable PERFORMANCE_TIMING, responses may include a Server-Timing header " +
+        "with api, db and auth durations in milliseconds and a db_ops count of logical Prisma operations. " +
+        "The same diagnostics apply to dashboard requests. Parallel operation durations overlap; " +
+        "db is not pure PostgreSQL execution time. Diagnostics do not change payloads, vendor scope or freshness.",
     },
     servers: [{ url: `${baseUrl}/api/v1` }],
     security: [{ ApiKeyAuth: [] }],
@@ -163,11 +176,25 @@ export function buildOpenApiDocument(baseUrl: string) {
         },
         get: {
           summary: "List your own orders",
+          description: "Uses the same vendor-scoped order service as the dashboard. Selected relation fields and matching lookup indexes reduce database work without changing response fields or exact meta.total/meta.totalPages. Default order is newest first using order number and ID.",
           operationId: "listOrders",
           parameters: queryParams(publicListOrdersQuerySchema),
           responses: {
             200: { description: "Paginated order list", content: { "application/json": { schema: { type: "object" } } } },
             ...errorResponses(400, 401, 429),
+          },
+        },
+      },
+      "/orders/bulk": {
+        post: {
+          summary: "Import up to 100 orders",
+          description: "Uses the dashboard import service and key owner's vendor scope. Individual row failures are returned in data.results. An identical recently completed batch returns 409 DUPLICATE_BATCH; set confirmDuplicateBatch to true with a new Idempotency-Key to deliberately repeat it. Limited to 20 requests per minute per API key.",
+          operationId: "bulkCreateOrders",
+          parameters: [idempotencyKeyHeader],
+          requestBody: jsonRequestBody("BulkCreateOrderRequest"),
+          responses: {
+            201: { description: "Import results: created, failed and indexed results", content: { "application/json": { schema: { type: "object" } } } },
+            ...errorResponses(400, 401, 403, 409, 429),
           },
         },
       },
@@ -342,6 +369,7 @@ export function buildOpenApiDocument(baseUrl: string) {
       "/finance/settlements": {
         get: {
           summary: "Your settlement statements",
+          description: "Uses the dashboard's vendor-scoped settlement service. orderCount is the exact database relation count; item details remain available from the statement detail endpoint. Sorted by createdAt descending, then ID descending for equal timestamps. Exact page totals are retained. Paying or approving settlements remains staff-only; vendors can submit COD settlement requests.",
           operationId: "listSettlements",
           parameters: queryParams(publicSettlementsQuerySchema),
           responses: {
@@ -394,10 +422,54 @@ export function buildOpenApiDocument(baseUrl: string) {
       "/finance/unsettled-orders": {
         get: {
           summary: "Orders with COD collected but not yet settled",
+          description: "Newest 1,000 eligible orders. capped=true means more are waiting; settle the displayed batch and reload. Totals describe only returned items. availableCredit is the vendor’s prepaid credit.",
           operationId: "getUnsettledOrders",
           responses: {
             200: { description: "Unsettled order list", content: { "application/json": { schema: { "$ref": "#/components/schemas/UnsettledOrdersResponse" } } } },
             ...errorResponses(401, 403, 429),
+          },
+        },
+      },
+      "/cod-settlement-requests": {
+        get: {
+          summary: "List your COD settlement requests",
+          operationId: "listCodSettlementRequests",
+          parameters: queryParams(listCodSettlementRequestsQuerySchema),
+          responses: {
+            200: { description: "Paginated request history", content: { "application/json": { schema: { "$ref": "#/components/schemas/CodSettlementRequestsResponse" } } } },
+            ...errorResponses(400, 401, 403, 429),
+          },
+        },
+        post: {
+          summary: "Raise a COD settlement request",
+          description: "Asks staff to arrange a payout. Bank details are copied from your registered vendor profile and cannot be supplied in this request. One open or in-progress request per vendor; a second returns 409. This does not create or pay a settlement.",
+          operationId: "createCodSettlementRequest",
+          parameters: [idempotencyKeyHeader],
+          requestBody: jsonRequestBody("CreateCodSettlementRequest"),
+          responses: {
+            201: { description: "Request raised", content: { "application/json": { schema: { "$ref": "#/components/schemas/CodSettlementRequestResponse" } } } },
+            ...errorResponses(400, 401, 403, 409, 422, 429),
+          },
+        },
+      },
+      "/cod-settlement-requests/registered-bank": {
+        get: {
+          summary: "Read your registered payout bank details",
+          operationId: "getCodSettlementRequestBank",
+          responses: {
+            200: { description: "Registered bank account", content: { "application/json": { schema: { "$ref": "#/components/schemas/RegisteredBankResponse" } } } },
+            ...errorResponses(401, 403, 404, 429),
+          },
+        },
+      },
+      "/cod-settlement-requests/{id}": {
+        get: {
+          summary: "Read one of your COD settlement requests",
+          operationId: "getCodSettlementRequest",
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: {
+            200: { description: "Request detail", content: { "application/json": { schema: { "$ref": "#/components/schemas/CodSettlementRequestResponse" } } } },
+            ...errorResponses(400, 401, 403, 404, 429),
           },
         },
       },
@@ -502,9 +574,11 @@ export function buildOpenApiDocument(baseUrl: string) {
         UpdateOrderRequest: toSchema(publicUpdateOrderSchema),
         ReturnRequestRequest: toSchema(publicReturnRequestSchema),
         BulkStatusRequest: toSchema(publicBulkStatusSchema),
+        BulkCreateOrderRequest: toSchema(publicBulkCreateOrderSchema),
         AddRemarkRequest: toSchema(publicAddRemarkSchema),
         CreateTicketRequest: toSchema(publicCreateTicketSchema),
         TicketReplyRequest: toSchema(publicTicketReplySchema),
+        CreateCodSettlementRequest: toSchema(publicCreateCodSettlementRequestSchema),
 
         // ── Finance / billing responses ────────────────────────────────────
         // Mirrors server/src/types/finance.type.ts and the VendorPaymentItem /
@@ -517,6 +591,59 @@ export function buildOpenApiDocument(baseUrl: string) {
             pageSize: { type: "integer" },
             total: { type: "integer" },
             totalPages: { type: "integer" },
+          },
+        },
+        CodSettlementRequest: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            requestNo: { type: "string" },
+            vendorId: { type: "string", format: "uuid" },
+            vendorName: { type: "string" },
+            bankName: { type: "string" },
+            accountNumber: { type: "string" },
+            accountName: { type: "string" },
+            note: { type: "string" },
+            amountSnapshot: { type: ["number", "null"], description: "Balance when raised; staff recomputes the actual payout." },
+            status: { type: "string", enum: ["open", "in_progress", "settled", "rejected"] },
+            decisionNote: { type: "string" },
+            reviewedBy: { type: "string" },
+            reviewedAt: { type: ["string", "null"], format: "date-time" },
+            closedAt: { type: ["string", "null"], format: "date-time" },
+            createdAt: { type: "string", format: "date-time" },
+            settlementId: { type: ["string", "null"], format: "uuid" },
+            settlementStatementId: { type: ["string", "null"] },
+            settlementStatus: { type: ["string", "null"] },
+          },
+        },
+        CodSettlementRequestResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            message: { type: "string" },
+            data: { "$ref": "#/components/schemas/CodSettlementRequest" },
+          },
+        },
+        CodSettlementRequestsResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            data: { type: "array", items: { "$ref": "#/components/schemas/CodSettlementRequest" } },
+            meta: { "$ref": "#/components/schemas/PaginationMeta" },
+          },
+        },
+        RegisteredBankResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            data: {
+              type: "object",
+              properties: {
+                bankName: { type: "string" },
+                accountNumber: { type: "string" },
+                accountName: { type: "string" },
+              },
+            },
           },
         },
         PendingCodResponse: {
@@ -733,6 +860,8 @@ export function buildOpenApiDocument(baseUrl: string) {
                 totalCod: { type: "number" },
                 totalDeliveryCharge: { type: "number" },
                 totalNetPayable: { type: "number" },
+                availableCredit: { type: "number" },
+                capped: { type: "boolean", description: "More than 1,000 eligible orders; totals cover the returned batch." },
               },
             },
           },

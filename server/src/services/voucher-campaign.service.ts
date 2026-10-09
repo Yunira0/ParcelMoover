@@ -257,10 +257,10 @@ export async function listCampaignCodes(
   }
   // One joined query keeps the state filter and pagination consistent.
   const stateSql = state === 'paused' ? Prisma.sql`AND v.is_active = false`
-    : state === 'redeemed' ? Prisma.sql`AND c.state = 'used'`
-    : state === 'claimed' ? Prisma.sql`AND c.state IN ('claimed','reserved')`
-    : state === 'expired' ? Prisma.sql`AND c.id IS NULL AND v.expires_at <= now()`
-    : state === 'unclaimed' ? Prisma.sql`AND c.id IS NULL AND v.expires_at > now()`
+    : state === 'redeemed' ? Prisma.sql`AND v.is_active = true AND c.state = 'used'`
+    : state === 'claimed' ? Prisma.sql`AND v.is_active = true AND c.state IN ('claimed','reserved')`
+    : state === 'expired' ? Prisma.sql`AND v.is_active = true AND c.id IS NULL AND v.expires_at <= now()`
+    : state === 'unclaimed' ? Prisma.sql`AND v.is_active = true AND c.id IS NULL AND v.expires_at > now()`
     : Prisma.empty;
   const qSql = q ? Prisma.sql`AND v.code LIKE ${'%' + q.replace(/[%_]/g, '') + '%'}` : Prisma.empty;
   const [rows, counted] = await Promise.all([

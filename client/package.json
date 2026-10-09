@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:performance": "npm run build -- --manifest && node scripts/check-loading-budgets.mjs"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.104.1",
     "axios": "^1.17.0",
     "exceljs": "^4.4.0",
     "heic2any": "^0.0.4",

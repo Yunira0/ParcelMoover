@@ -155,6 +155,10 @@ async function main() {
   const args = process.argv.slice(2);
   const dryRun = !args.includes("--commit");
   const once = args.includes("--once");
+  if (once && process.env.SKIP_STARTUP_DATA_REPAIRS === "true") {
+    console.log("repoint-branch-deposits: skipped by SKIP_STARTUP_DATA_REPAIRS.");
+    return;
+  }
   let actorId = args.find((a) => a.startsWith("--actor="))?.split("=")[1];
   const branchArg = args.find((a) => a.startsWith("--branch="))?.split("=")[1];
 

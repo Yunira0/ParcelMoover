@@ -13,14 +13,17 @@ import { Banner } from '../ui';
 import { money } from '../format';
 import FormField from '../../../components/FormField';
 import NepaliDatePicker from '../../../components/NepaliDatePicker';
+import ClearableFilter from '../../../components/ClearableFilter';
 import {
   getSettlements,
   type SettlementListItem,
   type SettlementStatusFilter,
 } from '../../../services/finance.service';
-import { getRiders, searchVendors } from '../../../services/users.service';
+import { getRiders } from '../../../services/users.service';
+import { searchVendors } from '../../../queries/lookups';
 import { settlementStatusLabel, settlementStatusTone } from '../../../utils/settlementStatus';
 import { toBsDate } from '../../../utils/nepaliDate';
+import { useSessionState } from '../../../hooks/useSessionState';
 import '../Accounting.css';
 
 // The payout statements — what used to be the whole COD Management screen.
@@ -40,13 +43,18 @@ type SettlementRow = SettlementListItem & { sn: number };
 const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType }) => {
   const navigate = useNavigate();
 
+  // Filters are remembered per list (rider and vendor apart) for the browser
+  // tab, so opening a statement and coming back keeps them until cleared.
+  const filterKey = `settlements:${payeeType}`;
+
   // The party whose statements are listed. Filtered server-side, unlike the
   // text box this replaced: that one narrowed the page already fetched, so a
   // vendor whose settlements sat on page 3 could not be found from page 1.
-  const [payeeId, setPayeeId] = useState('');
   // The picker only knows a name while that party is in its last fetched page,
-  // so the label for the current selection is kept here instead.
-  const [payeeLabel, setPayeeLabel] = useState('');
+  // so the label for the current selection is kept alongside the id.
+  const [payee, setPayee] = useSessionState(`${filterKey}:payee`, { id: '', label: '' });
+  const payeeId = payee.id;
+  const payeeLabel = payee.label;
   const payeeLabelsRef = useRef<Map<string, string>>(new Map());
   const [items, setItems] = useState<SettlementListItem[]>([]);
   const [page, setPage] = useState(1);
@@ -58,21 +66,19 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
   // Status, settlement date and page size, carried over from the COD Management
   // screen this replaced. All three are applied server-side, so they narrow the
   // whole list rather than the page already fetched.
-  const [status, setStatus] = useState<SettlementStatusFilter | ''>('');
+  const [status, setStatus] = useSessionState<SettlementStatusFilter | ''>(`${filterKey}:status`, '');
   // Inclusive day range; either end can be left open. `dateField` picks which
   // column it applies to - Settled date or Created date.
-  const [dateField, setDateField] = useState<'settled' | 'created'>('settled');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [dateField, setDateField] = useSessionState<'settled' | 'created'>(`${filterKey}:dateField`, 'settled');
+  const [fromDate, setFromDate] = useSessionState(`${filterKey}:from`, '');
+  const [toDate, setToDate] = useSessionState(`${filterKey}:to`, '');
+  const [pageSize, setPageSize] = useSessionState(`${filterKey}:pageSize`, PAGE_SIZE);
 
   // Back to page 1 when the other tab's party type arrives, or you land past
-  // the end of a shorter list. The selected party goes with it - a rider id
-  // means nothing to the vendor list.
+  // the end of a shorter list. Its filters come with it from their own keys -
+  // a rider id means nothing to the vendor list.
   useEffect(() => {
     setPage(1);
-    setPayeeId('');
-    setPayeeLabel('');
   }, [payeeType]);
 
   // Memoised: SearchableSelectAsync re-runs its debounced fetch whenever this
@@ -117,10 +123,9 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
   );
 
   const selectPayee = useCallback((id: string) => {
-    setPayeeId(id);
-    setPayeeLabel(id ? payeeLabelsRef.current.get(id) ?? '' : '');
+    setPayee({ id, label: id ? payeeLabelsRef.current.get(id) ?? '' : '' });
     setPage(1);
-  }, []);
+  }, [setPayee]);
 
   useEffect(() => {
     let active = true;
@@ -222,21 +227,33 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
               just return nothing. */}
           <label aria-label="From date">
             <span>FROM</span>
-            <NepaliDatePicker
-              value={fromDate}
-              max={toDate || undefined}
-              onChange={(value) => applyFilter(() => setFromDate(value))}
-              placeholder="Start date"
-            />
+            <ClearableFilter
+              active={Boolean(fromDate)}
+              onClear={() => applyFilter(() => setFromDate(''))}
+              clearLabel="Clear from date filter"
+            >
+              <NepaliDatePicker
+                value={fromDate}
+                max={toDate || undefined}
+                onChange={(value) => applyFilter(() => setFromDate(value))}
+                placeholder="Start date"
+              />
+            </ClearableFilter>
           </label>
           <label aria-label="To date">
             <span>TO</span>
-            <NepaliDatePicker
-              value={toDate}
-              min={fromDate || undefined}
-              onChange={(value) => applyFilter(() => setToDate(value))}
-              placeholder="End date"
-            />
+            <ClearableFilter
+              active={Boolean(toDate)}
+              onClear={() => applyFilter(() => setToDate(''))}
+              clearLabel="Clear to date filter"
+            >
+              <NepaliDatePicker
+                value={toDate}
+                min={fromDate || undefined}
+                onChange={(value) => applyFilter(() => setToDate(value))}
+                placeholder="End date"
+              />
+            </ClearableFilter>
           </label>
         </div>
 
@@ -244,22 +261,27 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
           <span>STATUS</span>
           {/* Empty `label` on purpose: the CAPS caption is the wrapping
               <label><span>, the shape every filter panel in the app uses.
-
-              Settled and Pending only. `cancelled` is accepted by the API but
-              left out on purpose — a cancelled statement is withdrawn, not a
-              state anyone browses the list for. `partially_paid` is not in the
-              API's accepted set at all, so offering it would 400. */}
-          <FormField
-            label=""
-            type="select"
-            value={status}
-            onChange={(value) => applyFilter(() => setStatus(value as SettlementStatusFilter | ''))}
-            options={[
-              { value: '', label: 'All statuses' },
-              { value: 'settled', label: 'Settled' },
-              { value: 'pending', label: 'Pending' },
-            ]}
-          />
+              Partially paid is its own state: those statements still owe
+              money, so they are the ones a payout run has to find. */}
+          <ClearableFilter
+            active={Boolean(status)}
+            onClear={() => applyFilter(() => setStatus(''))}
+            clearLabel="Clear status filter"
+          >
+            <FormField
+              label=""
+              type="select"
+              value={status}
+              onChange={(value) => applyFilter(() => setStatus(value as SettlementStatusFilter | ''))}
+              options={[
+                { value: '', label: 'All statuses' },
+                { value: 'pending', label: 'Pending' },
+                { value: 'partially_paid', label: 'Partially paid' },
+                { value: 'settled', label: 'Settled' },
+                { value: 'cancelled', label: 'Cancelled' },
+              ]}
+            />
+          </ClearableFilter>
         </label>
       </div>
 
@@ -369,11 +391,20 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
           // finishes the row.
           {
             header: 'Status',
-            width: '110px',
+            width: '150px',
             accessor: (item) => (
-              <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
-                {settlementStatusLabel(item.status)}
-              </StatusChip>
+              <>
+                <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
+                  {settlementStatusLabel(item.status)}
+                </StatusChip>
+                {/* A part-paid row otherwise reads exactly like a pending one
+                    beside its full amount. */}
+                {item.status === 'partially_paid' && (
+                  <span className="acc-sub">
+                    {money(item.paidAmount)} of {money(Math.abs(item.amount))}
+                  </span>
+                )}
+              </>
             ),
           },
           { header: 'Remark', width: '190px', accessor: (item) => item.remark || '—' },
@@ -381,7 +412,7 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
         // Every column is sized, so the table opts into fixed layout and scrolls
         // inside its own box rather than squeezing the payment figures. Vendor
         // carries the extra bank column, hence the wider floor.
-        minWidth={payeeType === 'vendor' ? '1495px' : '1310px'}
+        minWidth={payeeType === 'vendor' ? '1535px' : '1350px'}
         emptyMessage={
           payeeId
             ? `No settlements recorded for that ${payeeType} yet.`

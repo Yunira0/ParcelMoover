@@ -207,7 +207,7 @@ const OverviewOrdersPage: React.FC = () => {
     ]);
     const label = group?.label ?? 'orders';
     const slug = label.toLowerCase().replace(/\s+/g, '-');
-    downloadExcel(`${slug}.xlsx`, label.slice(0, 31), headers, sheetRows);
+    await downloadExcel(`${slug}.xlsx`, label.slice(0, 31), headers, sheetRows);
   };
 
   if (!group) return null;

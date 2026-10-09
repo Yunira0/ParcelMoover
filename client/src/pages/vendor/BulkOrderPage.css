@@ -166,6 +166,8 @@ select.bop-cell-input { cursor: pointer; min-width: 110px; }
   .bop-result-actions { flex-direction: column-reverse; }
   .bop-result-actions .btn { width: 100%; }
 }
+
+.bop-warning { padding: 12px 16px; border: 1px solid #f59e0b; border-radius: 8px; background: #fffbeb; color: #92400e; }
 @media (max-width: 600px) {
   .bop-sender-fields { grid-template-columns: 1fr; }
   .bop-header h1 { font-size: var(--font-size-2xl); line-height: var(--line-height-2xl); }

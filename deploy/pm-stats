@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# pm-stats - ParcelMoover numbers in the terminal (docs/MONITORING.md).
+# Runs the read-only stats script inside the release slot serving traffic, so
+# it always matches the deployed code. Install once on the EC2 host:
+#   sudo ln -sf /var/www/express-app/deploy/pm-stats /usr/local/bin/pm-stats
+set -Eeuo pipefail
+APP_DIR=${APP_DIR:-/var/www/express-app}
+container=$(bash "$APP_DIR/deploy/deploy-app.sh" active-container)
+# Keep colours when a person is watching; plain text when piped (e.g. | jq).
+if [[ -t 1 ]]; then tty=(-it); else tty=(-i); fi
+exec docker exec "${tty[@]}" "$container" node dist/scripts/stats.js "$@"

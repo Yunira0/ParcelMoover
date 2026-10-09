@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import { login } from '../services/auth.service';
 import FormField from '../components/FormField';
@@ -17,6 +17,8 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sessionChanged = searchParams.get('session') === 'changed';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,6 +62,11 @@ const Login: React.FC = () => {
     <div className="login-page">
       <div className="login-card">
         <h2>Login to ParcelMoover</h2>
+        {sessionChanged && (
+          <div className="error-message" role="alert">
+            Another account signed in on this browser. Sign in to continue to the dashboard.
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           <FormField
             label="Email Address"

@@ -30,7 +30,8 @@ import { downloadExcel } from '../utils/excel';
 import { handoffToNcm } from '../services/ncm.service';
 import { handoffParcelsToUpaya } from '../services/upaya.service';
 import { addOrdersToBranchManifest } from '../services/transitManifests.service';
-import { listBranches, type Branch } from '../services/branchTracking.service';
+import type { Branch } from '../services/branchTracking.service';
+import { listBranches } from '../queries/lookups';
 import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
 import { STATUS_TIMELINE_HEADERS, getOrderStatusTone, statusTimelineCells } from '../utils/orderStatus';
 import { printLabels } from '../utils/printLabels';
@@ -560,7 +561,7 @@ const OOVOperations: React.FC = () => {
     }
 
     const { headers, rows: exportRows } = buildExportRows(rows);
-    downloadExcel('oov-orders.xlsx', 'OOV Orders', headers, exportRows);
+    await downloadExcel('oov-orders.xlsx', 'OOV Orders', headers, exportRows);
   };
 
   const handlePrintLabels = () => {

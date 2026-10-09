@@ -115,7 +115,7 @@ export async function listNotifications(userId: string, page = 1, pageSize = DEF
     prisma.notifications.count({ where: { user_id: userId } }),
     prisma.notifications.findMany({
       where: { user_id: userId },
-      orderBy: { created_at: "desc" },
+      orderBy: [{ created_at: "desc" }, { id: "desc" }],
       skip,
       take,
     }),

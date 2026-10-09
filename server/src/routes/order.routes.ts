@@ -191,7 +191,7 @@ orderRouter.get(
 orderRouter.get(
   "/status-counts",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getStatusCountsController,
@@ -204,7 +204,7 @@ orderRouter.get(
 orderRouter.post(
   "/status-counts",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getStatusCountsController,
@@ -236,7 +236,7 @@ orderRouter.get(
 orderRouter.get(
   "/filter-options",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(orderFilterOptionsQuerySchema, "query"),
@@ -248,7 +248,7 @@ orderRouter.get(
 orderRouter.get(
   "/count-by-status",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(orderCountByStatusQuerySchema, "query"),
@@ -274,7 +274,7 @@ orderRouter.get(
 orderRouter.get(
   "/merchant-overview",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   merchantOverviewController,
@@ -308,7 +308,7 @@ orderRouter.get(
 orderRouter.get(
   "/",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   validate(listOrdersQuerySchema, "query"),
@@ -355,7 +355,7 @@ orderRouter.get(
 orderRouter.get(
   "/track/:trackingId",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("ORDER_ACCESS"),
   orderReadLimiter,
   getOrderByTrackingIdController,
@@ -387,12 +387,13 @@ orderRouter.patch(
 );
 
 // PATCH /orders/:id — edit parcel details (receiver, route, weight, COD, …).
-// Status changes stay on /:id/status; this route never moves a parcel.
+// Status changes stay on /:id/status; this route never moves a parcel. The
+// accountant edits too: correcting COD and order details is finance work.
 orderRouter.patch(
   "/:id",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff"),
   requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
   validate(uuidParamSchema, "params"),
@@ -401,13 +402,13 @@ orderRouter.patch(
 );
 
 // POST /orders/:id/redirect — customer moved: point the parcel at a different
-// destination branch/address, with a reason and a diversion charge. Admin-only;
-// vendors go through support so the fee is always an ops decision.
+// destination branch/address, with a reason and a diversion charge. Admins and
+// the accountant; vendors go through support so the fee is always an office decision.
 orderRouter.post(
   "/:id/redirect",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "admin", "accountant"),
   requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
   validate(uuidParamSchema, "params"),
@@ -417,12 +418,12 @@ orderRouter.post(
 
 // POST /orders/:id/forward — a delivered parcel was forwarded on to another
 // destination: change the destination and add a manual forwarding charge.
-// Status stays delivered. Admin-only, like redirect.
+// Status stays delivered. Same roles as redirect.
 orderRouter.post(
   "/:id/forward",
   authMiddleware,
   csrfProtection,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin", "admin", "accountant"),
   requireStaffPermission("ORDER_ACCESS"),
   statusUpdateLimiter,
   validate(uuidParamSchema, "params"),

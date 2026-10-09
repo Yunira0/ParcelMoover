@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Ban, CreditCard, ExternalLink, FileText, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, CreditCard, ExternalLink, FileText, Pencil, Plus, Trash2 } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import SegmentedTabs from '../../components/SegmentedTabs';
 import StatusChip from '../../components/StatusChip';
 import Table from '../../components/Table';
 import { Banner } from '../accounting/ui';
-import { hasAdminPermission, hasAnyRole } from '../../utils/auth';
+import { hasAdminPermission, hasAnyRole, isBranchWorkspaceUser } from '../../utils/auth';
 import RevertSettlementModal from '../../components/RevertSettlementModal';
+import BranchEditSettlementModal from './BranchEditSettlementModal';
 import {
   cancelBranchSettlement,
   getBranchSettlement,
@@ -39,8 +40,9 @@ const BranchSettlementDetailPage: React.FC = () => {
   const location = useLocation();
   const canRecordOfficePayment = hasAnyRole(['super_admin', 'accountant']);
   // Same gate as cancelling a vendor statement; the server also limits it to head office.
-  const canCancel = canRecordOfficePayment || hasAdminPermission('EDIT_SETTLEMENTS');
+  const canCancel = canRecordOfficePayment || (hasAdminPermission('EDIT_SETTLEMENTS') && !isBranchWorkspaceUser());
   const [showCancel, setShowCancel] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [detail, setDetail] = useState<BranchSettlementDetail | null>(null);
   const [methods, setMethods] = useState<PaymentMethodOption[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([{ method: '', amount: '' }]);
@@ -58,8 +60,10 @@ const BranchSettlementDetailPage: React.FC = () => {
       const [statement, paymentMethods] = await Promise.all([getBranchSettlement(id), getPaymentMethods()]);
       setDetail(statement);
       setMethods(paymentMethods);
+      // The first *active* method: an inactive one is not in the dropdown, so
+      // the select would show one method while posting another the API rejects.
       setPayments((current) => current.length === 1 && !current[0].amount
-        ? [{ method: paymentMethods[0]?.name ?? '', amount: String(statement.remainingAmount) }]
+        ? [{ method: paymentMethods.find((method) => method.isActive)?.name ?? '', amount: String(statement.remainingAmount) }]
         : current);
       setError('');
     } catch (err: any) {
@@ -124,7 +128,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   return (
     <div className="scp-page bsd-page">
       <button type="button" className="scp-back" onClick={() => navigate('/branches/settlement')}><ArrowLeft size={15} />Branch COD</button>
-      <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p><strong>{detail.fromBranch.name}</strong> pays collected COD to master branch <strong>{detail.toBranch.name}</strong>.</p></div><div className="bsd-heading-actions">{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="danger" size="sm" onClick={() => setShowCancel(true)}><Ban size={15} /> Cancel statement</Button>}<StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div></div>
+      <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p><strong>{detail.fromBranch.name}</strong> pays collected COD to master branch <strong>{detail.toBranch.name}</strong>.</p></div><div className="bsd-heading-actions">{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="secondary" size="sm" onClick={() => setShowEdit(true)}><Pencil size={15} /> Edit statement</Button>}{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="danger" size="sm" onClick={() => setShowCancel(true)}><Ban size={15} /> Cancel statement</Button>}<StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div></div>
       {notice && <Banner tone="success">{notice}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
 
@@ -180,7 +184,7 @@ const BranchSettlementDetailPage: React.FC = () => {
             <div><span>Commission credit</span><strong>{money(detail.commissionAmount)}</strong><small>{money(detail.commissionPerParcel)} per parcel retained by {detail.fromBranch.name}</small></div>
             <div><span>Net payable</span><strong>{money(detail.netPayable)}</strong></div>
             <div><span>Paid</span><strong>{money(detail.paidAmount)}</strong></div>
-            <div><span>Outstanding</span><strong className={detail.remainingAmount > 0 ? 'branch-balance-due' : 'branch-balance-clear'}>{money(detail.remainingAmount)}</strong><small>{detail.settledAt ? `Completed ${toBsDate(detail.settledAt) || detail.settledAt.slice(0, 10)}` : 'Waiting for payment'}</small></div>
+            <div><span>Outstanding</span><strong className={detail.remainingAmount > 0 ? 'branch-balance-due' : 'branch-balance-clear'}>{money(detail.remainingAmount)}</strong><small>{detail.status === 'cancelled' ? 'Cancelled — nothing is owed' : detail.settledAt ? `Completed ${toBsDate(detail.settledAt) || detail.settledAt.slice(0, 10)}` : 'Waiting for payment'}</small></div>
           </section>
 
           {payable && canRecordOfficePayment && (
@@ -212,6 +216,16 @@ const BranchSettlementDetailPage: React.FC = () => {
           onClose={() => setShowCancel(false)}
           onSuccess={() => {
             setNotice(`${detail.statementNo} cancelled. Its orders can go on a new statement.`);
+            load();
+          }}
+        />
+      )}
+      {showEdit && (
+        <BranchEditSettlementModal
+          detail={detail}
+          onClose={() => setShowEdit(false)}
+          onSuccess={() => {
+            setNotice(`${detail.statementNo} updated.`);
             load();
           }}
         />

@@ -188,6 +188,30 @@ export const createSettlement = async (
   return response.data;
 };
 
+/** A Billing payment the vendor submitted that staff have not reviewed yet. */
+export interface PendingBillingPayment {
+  id: string;
+  amount: number;
+  method: string;
+  reference: string | null;
+  submittedAt: string;
+}
+
+/** Billing money the vendor has sent that no statement has absorbed yet. Staff only. */
+export interface SettlementBillingPayments {
+  /** Verified Billing payments not yet applied to any statement. */
+  availableCredit: number;
+  /** Submitted, not yet verified. Verifying one pays an open statement down automatically. */
+  pendingPayments: PendingBillingPayment[];
+}
+
+// Shown on Make Payment before a vendor's transfer is recorded by hand, since
+// the same transfer may already be sitting in Billing.
+export const getSettlementBillingPayments = async (id: string): Promise<SettlementBillingPayments> => {
+  const response = await api.get(`/finance/settlements/${id}/billing-payments`);
+  return response.data.data;
+};
+
 export interface PaySettlementDocuments {
   /** Screenshots/PDFs of the transfer confirmation. Several are allowed — a transfer can be photographed more than once. */
   paymentReceipt?: File | File[] | null;
@@ -318,6 +342,8 @@ export interface UnsettledOrdersResult {
   totalNetPayable: number;
   /** Vendor leg: charges prepaid through Billing that the next statement hands back. */
   availableCredit?: number;
+  /** True when the eligible set exceeded the server-side cap and was trimmed. */
+  capped: boolean;
 }
 
 export const getUnsettledOrders = async (
@@ -374,6 +400,8 @@ export interface SettlementDetail {
   payableAmount: number;
   /** Delivery charges prepaid through Billing, handed back on this statement. Inside payableAmount. */
   vendorCreditApplied?: number;
+  /** VAT % included in each delivery charge. Staff only; absent on older statements. */
+  vatRate?: number;
   /** Total recorded so far across every instalment. */
   paidAmount: number;
   /** What the payee is still owed. */

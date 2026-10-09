@@ -113,8 +113,8 @@ export function isBranchWorkspacePathAllowed(pathname: string): boolean {
 
 /**
  * True for a finance-only accountant account (the "Accountant" department). The
- * server gives it the whole Finance section plus branch COD settlement, and
- * nothing else - no orders, operations, users or settings.
+ * server gives it the whole Finance section plus branch COD settlement, order
+ * editing, and the vendor and branch overviews - no other operations, users or settings.
  */
 export function isAccountantUser(): boolean {
   return hasAnyRole(['accountant']) && !isAdminSide();
@@ -140,7 +140,13 @@ export function isAccountantPathAllowed(pathname: string): boolean {
     // statement, and the branch billing queue.
     pathname === '/branches/settlement' ||
     pathname.startsWith('/branches/settlement/') ||
-    pathname === '/branches/billing'
+    pathname === '/branches/billing' ||
+    // The order list and an order's detail, where an order can be corrected
+    // (never created or bulk-created), and the vendor and branch overviews.
+    pathname === '/orders' ||
+    pathname.startsWith('/orders/track/') ||
+    pathname === '/merchant-overview' ||
+    pathname === '/branches'
   );
 }
 
@@ -182,8 +188,9 @@ export function getCurrentUserLocationId(): string | null {
 }
 
 // The finance grants an accountant holds by role, matching the server (where
-// requireAdminPermission never narrows a non-admin role).
-const ACCOUNTANT_PERMISSIONS = ['ACCOUNTING_ACCESS', 'EDIT_SETTLEMENTS'];
+// requireAdminPermission never narrows a non-admin role). BRANCH_TRACKING_READ
+// is the read-only Branch Overview; never the WRITE level.
+const ACCOUNTANT_PERMISSIONS = ['ACCOUNTING_ACCESS', 'EDIT_SETTLEMENTS', 'BRANCH_TRACKING_READ'];
 
 export function hasAdminPermission(permission: string): boolean {
   const roles = getCurrentUserRoles();

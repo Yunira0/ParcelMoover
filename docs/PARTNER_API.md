@@ -1,12 +1,18 @@
 # ParcelMoover Partner API v1
 
-Integrate your e-commerce store with ParcelMoover: place delivery orders (including exchanges), track and edit them pre-dispatch, request returns, list shipments, read your COD/settlement finance data, and manage your account billing — all programmatically.
+Integrate your e-commerce store with ParcelMoover: place delivery orders (including exchanges), track and edit them pre-dispatch, request returns, list shipments, raise and track COD settlement requests, read your settlement finance data, and manage your account billing — all programmatically.
 
 **Base URL:** `https://portal.parcelmoover.com/api/v1` — there is no separate sandbox or staging environment; this is the one URL every example in this doc uses, in development and in production alike.
 
 All requests and responses are JSON (`Content-Type: application/json`), with three deliberate exceptions: `POST /billing/payments` takes `multipart/form-data` because it accepts a proof file, and the two document endpoints (`GET /finance/settlements/{id}/documents/{kind}` and `GET /billing/qr`) stream the file itself rather than a JSON envelope.
 
 **Read this online instead:** this whole reference is served as a browsable web page at **`GET /api/v1/docs`**, and a console for trying every endpoint against your own API key lives at **`GET /api/v1/docs/console`**. Neither needs a key to open. The machine-readable OpenAPI 3.1 spec is at **`GET /api/v1/openapi.json`**, also unauthenticated, and is generated from the same validators the API enforces, so it can't drift.
+
+**Optional loading diagnostics:** when operators enable `PERFORMANCE_TIMING=true`, dashboard and Partner API responses include a `Server-Timing` header with `api`, `db`, and `auth` durations in milliseconds, plus `db_ops` (logical Prisma operations). Database duration includes client/pool overhead, and parallel durations can overlap; it is not pure PostgreSQL execution time. Response payloads, vendor ownership, authentication, idempotency, rate limits and freshness are unchanged. Diagnostic logs contain route templates and timings, without SQL, request parameters or API keys. Detailed database diagnostics remain an operator task.
+
+**Database read optimizations:** dashboard and Partner API order/settlement lists use the same services. Order reads select the relation fields needed by the response; settlement `orderCount` uses an exact database relation count. Both retain exact `meta.total` and `meta.totalPages`. Settlement lists sort by newest `createdAt`, then descending ID when timestamps tie. API-key authentication, vendor ownership, write idempotency, validation and rate limits are unchanged. Operator logs can also include numeric connection-pool snapshots at request start/finish; those snapshots are not included in API responses. Index deployment and pool capacity settings are operator tasks. Settlement approval/payment remains staff-only; the vendor COD request workflow is unchanged.
+
+**Staff and system boundaries:** voucher campaign administration and code exports, KYC approval/rejection and document-retention maintenance, and delivery-status corrections are not Partner API actions. Continuing a partial delivery through staff follow-up or return handling preserves the cash already collected, including settlement-linked cash. Reversing a completed delivery still requires staff authority and is blocked when its cash has been settled or included in a settlement statement. Document-retention maintenance keeps files referenced by a vendor or another KYC application. Vendors continue to read their order and finance results through the shared, vendor-scoped services.
 
 ---
 
@@ -164,6 +170,8 @@ Returns `{ "success": true, "message": "pong", "data": { "vendorId": "..." } }` 
 ## Idempotency
 
 `POST /orders` requires an `Idempotency-Key` header containing a UUID you generate. If the request times out or errors on your side, retry with the **same** key: you will get back the original response instead of a duplicate order. Use a **new** UUID for each distinct order.
+
+Replay protection is scoped to your vendor account, the API operation, and the target order or ticket where applicable. During the 24-hour transition from the previous cache format, a retry of a key already used before the upgrade returns `409 CONFLICT` rather than creating a second action. Reconcile the original order, payment, remark, or ticket through its read endpoint before taking further action.
 
 ```
 Idempotency-Key: 9f1b6c1e-8f2a-4b3c-9d4e-5f6a7b8c9d0e
@@ -915,7 +923,7 @@ POST /api/v1/tickets/{id}/replies   — add a reply (Idempotency-Key required; b
 
 ## Finance
 
-Read-only endpoints mirroring the dashboard's Finance views — always scoped to your own vendor account. There is no create/edit-settlement endpoint here; recording a payment against a statement stays an admin-only dashboard action.
+Read-only endpoints mirroring the dashboard's Finance views — always scoped to your own vendor account. Creating a settlement and recording a payment against one remain staff actions. To ask staff for a payout, use [COD settlement requests](#cod-settlement-requests).
 
 ```
 GET /api/v1/finance/pending-cod                        — your current pending COD statement
@@ -954,6 +962,57 @@ curl "$BASE/api/v1/finance/pending-cod" -H "Authorization: Bearer $KEY"
   }
 }
 ```
+
+---
+
+## COD settlement requests
+
+These endpoints mirror **Finance → Request COD** in the vendor dashboard. They use your vendor API key and are always scoped to that key's vendor. Raising a request asks staff to arrange a payout; it does **not** create a settlement or move money.
+
+```
+GET  /api/v1/cod-settlement-requests/registered-bank  — payout account on your vendor profile
+GET  /api/v1/cod-settlement-requests?status=&page=&pageSize=&sortDir=&search=  — your request history
+GET  /api/v1/cod-settlement-requests/{id}            — one request and its outcome
+POST /api/v1/cod-settlement-requests                 — raise a request (Idempotency-Key required)
+```
+
+Call `registered-bank` before offering the action. Its `data` has `bankName`, `accountNumber`, and `accountName`; any may be an empty string if the profile is incomplete. The POST uses the **registered profile account**. Bank fields sent in the request body are ignored, and a request with incomplete registered bank details returns `400`. Contact ParcelMoover to update the profile account.
+
+The POST body accepts only an optional `note` (maximum 1,000 characters). Generate a new UUID for each distinct request and keep it for retries:
+
+```bash
+BASE="https://portal.parcelmoover.com/api/v1"
+curl -X POST "$BASE/cod-settlement-requests" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{ "note": "Please process this week’s COD payout." }'
+```
+
+`201` returns the same request record as the list and detail endpoints:
+
+```json
+{
+  "success": true,
+  "message": "COD settlement request raised",
+  "data": {
+    "id": "2a5430f9-4bce-4f7f-b9e5-e2dc9dc962cd",
+    "requestNo": "CSR-260925-NFR52V",
+    "status": "open",
+    "bankName": "Example Bank",
+    "accountNumber": "1234567890",
+    "accountName": "Example Store",
+    "amountSnapshot": 1400,
+    "settlementId": null,
+    "settlementStatementId": null,
+    "settlementStatus": null
+  }
+}
+```
+
+The response also includes `vendorId`, `vendorName`, `note`, `decisionNote`, `reviewedBy`, `reviewedAt`, `closedAt`, and `createdAt`. List responses contain `data: []` and pagination `meta`. `status` can be `open`, `in_progress`, `settled`, or `rejected`; `search` is limited to 100 characters, and `sortDir` is `asc` or `desc`.
+
+A vendor may have **one live request** (`open` or `in_progress`). Another POST returns `409 CONFLICT` until staff settle or reject it. A rejected request can be raised again. `amountSnapshot` is context from the time of the request; the actual amount is calculated when staff process the settlement. Use the list or detail endpoint to follow the outcome. Only staff can change request status.
 
 ---
 
@@ -1197,7 +1256,7 @@ Every error is JSON with this shape:
 | `401` | `UNAUTHORIZED` | Missing, invalid, or revoked API key. |
 | `403` | `FORBIDDEN` | Not allowed for this vendor. |
 | `404` | `NOT_FOUND` | Order/ticket not found (or not yours), or unknown endpoint. |
-| `409` | `CONFLICT` | E.g. an `Idempotency-Key` replayed with a *different* body, or the order is already in a terminal status. |
+| `409` | `CONFLICT` | Conflicting order state, or a key still present in the previous idempotency cache format that requires reconciliation. |
 | `422` | `VALIDATION_ERROR` | Request understood but not processable (invalid status transition, business-rule rejection). |
 | `429` | `RATE_LIMITED` | Rate limit exceeded — back off and retry. |
 | `500` | `INTERNAL_ERROR` | Server error — safe to retry a `POST` with the same `Idempotency-Key`. |
@@ -1226,3 +1285,14 @@ No API key required to fetch it. Paste the URL into [Swagger Editor](https://edi
 6. Use `GET /orders/{trackingId}` and `POST /orders/statuses` only for on-demand lookups or reconciliation (e.g. catching up after your webhook endpoint was down) — not as a scheduled polling loop.
 7. Handle `401` by alerting yourself (key revoked/rotated) and `429` with exponential backoff; branch on `error.code` rather than parsing `message` text.
 8. Rotate keys periodically: generate a new key, switch traffic, then revoke the old one (up to 5 active keys per account).
+
+
+### Bulk order creation and duplicate batch confirmation
+
+`POST /api/v1/orders/bulk` accepts `{ "orders": [ /* 1–100 Create Order requests */ ], "confirmDuplicateBatch": false }`. Use API-key authentication and a UUID `Idempotency-Key`. It shares the dashboard import service and derives the vendor from the key; staff-only vendor selection and delivery-charge overrides are stripped. Omitted senders use your registered pickup profile. Destination hub names are resolved like single-order creation. Limit: 20 requests/minute per API key.
+
+The `201` response has `data.created`, `data.failed` and `data.results` (each row's original index, success, trackingId or error). Rows are independent: check results before retrying failed rows. Retrying the same request key replays the original response. A matching recently completed batch under a different key returns structured `409` / `error.code: "DUPLICATE_BATCH"`. To intentionally repeat it, send `confirmDuplicateBatch: true` with a new key. This optional one-hour warning uses Redis; it does not replace idempotency or guarantee uniqueness when Redis is unavailable or imports run simultaneously.
+
+### Bounded unsettled-order picker
+
+`GET /api/v1/finance/unsettled-orders` now returns the newest 1,000 eligible orders at most, with stable descending creation-time/ID order. `data.capped: true` means more are waiting. Totals describe the returned batch; settle those orders and reload to access the next batch. `data.availableCredit` remains the vendor's prepaid credit. The Partner API and dashboard use the same service and ownership filters. Creating, approving and paying settlement statements remain staff-only. The pending-COD statement endpoint retains its existing full-statement behavior.

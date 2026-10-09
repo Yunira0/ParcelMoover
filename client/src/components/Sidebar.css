@@ -185,7 +185,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
-  transition: opacity 0.15s ease, width 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 
 .sidebar--collapsed .sidebar-label {

@@ -167,6 +167,24 @@ export const RIDER_ASSIGNMENT_FIELD: Partial<Record<parcel_status, "pickup_rider
   sent_to_vendor: "delivery_rider_id",
 };
 
+// Rider self-claim: the rider app's "Claim & Start Delivery/Pickup" action.
+// The scanning rider takes a parcel in the delivery pool, or reclaims a failed
+// attempt (theirs or another rider's), and is written as the rider for that leg
+// in one step. These are the only assignment transitions a rider may make, and
+// only ever to themselves. failed_* -> claim is deliberately not in
+// STATUS_TRANSITIONS: staff release a failed attempt to the pool and reassign.
+export const RIDER_CLAIM_TRANSITIONS: Partial<Record<parcel_status, parcel_status>> = {
+  ready_to_deliver: "sent_for_delivery",
+  failed_delivery: "sent_for_delivery",
+  failed_pickup: "rider_assigned",
+};
+
+export const RIDER_CLAIMABLE_STATUSES = Object.keys(RIDER_CLAIM_TRANSITIONS) as parcel_status[];
+
+export function isRiderClaim(from: parcel_status, to: parcel_status | ParcelStatus): boolean {
+  return RIDER_CLAIM_TRANSITIONS[from] === to;
+}
+
 export const REASON_REQUIRED_STATUSES: parcel_status[] = [
   "cancelled",
   "failed_pickup",

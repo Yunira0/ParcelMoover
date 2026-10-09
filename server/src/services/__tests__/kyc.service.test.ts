@@ -292,7 +292,7 @@ describe("KYC verification for existing vendors", () => {
       onlineBusinessName: "Acme Delivery",
       ownerEmail: "jane@example.com",
     });
-    expect(status.docsOnFile).toEqual({ citizenship: true, panVat: false, businessCert: false });
+    expect(status.docsOnFile).toEqual({ citizenshipFront: true, citizenshipBack: true, panVat: false, businessCert: false });
   });
 
   it("approves a verification by linking the vendor, creating no accounts", async () => {

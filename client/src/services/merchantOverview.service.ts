@@ -78,8 +78,8 @@ export const MERCHANT_METRIC_STATUSES: Record<MerchantMetricKey, ParcelStatus[] 
   holdOrder: ['hold'],
   cancelledOrders: ['cancelled'],
   deliveryCharge: ['delivered', 'partially_delivered'],
-  deposited: ['delivered', 'partially_delivered'],
-  pendingDeposit: ['delivered', 'partially_delivered'],
+  deposited: ['delivered', 'partially_delivered', 'returned_to_vendor'],
+  pendingDeposit: ['delivered', 'partially_delivered', 'returned_to_vendor'],
 };
 
 /** Authentic settlement filter for Deposited/Pending — deposited = in a settled settlement (has items), pending = delivered not yet settled */

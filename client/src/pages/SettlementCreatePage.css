@@ -259,6 +259,12 @@
   font-size: 12px;
 }
 
+.scp-hint {
+  color: var(--color-text-caption);
+  font-size: var(--font-size-xs);
+  margin: var(--space-2) 0 0;
+}
+
 /* Empty / loading state */
 .scp-empty {
   color: var(--color-text-caption);

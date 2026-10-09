@@ -5,6 +5,7 @@ import { randomBytes } from "crypto";
 import { safeUploadExtension } from "./uploadExtension";
 import { DOCX_MIME_TYPE } from "./secureUploadedFiles";
 import { AppError } from "../utils/AppError";
+import type { RequestHandler } from "express";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads", "registration");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -24,7 +25,7 @@ const storage = multer.diskStorage({
 });
 
 // Union of all document field names across admin / rider / vendor registration.
-export const registrationUpload = multer({
+const uploadDocuments = multer({
   storage,
   limits: { fileSize: MAX_SIZE_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
@@ -45,6 +46,7 @@ export const registrationUpload = multer({
   { name: "agreementDoc", maxCount: 1 },
   { name: "idDocument", maxCount: 1 },
   { name: "citizenshipDoc", maxCount: 1 },
+  { name: "citizenshipDocBack", maxCount: 1 },
   { name: "panDoc", maxCount: 1 },
   { name: "panVatDoc", maxCount: 1 },
   { name: "experienceLetterDoc", maxCount: 1 },
@@ -52,3 +54,29 @@ export const registrationUpload = multer({
   { name: "bluebookDoc", maxCount: 1 },
   { name: "businessCertDoc", maxCount: 1 },
 ]);
+
+// Admin account creation is staff-only and has no Partner API equivalent.
+// Keep the existing vendor/rider error handling unchanged.
+export const registrationUpload: RequestHandler = (req, res, next) => {
+  uploadDocuments(req, res, (error) => {
+    const isAdminUpload = req.params.type === "admin" || req.body?.type === "admin";
+    if (isAdminUpload && error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+      const field = error.field;
+      const labels: Record<string, string> = {
+        citizenshipDoc: "Citizenship document",
+        idDocument: "National ID document",
+        panDoc: "PAN document",
+        experienceLetterDoc: "Experience letter",
+      };
+      const message = `${(field && labels[field]) || "Document"} exceeds the ${MAX_SIZE_MB} MB limit. Compress the file or choose a smaller one.`;
+      res.status(400).json({
+        success: false,
+        message,
+        code: "FILE_TOO_LARGE",
+        ...(field ? { errors: [{ field, message }] } : {}),
+      });
+      return;
+    }
+    next(error);
+  });
+};

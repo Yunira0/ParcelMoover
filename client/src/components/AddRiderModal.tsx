@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import './Modal.css';
 import FormField from './FormField';
 import Button from './Button';
-import { registerUser, getLocations, type RegisterUserInput } from '../services/users.service';
+import { registerUser, type RegisterUserInput } from '../services/users.service';
+import { getLocations } from '../queries/lookups';
 import { findMasterHub } from '../utils/locations';
 
 interface AddRiderModalProps {
@@ -51,6 +52,7 @@ const AddRiderModal: React.FC<AddRiderModalProps> = ({ isOpen, onClose, onSucces
           }
         } catch (err) {
           console.error('Failed to fetch locations:', err);
+          setFieldErrors((prev) => ({ ...prev, locationId: "Couldn't load locations - close and reopen to try again." }));
         }
       };
       fetchLocations();

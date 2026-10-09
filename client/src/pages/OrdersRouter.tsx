@@ -1,7 +1,8 @@
-import React from 'react';
-import OrderManagement from './OrderManagement';
-import VendorOrders from './vendor/VendorOrders';
+import React, { lazy } from 'react';
 import { isVendorSide } from '../utils/auth';
+
+const OrderManagement = lazy(() => import('./OrderManagement'));
+const VendorOrders = lazy(() => import('./vendor/VendorOrders'));
 
 const OrdersRouter: React.FC = () => (
   isVendorSide() ? <VendorOrders /> : <OrderManagement />

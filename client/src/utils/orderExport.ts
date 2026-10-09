@@ -6,12 +6,12 @@ import { ORDER_STATUS_LABELS, STATUS_TIMELINE_HEADERS, statusTimelineCells } fro
 // The Orders page's Excel layout, shared so every "download these orders"
 // button produces the same sheet. Orders need statusTimestamps for the
 // timeline columns - fetch them with `withArrival: true`.
-export function downloadOrdersExcel(
+export async function downloadOrdersExcel(
   filename: string,
   sheetName: string,
   orders: Order[],
   statusLabels: Record<ParcelStatus, string> = ORDER_STATUS_LABELS,
-): void {
+): Promise<void> {
   const headers = ['Order ID', 'Tracking ID', 'Origin', 'Sender', 'Receiver', 'Receiver Phone', 'Alternate Number', 'Receiver Address', 'Destination', 'COD', 'Delivery Charge', 'Weight', 'Status', 'Rider', 'Remarks', 'Order Created Date', 'Last Updated By', 'Last Updated At', ...STATUS_TIMELINE_HEADERS];
   const rows = orders.map(order => [
     `#${order.orderNumber}`,
@@ -34,5 +34,5 @@ export function downloadOrdersExcel(
     toBsDateTimeCell(order.lastUpdatedAt) || '',
     ...statusTimelineCells(order.statusTimestamps),
   ]);
-  downloadExcel(filename, sheetName, headers, rows);
+  await downloadExcel(filename, sheetName, headers, rows);
 }

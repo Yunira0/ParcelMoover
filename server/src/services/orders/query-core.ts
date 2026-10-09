@@ -25,6 +25,7 @@ import {
 import {
   ORDERS_LIST_TTL_SECONDS,
   ordersListCacheKey,
+  dedupeInFlight,
 } from "./cache";
 import type { OrderActor } from "./types";
 
@@ -37,7 +38,7 @@ const LATEST_REMARK_WHERE: Prisma.parcel_remarksWhereInput = {
 const MAX_PAGE_SIZE = 500;
 const DEFAULT_PAGE_SIZE = 10;
 
-export const locationName = (location?: { name: string; city: string | null; district: string | null } | null) => {
+export const locationName = (location?: { name: string } | null) => {
   // Location names already contain the district, so don't append it again.
   return location?.name ?? "";
 };
@@ -61,13 +62,9 @@ export interface OrderFilterOptions {
 // read three strings per row - doubling the backend cost of every non-"All"
 // tab view for no reason.
 //
-// Each dimension runs its own `distinct` query on its FK column (all four are
-// indexed) rather than pulling one arbitrary `take: 200` slice of parcels and
-// hoping every hub/rider shows up in it: in a system with more than ~200
-// in-scope parcels, an unordered sample silently drops whichever origins,
-// destinations or riders didn't happen to land in that slice - previously
-// hiding valid filter options (and any hub with only a handful of orders)
-// with no indication anything was missing.
+// Prisma 6 findMany({ distinct }) deduplicates in JavaScript. Group IDs in SQL
+// instead, then load names in two batches. This returns every in-scope option
+// without transferring one relation row for every matching parcel.
 export async function getOrderFilterOptions(
   actor: OrderActor,
   status?: ListOrdersQuery["status"],
@@ -76,40 +73,49 @@ export async function getOrderFilterOptions(
   const where = buildOrdersWhere({ vendorId, vendorIds, riderId, branchLocationIds }, status?.length ? { status } : {});
 
   const [originRows, destinationRows, deliveryRiderRows, pickupRiderRows] = await Promise.all([
-    prisma.parcels.findMany({
+    prisma.parcels.groupBy({
+      by: ["origin_location_id"],
       where,
-      distinct: ["origin_location_id"],
-      select: {
-        origin_location_id: true,
-        locations_parcels_origin_location_idTolocations: { select: { name: true } },
-      },
     }),
-    prisma.parcels.findMany({
+    prisma.parcels.groupBy({
+      by: ["destination_location_id"],
       where,
-      distinct: ["destination_location_id"],
-      select: {
-        destination_location_id: true,
-        locations_parcels_destination_location_idTolocations: { select: { name: true } },
-      },
     }),
-    prisma.parcels.findMany({
-      where: { ...where, delivery_rider_id: { not: null } },
-      distinct: ["delivery_rider_id"],
-      select: { riders_parcels_delivery_rider_idToriders: { select: { name: true } } },
+    prisma.parcels.groupBy({
+      by: ["delivery_rider_id"],
+      where: { AND: [where, { delivery_rider_id: { not: null } }] },
     }),
-    prisma.parcels.findMany({
-      where: { ...where, pickup_rider_id: { not: null } },
-      distinct: ["pickup_rider_id"],
-      select: { riders_parcels_pickup_rider_idToriders: { select: { name: true } } },
+    prisma.parcels.groupBy({
+      by: ["pickup_rider_id"],
+      where: { AND: [where, { pickup_rider_id: { not: null } }] },
     }),
   ]);
+
+  const locationIds = [...new Set([
+    ...originRows.map(row => row.origin_location_id),
+    ...destinationRows.map(row => row.destination_location_id),
+  ].filter((id): id is string => id !== null))];
+  const riderIds = [...new Set([
+    ...deliveryRiderRows.map(row => row.delivery_rider_id),
+    ...pickupRiderRows.map(row => row.pickup_rider_id),
+  ].filter((id): id is string => id !== null))];
+  const [locations, riderProfiles] = await Promise.all([
+    locationIds.length ? prisma.locations.findMany({
+      where: { id: { in: locationIds } }, select: { id: true, name: true },
+    }) : [],
+    riderIds.length ? prisma.riders.findMany({
+      where: { id: { in: riderIds } }, select: { id: true, name: true },
+    }) : [],
+  ]);
+  const locationNames = new Map(locations.map(row => [row.id, row.name]));
+  const riderNames = new Map(riderProfiles.map(row => [row.id, row.name]));
 
   // Keyed by id (a Map, not a Set of names) so two locations that happen to
   // share a display name still surface as two distinct, individually
   // filterable options.
   const origins = new Map<string, string>();
   for (const row of originRows) {
-    const name = row.locations_parcels_origin_location_idTolocations?.name;
+    const name = row.origin_location_id ? locationNames.get(row.origin_location_id) : undefined;
     // A legacy/free-text order with no linked origin location has nothing to
     // filter by here (there's no id) - excluded rather than shown unusable.
     if (row.origin_location_id && name) origins.set(row.origin_location_id, name);
@@ -117,7 +123,7 @@ export async function getOrderFilterOptions(
 
   const destinations = new Map<string, string>();
   for (const row of destinationRows) {
-    const name = row.locations_parcels_destination_location_idTolocations?.name;
+    const name = row.destination_location_id ? locationNames.get(row.destination_location_id) : undefined;
     if (row.destination_location_id && name) destinations.set(row.destination_location_id, name);
   }
 
@@ -125,11 +131,11 @@ export async function getOrderFilterOptions(
   // delivery rider and a pickup-only rider are both valid filter values.
   const riders = new Set<string>();
   for (const row of deliveryRiderRows) {
-    const name = row.riders_parcels_delivery_rider_idToriders?.name;
+    const name = row.delivery_rider_id ? riderNames.get(row.delivery_rider_id) : undefined;
     if (name) riders.add(name);
   }
   for (const row of pickupRiderRows) {
-    const name = row.riders_parcels_pickup_rider_idToriders?.name;
+    const name = row.pickup_rider_id ? riderNames.get(row.pickup_rider_id) : undefined;
     if (name) riders.add(name);
   }
 
@@ -184,22 +190,26 @@ export async function getOrderCountsByStatus(
 }
 
 const ORDERS_INCLUDE = {
-  parties_parcels_sender_idToparties: true,
-  parties_parcels_receiver_idToparties: true,
-  locations_parcels_origin_location_idTolocations: true,
-  locations_parcels_destination_location_idTolocations: true,
-  vendors: true,
-  riders_parcels_pickup_rider_idToriders: true,
-  riders_parcels_delivery_rider_idToriders: true,
+  parties_parcels_sender_idToparties: { select: { name: true, phone: true, address: true } },
+  parties_parcels_receiver_idToparties: { select: { name: true, phone: true, alternate_phone: true, address: true } },
+  locations_parcels_origin_location_idTolocations: { select: { name: true } },
+  locations_parcels_destination_location_idTolocations: { select: { id: true, name: true, valley: true } },
+  vendors: { select: { business_name: true, client_name: true, pickup_landmark: true, label_width_mm: true, label_height_mm: true } },
+  riders_parcels_pickup_rider_idToriders: { select: { name: true } },
+  riders_parcels_delivery_rider_idToriders: { select: { name: true, carrier_code: true } },
   parcel_remarks: {
     where: LATEST_REMARK_WHERE,
     orderBy: { created_at: "desc" as const },
     take: 1,
+    select: { remark: true },
   },
   parcel_status_history: {
     orderBy: { created_at: "desc" as const },
     take: 1,
-    include: { users: { include: { user_roles: { include: { roles: true } } } } },
+    select: {
+      created_at: true, old_status: true, new_status: true,
+      users: { select: { full_name: true, user_roles: { select: { roles: { select: { code: true } } } } } },
+    },
   },
   // One column, not the whole row. cod_collections.parcel_id is unique, so this
   // is a single indexed join per parcel - but this include is already the
@@ -613,7 +623,8 @@ export async function listOrders(
   query: ListOrdersQuery = {},
 ): Promise<ListOrdersResult> {
   const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
-  const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
+  // Office view: the accountant reads orders as staff do (it cannot write them).
+  const isStaff = actor.roles.some((role) => role === "super_admin" || role === "admin" || role === "accountant");
   // Own-vendor scope is set only for vendor / vendor_staff actors - never for
   // staff, sales or riders viewing the same parcels.
   const isOwnVendorViewer = !!vendorId;
@@ -640,7 +651,9 @@ export async function listOrders(
   const isDefaultUnfilteredQuery =
     !paginated && !query.status?.length && !query.orderType && !query.search &&
     !query.vendorId?.length && !query.salesUserId && !query.deliveryRiderId && !query.riderId &&
-    !query.sortBy && !query.deliveredToday && !query.viaTransit && !query.trashed && !query.settlement &&
+    !query.sortBy && !query.sortDir && !query.deliveredToday && !query.viaTransit && !query.trashed && !query.settlement &&
+    !query.dateFrom && !query.dateTo && !query.dateField &&
+    !query.secondaryOrderType && !query.secondaryStatus?.length &&
     !query.originLocationIds?.length && !query.destinationLocationIds?.length &&
     !query.branchSettlement && vendorIds === undefined && branchLocationIds === undefined;
   // Export requests (withArrival) skip the shared cache so the enriched rows
@@ -660,40 +673,42 @@ export async function listOrders(
   }
 
   if (!paginated) {
-    const DEFAULT_LIST_CAP = 200;
-    const [total, parcels] = await Promise.all([
-      prisma.parcels.count({ where }),
-      prisma.parcels.findMany({
-        where,
-        include: ORDERS_INCLUDE,
-        orderBy,
-        take: DEFAULT_LIST_CAP,
-      }),
-    ]);
-    const [statusTimestamps, carriers] = await Promise.all([
-      query.withArrival ? fetchStatusTimestampMap(parcels.map((p) => p.id)) : undefined,
-      isStaff ? fetchCarrierMap(parcels) : undefined,
-    ]);
-    const result: ListOrdersResult = {
-      data: await withTransitHints(parcels, parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps, carriers))),
-      meta: {
-        page: 1,
-        pageSize: DEFAULT_LIST_CAP,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / DEFAULT_LIST_CAP)),
-        truncated: total > DEFAULT_LIST_CAP,
-      },
-    };
+    return dedupeInFlight(cacheKey, async () => {
+      const DEFAULT_LIST_CAP = 200;
+      const [total, parcels] = await Promise.all([
+        prisma.parcels.count({ where }),
+        prisma.parcels.findMany({
+          where,
+          include: ORDERS_INCLUDE,
+          orderBy,
+          take: DEFAULT_LIST_CAP,
+        }),
+      ]);
+      const [statusTimestamps, carriers] = await Promise.all([
+        query.withArrival ? fetchStatusTimestampMap(parcels.map((p) => p.id)) : undefined,
+        isStaff ? fetchCarrierMap(parcels) : undefined,
+      ]);
+      const result: ListOrdersResult = {
+        data: await withTransitHints(parcels, parcels.map((p) => mapOrder(p, isStaff, isOwnVendorViewer, statusTimestamps, carriers))),
+        meta: {
+          page: 1,
+          pageSize: DEFAULT_LIST_CAP,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / DEFAULT_LIST_CAP)),
+          truncated: total > DEFAULT_LIST_CAP,
+        },
+      };
 
-    if (cacheKey) {
-      try {
-        await redis.setex(cacheKey, ORDERS_LIST_TTL_SECONDS, JSON.stringify(result));
-      } catch (error) {
-        console.error("[Redis] Failed to write orders list cache:", error);
+      if (cacheKey) {
+        try {
+          await redis.setex(cacheKey, ORDERS_LIST_TTL_SECONDS, JSON.stringify(result));
+        } catch (error) {
+          console.error("[Redis] Failed to write orders list cache:", error);
+        }
       }
-    }
 
-    return result;
+      return result;
+    });
   }
 
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, query.pageSize || DEFAULT_PAGE_SIZE));

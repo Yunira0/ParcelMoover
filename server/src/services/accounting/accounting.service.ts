@@ -86,6 +86,19 @@ const iso = (date: Date) => date.toISOString();
  */
 const ALL_ENTRIES = Prisma.sql`TRUE`;
 
+/**
+ * An entry's source as the ledger screens name its voucher type. A settlement
+ * is a Receipt from a rider but a Payment to a vendor, so it carries its payee:
+ * `settlement_rider` / `settlement_vendor`. A statement entry moves no cash -
+ * its instalments do - so it reads as `statement`.
+ */
+const VOUCHER_SOURCE = Prisma.sql`CASE WHEN split_part(e.event_key, '#', 1)
+    IN ('rider_statement', 'vendor_statement', 'branch_statement', 'carrier_statement')
+  THEN 'statement'
+  WHEN e.source_type::text = 'settlement'
+  THEN 'settlement_' || COALESCE((SELECT s.payee_type FROM settlements s WHERE s.id = e.source_id), 'rider')
+  ELSE e.source_type::text END`;
+
 // ── Ranges ──────────────────────────────────────────────────────────────────
 
 export interface RangeQuery {
@@ -274,23 +287,63 @@ export async function listAccounts(scope?: "cash_bank"): Promise<AccountSummary[
   }));
 }
 
+/**
+ * What moved through the COD float during the window, for the Overview.
+ *
+ * Statements are restated on every change (the old entry voided, a reversal
+ * posted, a fresh entry written), so only live entries count here: summing the
+ * raw lines would count every edit or revert as money moving twice. Balances
+ * are unaffected either way, since each pair nets to zero.
+ *
+ * Read off the posting rules in events.ts:
+ *   - COD comes in as a credit to 2005 (rider, branch and 3PL statements). A
+ *     vendor's shortfall also credits 2005, so vendor-tagged lines are left out.
+ *   - A rider statement credits 2005 for the full amount and debits 1010 for
+ *     whatever is still in the rider's pocket; the difference is cash received.
+ *   - A vendor statement debits 2005 for the gross COD it hands on - kept as
+ *     charges, paid out, or still payable.
+ */
+async function periodMovement(from: Date, to: Date) {
+  const [row] = await prisma.$queryRaw<Array<{
+    cod_in: string; rider_cod: string; with_rider: string; to_vendors: string;
+  }>>(Prisma.sql`
+    SELECT
+      COALESCE(SUM(l.credit) FILTER (WHERE a.code = ${ACCOUNT.COD_HELD} AND l.party_type IS DISTINCT FROM 'vendor'), 0) AS cod_in,
+      COALESCE(SUM(l.credit) FILTER (WHERE a.code = ${ACCOUNT.COD_HELD} AND l.party_type = 'rider'), 0) AS rider_cod,
+      COALESCE(SUM(l.debit)  FILTER (WHERE a.code = ${ACCOUNT.CASH_WITH_RIDER}), 0) AS with_rider,
+      COALESCE(SUM(l.debit)  FILTER (WHERE a.code = ${ACCOUNT.COD_HELD} AND l.party_type = 'vendor'), 0) AS to_vendors
+      FROM journal_lines l
+      JOIN ledger_accounts a ON a.id = l.account_id
+      JOIN journal_entries e ON e.id = l.entry_id
+     WHERE l.entry_date >= ${from}
+       AND l.entry_date < ${to}
+       AND e.status::text <> 'voided'
+       AND e.reversal_of_id IS NULL
+  `);
+  return {
+    codCollected: num(row?.cod_in),
+    receivedFromRiders: num(Math.max(0, Number(row?.rider_cod ?? 0) - Number(row?.with_rider ?? 0))),
+    paidToVendors: num(row?.to_vendors),
+  };
+}
+
 // ── Overview ────────────────────────────────────────────────────────────────
 
 export async function getOverview(query: RangeQuery): Promise<AccountingOverview> {
   const range = resolveRange(query);
 
-  const [cumulative, periodTotals, riderHoldings, recent, entryCount] = await Promise.all([
+  const [cumulative, periodTotals, movement, riderHoldings, recent, entryCount] = await Promise.all([
     // Cash and party positions are "as at now", not "during the period" - what
     // matters about cash is how much there is, not how much it moved.
     accountTotals(null, range.to),
     accountTotals(range.from, range.to),
+    periodMovement(range.from, range.to),
     listPartyBalances("rider", { limit: 5, nonZeroOnly: true }),
     listJournal({ page: 1, pageSize: 6 }),
     prisma.journal_entries.count({ where: { entry_date: { gte: range.from, lt: range.to }, status: "posted" } }),
   ]);
 
   const byCode = new Map(cumulative.map((account) => [account.code, account]));
-  const periodByCode = new Map(periodTotals.map((account) => [account.code, account]));
 
   // Every asset account that is not a control account is money the office
   // itself holds. Derived rather than listed, because payment methods create
@@ -320,10 +373,7 @@ export async function getOverview(query: RangeQuery): Promise<AccountingOverview
     revenue,
     expenses,
     netProfit: num(revenue - expenses),
-    // Movement within the period, read off the side each account moves on.
-    codCollected: periodByCode.get(ACCOUNT.CASH_WITH_RIDER)?.debit ?? 0,
-    paidToVendors: periodByCode.get(ACCOUNT.VENDOR_CONTROL)?.debit ?? 0,
-    receivedFromRiders: periodByCode.get(ACCOUNT.CASH_WITH_RIDER)?.credit ?? 0,
+    ...movement,
     entryCount,
     topRiderHoldings: riderHoldings,
     recentEntries: recent.items,
@@ -538,10 +588,11 @@ export async function getAccountLedger(accountCode: string, query: AccountLedger
         debit: string;
         credit: string;
         contra: string | null;
+        source_type: string;
         running_balance: string;
       }>
     >(Prisma.sql`
-      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo,
+      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo, ${VOUCHER_SOURCE} AS source_type,
              l.debit, l.credit,
              -- The other accounts in the same entry. Without this a ledger row
              -- says an amount moved but not what it moved against, which is the
@@ -586,6 +637,7 @@ export async function getAccountLedger(accountCode: string, query: AccountLedger
     entryDate: iso(row.entry_date),
     bsDate: row.bs_date,
     memo: row.memo,
+    sourceType: row.source_type,
     contraAccounts: row.contra ?? "",
     debit: num(row.debit),
     credit: num(row.credit),
@@ -746,9 +798,10 @@ export async function listTransactions(query: TransactionQuery): Promise<Transac
         debit: string;
         credit: string;
         contra: string | null;
+        source_type: string;
       }>
     >(Prisma.sql`
-      SELECT l.id, e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo,
+      SELECT l.id, e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo, ${VOUCHER_SOURCE} AS source_type,
              a.code AS account_code, a.name AS account_name,
              l.party_type::text AS party_type, l.party_id, l.parcel_id,
              l.debit, l.credit,
@@ -782,6 +835,7 @@ export async function listTransactions(query: TransactionQuery): Promise<Transac
       entryDate: iso(row.entry_date),
       bsDate: row.bs_date,
       memo: row.memo,
+      sourceType: row.source_type,
       accountCode: row.account_code,
       accountName: row.account_name,
       contraAccounts: row.contra ?? "",
@@ -956,9 +1010,10 @@ export async function getPartyLedger(
         debit: string;
         credit: string;
         contra: string | null;
+        source_type: string;
       }>
     >(Prisma.sql`
-      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date,
+      SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, ${VOUCHER_SOURCE} AS source_type,
              COALESCE(p.tracking_id, e.memo) AS memo,
              l.debit, l.credit,
              (
@@ -1000,6 +1055,7 @@ export async function getPartyLedger(
       entryDate: iso(row.entry_date),
       bsDate: row.bs_date,
       memo: row.memo,
+      sourceType: row.source_type,
       contraAccounts: row.contra ?? "",
       debit,
       credit,
@@ -1121,21 +1177,30 @@ export async function getPartySettlementLedger(
         FROM settlements s
         -- The live entry only: a restated statement has its superseded entries
         -- voided, and drilling into one would open a voucher that no longer
-        -- says what this row says.
+        -- says what this row says. Instalments post their own entries, which
+        -- the instalment rows below link to instead.
         LEFT JOIN LATERAL (
           SELECT je.id FROM journal_entries je
            WHERE je.source_type = 'settlement' AND je.source_id = s.id AND je.status = 'posted'
+             AND je.event_key NOT LIKE '%payment:%'
            ORDER BY je.created_at DESC LIMIT 1
         ) e ON TRUE
        WHERE ${belongsToParty}
          AND ${raisedAt} >= ${range.from} AND ${raisedAt} < ${range.to}
     `),
     prisma.$queryRaw<
-      Array<{ id: string; statement_id: string; paid_at: Date; amount: string; method: string | null }>
+      Array<{ id: string; statement_id: string; paid_at: Date; amount: string; method: string | null; entry_id: string | null }>
     >(Prisma.sql`
-      SELECT sp.id, s.statement_id, sp.paid_at, sp.amount, sp.method
+      SELECT sp.id, s.statement_id, sp.paid_at, sp.amount, sp.method, e.id AS entry_id
         FROM settlement_payments sp
         JOIN settlements s ON s.id = sp.settlement_id
+        -- Null on statements still carrying the older one-entry posting.
+        LEFT JOIN LATERAL (
+          SELECT je.id FROM journal_entries je
+           WHERE je.source_type = 'settlement' AND je.source_id = s.id AND je.status = 'posted'
+             AND split_part(je.event_key, '#', 1) LIKE '%payment:' || sp.id::text
+           LIMIT 1
+        ) e ON TRUE
        WHERE ${belongsToParty}
          AND sp.paid_at >= ${range.from} AND sp.paid_at < ${range.to}
     `),
@@ -1191,7 +1256,7 @@ export async function getPartySettlementLedger(
       id: `pay-${instalment.id}`,
       kind: "instalment",
       reference: instalment.statement_id,
-      entryId: null,
+      entryId: instalment.entry_id,
       at: instalment.paid_at,
       description: isRider
         ? `COD paid by rider ${money(amount)}${method}`
@@ -1288,43 +1353,60 @@ async function partyIdentity(
 // ── Party search and statement ──────────────────────────────────────────────
 
 /**
- * Finds anyone money has moved for, by name or phone.
+ * Finds an eligible party by name, phone or email, or browses the directory.
  *
- * One search across riders, vendors and staff, because from the finance side
+ * One search across riders, vendors and other users, because from the finance side
  * they are the same question - "what have we paid this person, and what do they
  * owe us" - even though the system stores them in three unrelated tables.
  */
-export async function searchParties(query: string, limit = 20): Promise<PartySearchResult[]> {
+type SearchablePartyType = PartySearchResult["partyType"];
+
+/** One bounded page across all eligible parties, including other login accounts. */
+export async function searchPartiesPage(
+  query: string,
+  types: SearchablePartyType[] = ["rider", "vendor", "user"],
+  offset = 0,
+  limit = 30,
+): Promise<{ results: PartySearchResult[]; hasMore: boolean }> {
   const needle = query.trim();
-  if (needle.length < 2) return [];
+  const pattern = `%${needle}%`;
+  const branches: Prisma.Sql[] = [];
 
-  const contains = { contains: needle, mode: "insensitive" as const };
+  if (types.includes("rider")) branches.push(Prisma.sql`
+    SELECT 'rider'::text AS "partyType", r.id AS "partyId", r.name, r.phone AS subtitle
+      FROM riders r
+     WHERE r.deleted_at IS NULL
+       ${needle ? Prisma.sql`AND (r.name ILIKE ${pattern} OR r.phone ILIKE ${pattern})` : Prisma.empty}
+  `);
+  if (types.includes("vendor")) branches.push(Prisma.sql`
+    SELECT 'vendor'::text AS "partyType", v.id AS "partyId",
+           COALESCE(NULLIF(v.business_name, ''), v.client_name) AS name, v.phone AS subtitle
+      FROM vendors v
+     WHERE v.deleted_at IS NULL
+       ${needle ? Prisma.sql`AND (v.client_name ILIKE ${pattern} OR v.business_name ILIKE ${pattern} OR v.phone ILIKE ${pattern})` : Prisma.empty}
+  `);
+  if (types.includes("user")) branches.push(Prisma.sql`
+    SELECT 'user'::text AS "partyType", u.id AS "partyId", u.full_name AS name, u.phone AS subtitle
+      FROM users u
+     WHERE u.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM riders r WHERE r.user_id = u.id AND r.deleted_at IS NULL)
+       AND NOT EXISTS (SELECT 1 FROM vendors v WHERE v.user_id = u.id AND v.deleted_at IS NULL)
+       ${needle ? Prisma.sql`AND (u.full_name ILIKE ${pattern} OR u.phone ILIKE ${pattern} OR u.email ILIKE ${pattern})` : Prisma.empty}
+  `);
 
-  const [riders, vendors] = await Promise.all([
-    prisma.riders.findMany({
-      where: { deleted_at: null, OR: [{ name: contains }, { phone: contains }] },
-      select: { id: true, name: true, phone: true },
-      take: limit,
-    }),
-    prisma.vendors.findMany({
-      where: {
-        deleted_at: null,
-        OR: [{ client_name: contains }, { business_name: contains }, { phone: contains }],
-      },
-      select: { id: true, client_name: true, business_name: true, phone: true },
-      take: limit,
-    }),
-  ]);
+  if (!branches.length) return { results: [], hasMore: false };
+  const rows = await prisma.$queryRaw<PartySearchResult[]>(Prisma.sql`
+    SELECT * FROM (${Prisma.join(branches, " UNION ALL ")}) parties
+     ORDER BY lower(name), "partyType", "partyId"
+     LIMIT ${limit + 1} OFFSET ${offset}
+  `);
+  return { results: rows.slice(0, limit), hasMore: rows.length > limit };
+}
 
-  return [
-    ...riders.map((r) => ({ partyType: "rider" as const, partyId: r.id, name: r.name, subtitle: r.phone })),
-    ...vendors.map((v) => ({
-      partyType: "vendor" as const,
-      partyId: v.id,
-      name: v.business_name || v.client_name,
-      subtitle: v.phone,
-    })),
-  ].slice(0, limit * 2);
+/** Existing search-only consumers keep their array response. */
+export async function searchParties(query: string, limit = 20): Promise<PartySearchResult[]> {
+  if (query.trim().length < 2) return [];
+  return (await searchPartiesPage(query, ["rider", "vendor", "user"], 0, limit)).results;
 }
 
 /** The display name for a party, whichever table it lives in. */
@@ -1394,9 +1476,12 @@ export async function getPartyStatement(
         debit: string;
         credit: string;
         tracking_id: string | null;
+        status: string;
+        source_type: string;
       }>
     >(Prisma.sql`
       SELECT e.id AS entry_id, e.entry_no, e.entry_date, e.bs_date, e.memo,
+             e.status::text AS status, ${VOUCHER_SOURCE} AS source_type,
              a.code, a.name AS account_name, a.type::text AS type,
              l.debit, l.credit, p.tracking_id
         FROM journal_lines l
@@ -1453,6 +1538,8 @@ export async function getPartyStatement(
       debit: num(row.debit),
       credit: num(row.credit),
       trackingId: row.tracking_id,
+      status: row.status,
+      sourceType: row.source_type,
     })),
   };
 }

@@ -9,7 +9,7 @@ import { CreateTicketInput, ListTicketsParams } from "../../types/ticket.type";
 import { withIdempotency } from "../../services/idempotency.service";
 import { ListTicketsQuery } from "../../validators/ticket.schema";
 import { PublicCreateTicketInput, PublicTicketReplyInput } from "../../validators/publicApi.schema";
-import { actorFrom, sendError, UUID_REGEX } from "./shared";
+import { actorFrom, partnerIdempotencyKey, sendError, UUID_REGEX } from "./shared";
 
 export async function publicCreateTicketController(req: Request, res: Response) {
   try {
@@ -34,7 +34,7 @@ export async function publicCreateTicketController(req: Request, res: Response) 
     const actor = actorFrom(req);
     const input = req.body as PublicCreateTicketInput;
 
-    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(partnerIdempotencyKey(req, "ticket-create", idempotencyKey), req.body, async () => {
       const ticket = await createTicket(actor, input as CreateTicketInput);
 
       const body = {
@@ -47,7 +47,7 @@ export async function publicCreateTicketController(req: Request, res: Response) 
         result: body,
         response: { statusCode: 201, body, resourceID: ticket.id },
       };
-    });
+    }, { legacyKey: idempotencyKey });
 
     return res.status(201).json(responseBody);
   } catch (error: any) {
@@ -127,7 +127,7 @@ export async function publicAddTicketReplyController(req: Request, res: Response
     const actor = actorFrom(req);
     const { message } = req.body as PublicTicketReplyInput;
 
-    const responseBody = await withIdempotency(idempotencyKey, req.body, async () => {
+    const responseBody = await withIdempotency(partnerIdempotencyKey(req, "ticket-reply", idempotencyKey, id), req.body, async () => {
       const ticket = await addTicketReply(actor, id, message);
 
       const body = {
@@ -140,7 +140,7 @@ export async function publicAddTicketReplyController(req: Request, res: Response
         result: body,
         response: { statusCode: 201, body, resourceID: id },
       };
-    });
+    }, { legacyKey: idempotencyKey });
 
     return res.status(201).json(responseBody);
   } catch (error: any) {

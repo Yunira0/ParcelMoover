@@ -6,6 +6,7 @@ import { getVendorStatusLabel } from "../../utils/orderStatusLabel";
 import { displayAuthor, displayRemarkText, handoffCarrier, isHandoffNote, publicRemarkText, stripCarrierStaffTag } from "../../utils/carrierRemark";
 import { getActorScope, riderHandledFilter, branchTouchesFilter } from "./scope";
 import { isStaffAuthor } from "./remarkAuthor";
+import { RIDER_CLAIMABLE_STATUSES } from "./status-shared";
 import { locationName, mapOrder } from "./query-core";
 import type { OrderActor } from "./types";
 
@@ -47,7 +48,9 @@ const ORDER_DETAIL_INCLUDE = {
 
 export async function getOrderByTrackingId(actor: OrderActor, trackingId: string) {
   const { vendorId, vendorIds, riderId, branchLocationIds } = await getActorScope(actor);
-  const isStaff = actor.roles.includes("super_admin") || actor.roles.includes("admin");
+  // Office view: the accountant reads orders as staff do, but never changes them.
+  const isStaff = actor.roles.some((role) => role === "super_admin" || role === "admin" || role === "accountant");
+  const canChangeStatus = actor.roles.some((role) => role === "super_admin" || role === "admin");
 
   const parcel = await prisma.parcels.findFirst({
     where: {
@@ -55,7 +58,12 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
       deleted_at: null,
       ...(vendorId ? { vendor_id: vendorId } : {}),
       ...(vendorIds ? { vendor_id: { in: vendorIds } } : {}),
-      ...(riderId ? riderHandledFilter(riderId) : {}),
+      // A rider can also look up any parcel they could claim, since a scan is
+      // how the rider app's "Claim & Start" action finds it. The claim itself
+      // is enforced by isRiderClaim in the status path.
+      ...(riderId
+        ? { OR: [...riderHandledFilter(riderId).OR as Prisma.parcelsWhereInput[], { status: { in: RIDER_CLAIMABLE_STATUSES } }] }
+        : {}),
       ...(branchLocationIds ? branchTouchesFilter(branchLocationIds) : {}),
     },
     include: ORDER_DETAIL_INCLUDE,
@@ -148,7 +156,7 @@ export async function getOrderByTrackingId(actor: OrderActor, trackingId: string
 
   return {
     ...mapOrder(parcel, isStaff, !!vendorId),
-    canChangeStatus: isStaff,
+    canChangeStatus,
     priceLog,
     redirectLog,
     voucher,

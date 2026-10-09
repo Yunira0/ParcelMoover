@@ -18,7 +18,7 @@ vi.mock("../../lib/branchScope", () => ({
   assertHeadOfficeOnly: vi.fn(),
 }));
 vi.mock("../notification.service", () => ({ createNotification: vi.fn() }));
-vi.mock("../order.service", () => ({ notifyAdmins: vi.fn() }));
+vi.mock("../order.service", () => ({ notifyFinanceStaff: vi.fn() }));
 vi.mock("../billing.service", () => ({ getVendorAccountBalance: vi.fn() }));
 
 import prisma from "../../lib/prisma";

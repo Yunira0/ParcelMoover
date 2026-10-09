@@ -7,12 +7,16 @@ import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import CreditUsageBar from '../components/CreditUsageBar';
 import { getUnsettledOrders, createSettlement, type UnsettledOrderItem } from '../services/finance.service';
 import { getBillingStatus, type BillingStatus, type VendorBillingState } from '../services/billing.service';
-import { getAllRiders, searchVendors } from '../services/users.service';
+import { getAllRiders, searchVendors } from '../queries/lookups';
 import { downloadExcel, type CellValue } from '../utils/excel';
 import { formatCurrency } from '../utils/format';
+import { todayNepalAd } from '../utils/nepaliDate';
+import { apiErrorMessage } from '../utils/serverValidation';
 import './vendor/VendorBilling.css';
 import './SettlementCreatePage.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { DeliveryChargeCells, DeliveryChargeHeads } from '../components/DeliveryChargeCells';
+import { DELIVERY_CHARGE_VAT_RATE, splitVat, sumVatSplits, vatColumns } from '../utils/vat';
 
 type PayeeType = 'rider' | 'vendor';
 
@@ -106,16 +110,22 @@ const SettlementCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const payeeType: PayeeType = searchParams.get('type') === 'vendor' ? 'vendor' : 'rider';
+  // Back to the list this was opened from. The old /finance target always
+  // landed on Rider COD, even when adding a vendor settlement.
+  const listPath = `/accounting/transactions/${payeeType}-cod`;
+  const listLabel = payeeType === 'vendor' ? 'Vendor COD' : 'Rider COD';
 
   const [entityOptions, setEntityOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [selectedEntityId, setSelectedEntityId] = useState('');
   const [orders, setOrders] = useState<UnsettledOrderItem[]>([]);
+  const [ordersCapped, setOrdersCapped] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [fetchingOrders, setFetchingOrders] = useState(false);
-  const [settlementDate, setSettlementDate] = useState(new Date().toISOString().split('T')[0]);
+  const [settlementDate, setSettlementDate] = useState(todayNepalAd);
   const [error, setError] = useState('');
+  const [ordersError, setOrdersError] = useState('');
   const [credit, setCredit] = useState<BillingStatus | null>(null);
   // Prepaid delivery charges the server adds to the statement it creates.
   const [prepaidCredit, setPrepaidCredit] = useState(0);
@@ -159,29 +169,43 @@ const SettlementCreatePage: React.FC = () => {
   useEffect(() => {
     if (!selectedEntityId) {
       setOrders([]);
+      setOrdersCapped(false);
       setSelected(new Set());
       return;
     }
 
+    // Switching payee mid-fetch must not let the first payee's orders land
+    // under the second one's name.
+    let active = true;
     const fetchOrders = async () => {
       setFetchingOrders(true);
+      setOrdersError('');
       try {
         const res = await getUnsettledOrders(payeeType, selectedEntityId);
+        if (!active) return;
         if (res?.success && res.data?.items) {
           setOrders(res.data.items);
+          setOrdersCapped(!!res.data.capped);
           setPrepaidCredit(payeeType === 'vendor' ? res.data.availableCredit ?? 0 : 0);
         } else {
           setOrders([]);
+          setOrdersCapped(false);
           setPrepaidCredit(0);
         }
-      } catch {
+      } catch (err) {
+        if (!active) return;
         setOrders([]);
+        setOrdersCapped(false);
         setPrepaidCredit(0);
+        setOrdersError(apiErrorMessage(err, 'Failed to load unsettled orders.'));
       } finally {
-        setFetchingOrders(false);
+        if (active) setFetchingOrders(false);
       }
     };
     fetchOrders();
+    return () => {
+      active = false;
+    };
   }, [selectedEntityId, payeeType]);
 
   useEffect(() => {
@@ -228,7 +252,7 @@ const SettlementCreatePage: React.FC = () => {
   // Exports what the operator is looking at: the ticked rows once they've
   // started choosing, otherwise the whole unsettled list. The button label says
   // which, so the file never surprises them.
-  const downloadOrdersExcel = () => {
+  const downloadOrdersExcel = async () => {
     const rowsToExport = selected.size > 0 ? selectedOrders : orders;
     if (rowsToExport.length === 0) return;
 
@@ -242,7 +266,7 @@ const SettlementCreatePage: React.FC = () => {
       'Order Type',
       isVendor ? 'Destination' : 'Location',
       'COD',
-      ...(isVendor ? ['Delivery Charge', 'Net Payable'] : []),
+      ...(isVendor ? ['Delivery Charge', `VAT ${DELIVERY_CHARGE_VAT_RATE}%`, 'Net Payable'] : []),
     ];
     const rows: CellValue[][] = rowsToExport.map((order, index) => [
       index + 1,
@@ -254,20 +278,25 @@ const SettlementCreatePage: React.FC = () => {
       order.orderType,
       isVendor ? order.destination : order.location || '-',
       order.codAmount,
-      ...(isVendor ? [order.deliveryCharge, order.netPayable] : []),
+      ...(isVendor ? [...vatColumns(splitVat(order.deliveryCharge, DELIVERY_CHARGE_VAT_RATE)), order.netPayable] : []),
     ]);
 
     // Totals under the numeric columns; pad out the leading text columns.
-    const numericColumns = isVendor ? 3 : 1;
+    const numericColumns = isVendor ? 4 : 1;
     const sum = (pick: (o: UnsettledOrderItem) => number) =>
       rowsToExport.reduce((total, order) => total + pick(order), 0);
     rows.push([
       ...new Array(headers.length - numericColumns).fill(''),
       sum((o) => o.codAmount),
-      ...(isVendor ? [sum((o) => o.deliveryCharge), sum((o) => o.netPayable)] : []),
+      ...(isVendor
+        ? [
+            ...vatColumns(sumVatSplits(rowsToExport.map((o) => o.deliveryCharge), DELIVERY_CHARGE_VAT_RATE)),
+            sum((o) => o.netPayable),
+          ]
+        : []),
     ]);
 
-    downloadExcel(
+    await downloadExcel(
       `unsettled-orders-${payeeType}-${settlementDate}.xlsx`,
       'Unsettled Orders',
       headers,
@@ -310,9 +339,9 @@ const SettlementCreatePage: React.FC = () => {
 
   return (
     <div className="scp-page">
-      <button type="button" className="scp-back" onClick={() => navigate('/finance')}>
+      <button type="button" className="scp-back" onClick={() => navigate(listPath)}>
         <ArrowLeft size={15} />
-        COD Management
+        {listLabel}
       </button>
 
       <div className="scp-header">
@@ -394,6 +423,8 @@ const SettlementCreatePage: React.FC = () => {
 
             {fetchingOrders ? (
               <div className="scp-empty">Loading orders...</div>
+            ) : ordersError ? (
+              <div className="scp-error" role="alert">{ordersError}</div>
             ) : orders.length === 0 ? (
               <div className="scp-empty">No unsettled orders found for this {payeeType}.</div>
             ) : (
@@ -423,7 +454,7 @@ const SettlementCreatePage: React.FC = () => {
                       <th className="scp-cod-head">COD</th>
                       {payeeType === 'vendor' && (
                         <>
-                          <th className="scp-num">Delivery Charge</th>
+                          <DeliveryChargeHeads vatRate={DELIVERY_CHARGE_VAT_RATE} className="scp-num" />
                           <th className="scp-num">Net Payable</th>
                         </>
                       )}
@@ -467,9 +498,12 @@ const SettlementCreatePage: React.FC = () => {
                         </td>
                         {payeeType === 'vendor' && (
                           <>
-                            <td className="scp-num">
-                              Rs. {order.deliveryCharge.toLocaleString()}
-                            </td>
+                            <DeliveryChargeCells
+                              charge={order.deliveryCharge}
+                              vatRate={DELIVERY_CHARGE_VAT_RATE}
+                              className="scp-num"
+                              format={(value) => `Rs. ${value.toLocaleString()}`}
+                            />
                             <td className="scp-num scp-num-strong">
                               Rs. {order.netPayable.toLocaleString()}
                             </td>
@@ -482,13 +516,19 @@ const SettlementCreatePage: React.FC = () => {
               </div>
             )}
 
+            {ordersCapped && (
+              <p className="scp-hint">
+                Showing the first {orders.length.toLocaleString()} unsettled orders. Settle some of these first to see more.
+              </p>
+            )}
+
             {selected.size > 0 && (
               <div className="scp-summary">
                 <span>{selected.size} order{selected.size > 1 ? 's' : ''} selected</span>
                 {prepaidCredit > 0 && (
                   <span>+ Rs. {prepaidCredit.toLocaleString()} delivery charges the vendor prepaid through Billing</span>
                 )}
-                <span className="scp-summary-total">Total: Rs. {totalAmount.toLocaleString()}</span>
+                <span className="scp-summary-total">Total: {formatCurrency(totalAmount)}</span>
               </div>
             )}
 
@@ -516,7 +556,7 @@ const SettlementCreatePage: React.FC = () => {
         )}
 
         <div className="scp-actions">
-          <Button type="button" variant="secondary" onClick={() => navigate('/finance')} disabled={loading}>
+          <Button type="button" variant="secondary" onClick={() => navigate(listPath)} disabled={loading}>
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={loading || fetching || !selectedEntityId}>

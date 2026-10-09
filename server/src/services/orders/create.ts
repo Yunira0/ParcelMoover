@@ -59,6 +59,42 @@ export async function findOrCreateParty(
   });
 }
 
+// Receivers are shared rows that every parcel reads its receiver name/address
+// from, so a match is reused only when the details are identical. A copied
+// order with an edited name/address/alternate number (same phone) gets its own
+// row - reusing the old one would silently create the order with the old
+// details, and updating it would rewrite every earlier order to that receiver.
+export async function findOrCreateReceiver(
+  tx: Prisma.TransactionClient,
+  partyData: CreateOrderInput["receiver"],
+) {
+  const normalizedPhone = partyData.phone.trim().replace(/\s/g, "");
+  const email = partyData.email?.trim() || null;
+
+  const existing = await tx.parties.findFirst({
+    where: {
+      phone: normalizedPhone,
+      name: partyData.name.trim(),
+      alternate_phone: partyData.alternatePhone?.trim() || null,
+      address: partyData.address?.trim() || null,
+      // Callers that don't send an email match on the rest alone.
+      ...(email ? { email } : {}),
+    },
+    orderBy: { created_at: "desc" },
+  });
+  if (existing) return existing;
+
+  return tx.parties.create({
+    data: {
+      name: partyData.name.trim(),
+      phone: normalizedPhone,
+      alternate_phone: partyData.alternatePhone?.trim() || null,
+      email: partyData.email?.trim() || null,
+      address: partyData.address?.trim() || null,
+    },
+  });
+}
+
 export async function createOrderCore(
   actor: OrderActor,
   data: CreateOrderInput,
@@ -229,6 +265,11 @@ async function _createOrderImpl(
   const resolvedOriginLocationId =
     forcedAdminHub || vendor?.location_id || data.originLocationId || data.sender.locationId || null;
   const resolvedDestinationLocationId = data.destinationLocationId || data.receiver.locationId || null;
+  // Every rate path below keys off the destination; without one the order
+  // would silently fall through to a NPR 0 delivery charge.
+  if (!resolvedDestinationLocationId) {
+    throw new AppError(400, "A destination is required to price this order");
+  }
   const masterHubId = await getMasterHubId();
   const weightKg = data.weightKg || 1;
 
@@ -246,7 +287,8 @@ async function _createOrderImpl(
   //  2. Vendor orders from Imadol price by the vendor's rate model
   //     (per-destination / zone / flat).
   //  3. Non-vendor orders fall back to the legacy origin→destination route rate.
-  //  4. Otherwise a manually supplied charge, else 0.
+  //  4. Otherwise (no vendor and no origin) a manually supplied charge, else 0.
+  //     A destination is always present here - it is required above.
   // Return orders are charged the return percent of the normal rate for the path taken.
   const originIsBranch = Boolean(
     resolvedOriginLocationId && masterHubId && resolvedOriginLocationId !== masterHubId,
@@ -305,7 +347,7 @@ async function _createOrderImpl(
       // Sender is the vendor's own identity - keep it synced with their current
       // profile so a shop/address change propagates to new orders.
       findOrCreateParty(tx, data.sender, { refreshExisting: true }),
-      findOrCreateParty(tx, data.receiver),
+      findOrCreateReceiver(tx, data.receiver),
     ]);
 
     let parcel = await tx.parcels.create({

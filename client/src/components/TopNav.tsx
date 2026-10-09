@@ -31,7 +31,7 @@ const TopNav: React.FC = () => {
   const navigate = useNavigate();
   const { toggleMobile } = useMobileNav();
   const isBranchWorkspace = isBranchWorkspaceUser();
-  // The finance-only accountant has no order search and no remark queues.
+  // The finance-only accountant has no remark queues (it can search orders).
   const isAccountant = isAccountantUser();
   const hideRemarks = isBranchWorkspace || isAccountant;
   // Rider remarks are an internal queue - vendors only work their own comments.
@@ -239,7 +239,7 @@ const TopNav: React.FC = () => {
         </span>
       </div>
 
-      {!isAccountant && (<>
+      <>
       <form
         className="top-nav-search"
         onSubmit={(event) => { event.preventDefault(); runSearch(); }}
@@ -277,7 +277,7 @@ const TopNav: React.FC = () => {
       >
         <Search size={20} />
       </button>
-      </>)}
+      </>
 
       <div className="top-nav-profile">
         {!hideRemarks && (

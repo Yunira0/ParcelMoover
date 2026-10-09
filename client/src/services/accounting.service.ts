@@ -105,6 +105,14 @@ export interface Account {
   isActive: boolean;
 }
 
+/**
+ * Whether a hand-written entry can post to this account. A control account
+ * needs its party named, and the party picker knows only riders and vendors -
+ * COD with Branch is tagged per branch, so it is posted through Branch COD.
+ */
+export const isPostableByHand = (account: Account) =>
+  !account.isControl || account.subledgerType === 'rider' || account.subledgerType === 'vendor';
+
 export interface AccountBalance extends Account {
   debit: number;
   credit: number;
@@ -156,6 +164,8 @@ export interface LedgerRow {
   entryDate: string;
   bsDate: string;
   memo: string | null;
+  /** What raised the entry, shown as the voucher type. */
+  sourceType: string;
   contraAccounts: string;
   debit: number;
   credit: number;
@@ -265,6 +275,9 @@ export interface PartyMovement {
   debit: number;
   credit: number;
   trackingId: string | null;
+  /** `voided` is a cancelled voucher; its reversal comes back as `sourceType: 'reversal'`. */
+  status: string;
+  sourceType: string;
 }
 
 /** Everything the company has paid to or collected from one person. */
@@ -351,6 +364,8 @@ export interface TransactionRow {
   entryDate: string;
   bsDate: string;
   memo: string | null;
+  /** What raised the entry, shown as the voucher type. */
+  sourceType: string;
   accountCode: string;
   accountName: string;
   contraAccounts: string;
@@ -432,9 +447,22 @@ export const getPartySettlementLedger = async (
   return response.data.data;
 };
 
-/** Riders, vendors and staff in one lookup. */
+/** Riders, vendors and other users in one lookup. */
 export const searchParties = async (q: string): Promise<PartySearchResult[]> => {
   const response = await api.get('/accounting/party-search', { params: { q } });
+  return response.data.data;
+};
+
+/** Bounded browse/search for voucher party pickers; loads more as the list scrolls. */
+export const searchPartiesPage = async (
+  q: string,
+  types: PartySearchResult['partyType'][],
+  offset = 0,
+  limit = 30,
+): Promise<{ results: PartySearchResult[]; hasMore: boolean }> => {
+  const response = await api.get('/accounting/party-search', {
+    params: { q, types: types.join(','), offset, limit, paged: 'true' },
+  });
   return response.data.data;
 };
 
@@ -470,6 +498,41 @@ export const createManualEntry = async (input: {
   }[];
 }): Promise<JournalEntry> => {
   const response = await api.post('/accounting/journal', input);
+  return response.data.data;
+};
+
+export interface BranchCodOutstanding {
+  branchId: string;
+  branchName: string;
+  outstanding: number;
+  statements: number;
+}
+
+/** Branches with COD still open on statements — who a branch receipt can be from. */
+export const listBranchCodOutstanding = async (): Promise<BranchCodOutstanding[]> => {
+  const response = await api.get('/accounting/branch-cod');
+  return response.data.data;
+};
+
+export interface BranchCodReceipt {
+  branchId: string;
+  amount: number;
+  allocations: { settlementId: string; statementNo: string; amount: number; settled: boolean }[];
+  entries: { id: string; entryNo: string }[];
+}
+
+/**
+ * Cash from a branch on a Receipt voucher. Pays the branch's open COD
+ * statements down oldest first; each statement re-posts its own entry.
+ */
+export const receiveBranchCod = async (input: {
+  branchId: string;
+  amount: number;
+  accountCode: string;
+  reference?: string;
+  narration?: string;
+}): Promise<BranchCodReceipt> => {
+  const response = await api.post('/accounting/branch-cod/receipts', input);
   return response.data.data;
 };
 
