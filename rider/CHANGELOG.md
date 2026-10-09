@@ -17,6 +17,9 @@ older versions must update before they can keep working, e.g. after an API
 change they can't handle. Riders on older versions then get a popup with no
 "Later" button.
 
+## 1.4.3 — 2026-10-09
+- Small improvements behind the scenes to help us support you better
+
 ## 1.4.2 — 2026-10-08
 - The app now opens with the ParcelMoover logo
 
