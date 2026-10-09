@@ -13,6 +13,7 @@
     "server:dev": "npm run prisma:generate:soft && nodemon -L ./src/index.ts",
     "dev": "concurrently -n redis,server -c magenta,cyan npm:redis npm:server:dev",
     "docs:build": "ts-node --transpile-only scripts/build-partner-docs.ts",
+    "stats": "ts-node --transpile-only src/scripts/stats.ts",
     "seed:roles": "ts-node --transpile-only prisma/seed-roles.ts",
     "seed:vendors-staff": "ts-node --transpile-only prisma/seed-vendors-staff.ts",
     "seed:accountant": "ts-node --transpile-only prisma/seed-accountant.ts",
