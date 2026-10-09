@@ -27,6 +27,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import FilterDropdown from '../components/FilterDropdown';
+import FilterClearButton from '../components/FilterClearButton';
 import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
@@ -1124,13 +1125,15 @@ const OrderManagement: React.FC = () => {
             />
             <label aria-label="Keyword filter">
               <span>KEYWORD</span>
-              <input
-                type="text"
-                className="order-keyword-input"
-                value={keyword}
-                onChange={e => setKeyword(e.target.value)}
-                placeholder="Name or number"
-              />
+              <FilterClearButton active={Boolean(keyword)} onClear={() => setKeyword('')} label="Keyword" inset="plain">
+                <input
+                  type="text"
+                  className="order-keyword-input"
+                  value={keyword}
+                  onChange={e => setKeyword(e.target.value)}
+                  placeholder="Name or number"
+                />
+              </FilterClearButton>
             </label>
             <FilterDropdown
               label="DESTINATION HUB"
@@ -1162,21 +1165,25 @@ const OrderManagement: React.FC = () => {
             />
             <label aria-label="From date">
               <span>FROM DATE</span>
-              <NepaliDatePicker
-                value={dateFrom}
-                max={dateTo || undefined}
-                onChange={setDateFrom}
-                aria-label="From date"
-              />
+              <FilterClearButton active={Boolean(dateFrom)} onClear={() => setDateFrom('')} label="From date">
+                <NepaliDatePicker
+                  value={dateFrom}
+                  max={dateTo || undefined}
+                  onChange={setDateFrom}
+                  aria-label="From date"
+                />
+              </FilterClearButton>
             </label>
             <label aria-label="To date">
               <span>TO DATE</span>
-              <NepaliDatePicker
-                value={dateTo}
-                min={dateFrom || undefined}
-                onChange={setDateTo}
-                aria-label="To date"
-              />
+              <FilterClearButton active={Boolean(dateTo)} onClear={() => setDateTo('')} label="To date">
+                <NepaliDatePicker
+                  value={dateTo}
+                  min={dateFrom || undefined}
+                  onChange={setDateTo}
+                  aria-label="To date"
+                />
+              </FilterClearButton>
             </label>
             <MultiFilterDropdownAsync
               label="VENDOR"

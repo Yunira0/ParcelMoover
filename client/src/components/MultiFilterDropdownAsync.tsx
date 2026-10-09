@@ -1,4 +1,5 @@
 import React from 'react';
+import FilterClearButton from './FilterClearButton';
 import MultiSearchableSelectAsync, {
   type MultiSearchableSelectAsyncResult,
 } from './MultiSearchableSelectAsync';
@@ -31,13 +32,15 @@ const MultiFilterDropdownAsync: React.FC<MultiFilterDropdownAsyncProps> = ({
   return (
     <label aria-label={ariaLabel} className={className}>
       <span>{label}</span>
-      <MultiSearchableSelectAsync
-        asyncSearch={asyncSearch}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder || `Select ${label.toLowerCase()}`}
-        searchPlaceholder={searchPlaceholder}
-      />
+      <FilterClearButton active={value.length > 0} onClear={() => onChange([])} label={label}>
+        <MultiSearchableSelectAsync
+          asyncSearch={asyncSearch}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder || `Select ${label.toLowerCase()}`}
+          searchPlaceholder={searchPlaceholder}
+        />
+      </FilterClearButton>
     </label>
   );
 };
