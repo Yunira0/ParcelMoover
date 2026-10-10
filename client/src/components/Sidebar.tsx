@@ -549,6 +549,9 @@ const AccountantSidebar: React.FC = () => {
         <SidebarItem to="/orders" icon={Package} label="Orders" />
         <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
         <SidebarItem to="/branches" icon={Building2} label="Branch Overview" end />
+        {/* Read-only: the page shows no add, edit, status or password actions
+            to an accountant, and the server refuses those writes. */}
+        <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         <FinanceNav canReadBooks />
       </div>
 

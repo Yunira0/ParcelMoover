@@ -125,7 +125,9 @@ authRouter.get(
 authRouter.get(
   "/users/vendors",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "sales", "vendor", "vendor_staff"),
+  // accountant: read-only Vendor Management list. Every write (create, edit,
+  // status, password) stays behind the staff/sales checks in the service.
+  authorizeRoles("super_admin", "admin", "accountant", "sales", "vendor", "vendor_staff"),
   authReadLimiter,
   getVendorsController,
 );

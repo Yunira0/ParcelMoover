@@ -247,7 +247,7 @@ function App() {
           />
           <Route
             path="/vendors"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorManagement /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant', 'sales']}><VendorManagement /></RoleGuard>}
           />
           <Route
             path="/vendors/new"
