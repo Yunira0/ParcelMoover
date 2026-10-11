@@ -20,6 +20,8 @@ export interface CurrentUser {
    * their assigned branch instead of receiving the full head-office shell.
    */
   branchScoped?: boolean;
+  /** An admins-profile account's department ("Operation", "Customer Experience", ...). */
+  department?: string | null;
 }
 
 export function getCurrentUser(): CurrentUser | null {
@@ -152,6 +154,78 @@ export function isAccountantPathAllowed(pathname: string): boolean {
   );
 }
 
+/**
+ * Department workspaces for head-office admins. Operation and Customer
+ * Experience keep the plain `admin` role (unlike Sales/Accountant, which get
+ * their own role), so the server already serves every page they work; the
+ * department only narrows the shell to those pages. It is read live from /me,
+ * so changing the department on Edit Admin moves the account to the new
+ * workspace on its next refresh. Super admins and branch workspace accounts
+ * are never narrowed by department.
+ */
+export type DepartmentWorkspace = 'operation' | 'customer_experience';
+
+const DEPARTMENT_WORKSPACES: Record<string, DepartmentWorkspace> = {
+  operation: 'operation',
+  'customer experience': 'customer_experience',
+};
+
+export function getDepartmentWorkspace(): DepartmentWorkspace | null {
+  const user = getCurrentUser();
+  if (!user || !user.roles.includes('admin') || user.roles.includes('super_admin')) return null;
+  if (user.branchScoped === true) return null;
+  return DEPARTMENT_WORKSPACES[(user.department ?? '').trim().toLowerCase()] ?? null;
+}
+
+/** Where a department workspace lands, and where any other URL sends it back to. */
+export const DEPARTMENT_HOME = '/orders';
+
+const matches = (pathname: string, prefixes: string[]) =>
+  prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
+// Pages each workspace has by department. Order page includes create, bulk
+// create and an order's detail.
+const COMMON_DEPARTMENT_PATHS = ['/profile', '/orders'];
+const DEPARTMENT_PATHS: Record<DepartmentWorkspace, string[]> = {
+  operation: [
+    // Operations: pickup, dispatch, run sheet, transit, return, hold, L&D.
+    '/pickup', '/dispatch', '/rider-run-sheet', '/oov', '/return', '/hold', '/loss-and-damage',
+    // Rider COD and the rider settlements it opens.
+    '/accounting/transactions/rider-cod', '/finance/settlements',
+    '/rider-overview',
+    '/riders',
+  ],
+  customer_experience: [
+    '/vendors',
+    '/tickets',
+    '/remarks', '/unclosed-remarks', '/rider-remarks',
+  ],
+};
+
+// Screens a super admin can still open up for one account through the
+// delegated permissions on Edit Admin.
+const PERMISSION_PATHS: Record<string, string[]> = {
+  MANAGE_USERS: ['/admin', '/vendors', '/riders'],
+  SETTINGS_ACCESS: ['/settings', '/banners', '/announcements'],
+  SYSTEM_LOGS_ACCESS: ['/system-logs'],
+  KYC_ACCESS: ['/vendors'],
+  // The whole Finance menu, Branch COD included.
+  ACCOUNTING_ACCESS: [
+    '/accounting', '/finance', '/billing', '/cod-settlement-requests', '/branches/settlement', '/branches/billing',
+  ],
+};
+
+export function isDepartmentPathAllowed(workspace: DepartmentWorkspace, pathname: string): boolean {
+  // Branch Overview (exact path - not branch settlement/billing/destinations).
+  if (pathname === '/branches') return true;
+  // Restoring / permanently deleting trashed orders is not part of the order page.
+  if (matches(pathname, ['/orders/trash'])) return false;
+  if (matches(pathname, COMMON_DEPARTMENT_PATHS) || matches(pathname, DEPARTMENT_PATHS[workspace])) return true;
+  return Object.entries(PERMISSION_PATHS).some(
+    ([permission, paths]) => hasAdminPermission(permission) && matches(pathname, paths),
+  );
+}
+
 /** True for a pure sales account — excludes admin/super_admin, who also carry the 'sales' role code when department = Sales but use the admin views. */
 export function isSalesUser(): boolean {
   return hasAnyRole(['sales']) && !isAdminSide();
@@ -199,6 +273,9 @@ export function hasAdminPermission(permission: string): boolean {
   if (roles.includes('super_admin')) return true;
   if (roles.includes('accountant') && ACCOUNTANT_PERMISSIONS.includes(permission)) return true;
   if (!roles.includes('admin')) return false;
+  // Both department workspaces list Branch Overview; the server grants the same
+  // read-only level by department (server utils/departmentWorkspace.ts).
+  if (permission === 'BRANCH_TRACKING_READ' && getDepartmentWorkspace()) return true;
   const p = getCurrentUser()?.permissions;
   return Array.isArray(p) && p.includes(permission);
 }

@@ -57,7 +57,7 @@ import {
 import { getAllAdmins, searchVendors } from '../queries/lookups';
 import { queryKeys } from '../queries/keys';
 import { printLabels } from '../utils/printLabels';
-import { getCurrentUserRoles, hasAdminPermission, isAccountantUser } from '../utils/auth';
+import { getCurrentUserRoles, getDepartmentWorkspace, hasAdminPermission, isAccountantUser } from '../utils/auth';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { FAILED_RECOVERY_LABEL, isRecoverableFailure, recoveryTargetFor } from '../utils/failedRecovery';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
@@ -654,8 +654,9 @@ const OrderManagement: React.FC = () => {
   );
 
   // Trash is admin-only, matching the server routes. A vendor/sales/rider never
-  // sees the button, the row action, or a trashed order in any list.
-  const canUseTrash = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r));
+  // sees the button, the row action, or a trashed order in any list. Nor do the
+  // Operation / Customer Experience workspaces, which have no Trash page.
+  const canUseTrash = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r)) && !getDepartmentWorkspace();
 
   // Putting a failed order back into the workflow is a status change, so it is
   // gated like the other ones on this page rather than like the trash actions.

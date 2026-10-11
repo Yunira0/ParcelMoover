@@ -45,11 +45,13 @@ import type { LucideIcon } from 'lucide-react';
 import {
   getCurrentUser,
   getCurrentUserRoles,
+  getDepartmentWorkspace,
   hasAdminPermission,
   isAccountantUser,
   isAdminSide,
   isBranchWorkspaceUser,
 } from '../utils/auth';
+import type { DepartmentWorkspace } from '../utils/auth';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
 import { useMobileNav } from '../context/MobileNavContext';
 import { logout } from '../services/auth.service';
@@ -562,6 +564,87 @@ const AccountantSidebar: React.FC = () => {
   );
 };
 
+// ── Department sidebar (Operation / Customer Experience) ────────────────────
+// Head-office admins whose department narrows them to its own pages
+// (utils/auth.ts, getDepartmentWorkspace). Anything a super admin delegates on
+// Edit Admin shows up under "Additional access", so a grant needs no code change.
+const DepartmentSidebar: React.FC<{ workspace: DepartmentWorkspace }> = ({ workspace }) => {
+  const { collapsed, mobileOpen } = useSidebarCollapse();
+  const isOperation = workspace === 'operation';
+  const canManageUsers = hasAdminPermission('MANAGE_USERS');
+  const canSettings = hasAdminPermission('SETTINGS_ACCESS');
+  const canLogs = hasAdminPermission('SYSTEM_LOGS_ACCESS');
+  const canBooks = hasAdminPermission('ACCOUNTING_ACCESS');
+  // Vendor / Rider Management already sit in one workspace's own menu.
+  const extraVendors = isOperation && (canManageUsers || hasAdminPermission('KYC_ACCESS'));
+  const extraRiders = !isOperation && canManageUsers;
+  const hasExtras = canManageUsers || canSettings || canLogs || canBooks || extraVendors || extraRiders;
+  return (
+    <aside className={asideClassName(collapsed, mobileOpen)}>
+      <SidebarToggleBtn />
+      <div className="sidebar-nav">
+        <SidebarItem to="/orders" icon={Package} label="Orders" />
+        <SidebarItem to="/branches" icon={Building2} label="Branch Overview" end />
+
+        {isOperation ? (
+          <>
+            <SidebarItem to="/rider-overview" icon={Bike} label="Rider Overview" />
+
+            <SidebarSection label="Management" />
+            <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
+
+            <SidebarSection label="Finance" />
+            <SidebarItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
+
+            <SidebarSection label="Operations" />
+            <div className="sidebar-subnav">
+              <SubItem to="/pickup" icon={Archive} label="Pickup" />
+              <SubItem to="/dispatch" icon={Send} label="Local Dispatch" />
+              <SubItem to="/rider-run-sheet" icon={ClipboardList} label="Rider Run Sheet" />
+              <SubItem to="/oov" icon={Route} label="Transit" />
+              <SubItem to="/return" icon={RotateCcw} label="Return" />
+              <SubItem to="/hold" icon={OctagonMinus} label="Hold" />
+              <SubItem to="/loss-and-damage" icon={Map} label="Loss & Damage" />
+            </div>
+          </>
+        ) : (
+          <>
+            <SidebarSection label="Management" />
+            <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
+
+            <SidebarSection label="Customer Experience" />
+            <div className="sidebar-subnav">
+              <SubItem to="/tickets" icon={Ticket} label="Tickets" />
+              <SubItem to="/remarks" icon={MessageSquare} label="Remarks" />
+            </div>
+          </>
+        )}
+
+        {hasExtras && (
+          <>
+            <SidebarSection label="Additional access" />
+            <div className="sidebar-subnav">
+              {canManageUsers && <SubItem to="/admin" icon={UserCheck} label="Admin Management" />}
+              {extraVendors && <SubItem to="/vendors" icon={Store} label="Vendor Management" />}
+              {extraRiders && <SubItem to="/riders" icon={Bike} label="Rider Management" />}
+              {canSettings && <SubItem to="/settings" icon={MapPin} label="Destination Management" />}
+              {canSettings && <SubItem to="/banners" icon={Image} label="Banner" />}
+              {canSettings && <SubItem to="/announcements" icon={Megaphone} label="Announcements" />}
+              {canLogs && <SubItem to="/system-logs" icon={ScrollText} label="System Logs" />}
+            </div>
+          </>
+        )}
+
+        {canBooks && <FinanceNav canReadBooks showOverview />}
+      </div>
+
+      <div className="sidebar-footer">
+        <SidebarLogout />
+      </div>
+    </aside>
+  );
+};
+
 const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => {
   const { collapsed, mobileOpen } = useSidebarCollapse();
   const canReadBooks = isSuperAdmin || hasAdminPermission('ACCOUNTING_ACCESS');
@@ -669,6 +752,7 @@ const Sidebar: React.FC = () => {
   }, []);
 
   const roles = getCurrentUserRoles();
+  const workspace = getDepartmentWorkspace();
   const { mobileOpen, closeMobile } = useMobileNav();
 
   return (
@@ -688,6 +772,8 @@ const Sidebar: React.FC = () => {
         <AccountantSidebar />
       ) : isBranchWorkspaceUser() ? (
         <BranchSidebar />
+      ) : workspace ? (
+        <DepartmentSidebar workspace={workspace} />
       ) : (
         <AdminSidebar isSuperAdmin={roles.includes('super_admin')} />
       )}

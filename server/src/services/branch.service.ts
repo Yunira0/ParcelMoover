@@ -17,6 +17,7 @@ import { evaluateBranchBilling } from "./branch-billing.service";
 import { syncBranchSettlementPostings } from "./accounting/sync";
 import { BRANCH_COD_PARCEL_FILTER } from "./orders/branchCod";
 import { hasOfficeFinanceAuthority } from "../utils/financeRoles";
+import { hasAdminPermission } from "../middlewares/adminPermission.middleware";
 
 const DELIVERED: parcel_status[] = ["delivered", "partially_delivered"];
 const METRIC_STATUSES: Record<string, parcel_status[] | undefined> = {
@@ -279,7 +280,11 @@ async function scopeBranchOrderQuery(actor: OrderActor, query: BranchTrackingQue
     if (!scope.locationId) throw new AppError(403, "Your branch account is not assigned to a branch");
     return { ...query, toBranchId: scope.locationId, fromBranchId: undefined };
   }
-  if (!scope.canRead) throw new AppError(403, "Not authorized to view branch orders");
+  // hasAdminPermission also honours the read-only Branch Overview that the
+  // Operation / Customer Experience departments carry (utils/departmentWorkspace).
+  if (!scope.canRead && !(await hasAdminPermission(actor, "BRANCH_TRACKING_READ"))) {
+    throw new AppError(403, "Not authorized to view branch orders");
+  }
   return query;
 }
 
