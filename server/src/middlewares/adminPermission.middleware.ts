@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { AdminPermission } from "../types/adminPermission.type";
+import { departmentImpliesPermission } from "../utils/departmentWorkspace";
 
 /**
  * True if the actor holds a delegated admin permission: super_admin always
@@ -19,8 +20,10 @@ export async function hasAdminPermission(
 
   const adminRecord = await prisma.admins.findFirst({
     where: { user_id: actor.id },
-    select: { permissions: true },
+    select: { permissions: true, department: true, branch_scoped: true },
   });
+
+  if (adminRecord && departmentImpliesPermission(adminRecord, permission)) return true;
 
   const permissions = adminRecord?.permissions ?? [];
   if (

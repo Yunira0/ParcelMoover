@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getCurrentUser, isBranchWorkspacePathAllowed } from '../utils/auth';
+import { getCurrentUser, getDepartmentWorkspace, isBranchWorkspacePathAllowed } from '../utils/auth';
 import { getMyPermissions } from '../services/staff.service';
 import { getCurrentUser as fetchMe } from '../services/auth.service';
 
@@ -10,9 +10,10 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
   const isStaff = user?.roles.includes('vendor_staff') ?? false;
   // Plain admins carry delegated permissions (MANAGE_USERS / SETTINGS_ACCESS)
   // granted by a super_admin; refresh them the same way vendor staff are.
-  // The accountant is an admins-profile account too, refreshed the same way.
+  // The accountant and sales are admins-profile accounts too, refreshed the
+  // same way - a department change on Edit Admin can swap their role.
   const isPlainAdmin =
-    ((user?.roles.includes('admin') ?? false) || (user?.roles.includes('accountant') ?? false)) &&
+    ['admin', 'accountant', 'sales'].some((r) => user?.roles.includes(r) ?? false) &&
     !(user?.roles.includes('super_admin') ?? false);
 
   const [permissions, setPermissions] = useState<string[]>(
@@ -24,7 +25,13 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
 
     const persist = (
       perms: string[],
-      profile?: { branchScoped?: boolean; hubId?: string | null; hubName?: string | null; roles?: string[] },
+      profile?: {
+        branchScoped?: boolean;
+        hubId?: string | null;
+        hubName?: string | null;
+        roles?: string[];
+        department?: string | null;
+      },
     ) => {
       if (!active) return;
       setPermissions(perms);
@@ -39,6 +46,18 @@ export const StaffPermissionsProvider: React.FC<{ children: React.ReactNode }> =
           localStorage.setItem('user', JSON.stringify({ ...stored, roles: freshRoles, permissions: perms }));
           window.location.replace('/dashboard');
           return;
+        }
+        // Likewise a department change on Edit Admin swaps the Operation /
+        // Customer Experience workspace; reload into the new one.
+        const freshDepartment = profile && 'department' in profile ? (profile.department ?? null) : undefined;
+        if (freshDepartment !== undefined && freshDepartment !== (stored.department ?? null)) {
+          const before = getDepartmentWorkspace();
+          localStorage.setItem('user', JSON.stringify({ ...stored, department: freshDepartment, permissions: perms }));
+          if (getDepartmentWorkspace() !== before) {
+            window.location.replace('/dashboard');
+            return;
+          }
+          stored.department = freshDepartment;
         }
         const nextUser = {
           ...stored,

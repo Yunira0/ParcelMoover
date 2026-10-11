@@ -13,7 +13,7 @@ import {
 import { getUnclosedRemarksCounts, subscribeToRemarkStatusChanged } from '../services/remarks.service';
 import { useMobileNav } from '../context/MobileNavContext';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
-import { isAccountantUser, isBranchWorkspaceUser, isVendorSide } from '../utils/auth';
+import { getDepartmentWorkspace, isAccountantUser, isBranchWorkspaceUser, isVendorSide } from '../utils/auth';
 import { toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TopNav.css';
 
@@ -33,7 +33,9 @@ const TopNav: React.FC = () => {
   const isBranchWorkspace = isBranchWorkspaceUser();
   // The finance-only accountant has no remark queues (it can search orders).
   const isAccountant = isAccountantUser();
-  const hideRemarks = isBranchWorkspace || isAccountant;
+  // Remarks belong to the Customer Experience workspace, not Operation.
+  const isOperationWorkspace = getDepartmentWorkspace() === 'operation';
+  const hideRemarks = isBranchWorkspace || isAccountant || isOperationWorkspace;
   // Rider remarks are an internal queue - vendors only work their own comments.
   const showRiderCmt = !isVendorSide() && !hideRemarks;
   const [query, setQuery] = useState('');

@@ -5,9 +5,12 @@ import PageLoader from './PageLoader';
 import { getCurrentUser as getServerUser } from '../services/auth.service';
 import {
   ACCOUNTANT_HOME,
+  DEPARTMENT_HOME,
   getCurrentUser,
+  getDepartmentWorkspace,
   isAccountantPathAllowed,
   isAccountantUser,
+  isDepartmentPathAllowed,
   isBranchWorkspacePathAllowed,
   isBranchWorkspaceUser,
 } from '../utils/auth';
@@ -98,6 +101,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   // /dashboard, where every login lands) goes to the finance overview.
   if (isAccountantUser() && !isAccountantPathAllowed(location.pathname)) {
     return <Navigate to={ACCOUNTANT_HOME} replace />;
+  }
+
+  // Operation / Customer Experience admins work their department's pages only
+  // (plus whatever a super admin delegated on Edit Admin).
+  const workspace = getDepartmentWorkspace();
+  if (workspace && !isDepartmentPathAllowed(workspace, location.pathname)) {
+    return <Navigate to={DEPARTMENT_HOME} replace />;
   }
 
   return <>{children}</>;

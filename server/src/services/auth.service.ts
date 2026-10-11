@@ -162,10 +162,9 @@ function putRate(obj: Record<string, unknown>, key: string, val: string | number
 // vendors. Leaving `admin` in place would silently grant a sales account
 // full admin access instead of the intended vendor-scoped view.
 //
-// NOT called on profile edits: department is a display attribute past
-// creation, and editing it must not silently re-derive RBAC role membership.
-// Role changes for an existing account go through the dedicated role and
-// permissions endpoints (setAdminSuperAdminRole / updateAdminPermissions).
+// Also called whenever Edit Admin saves an account (never for a super_admin),
+// so the account always holds the role its department implies. Returns
+// whether any role was actually added or removed.
 //
 // The "Accountant" department works the same way for the finance-only
 // `accountant` role (utils/financeRoles.ts): it replaces `admin` so the
@@ -191,18 +190,22 @@ async function syncSalesRoleForDepartment(
     throw new AppError(500, `The "${wantedCode}" role is not set up. Apply the database migrations, then create this account again.`);
   }
 
+  let changed = false;
   for (const role of roles) {
     const held = await tx.user_roles.findUnique({
       where: { user_id_role_id: { user_id: userId, role_id: role.id } },
     });
     if (role.id === wanted.id && !held) {
       await tx.user_roles.create({ data: { user_id: userId, role_id: role.id } });
+      changed = true;
     } else if (role.id !== wanted.id && held) {
       await tx.user_roles.delete({
         where: { user_id_role_id: { user_id: userId, role_id: role.id } },
       });
+      changed = true;
     }
   }
+  return changed;
 }
 
 async function assertCanManageUsers(userId: string, targetType?: ManagedUserType) {
@@ -456,13 +459,34 @@ export async function updateManagedUserProfile(
         u.branch_scoped = await deriveBranchScoped(tx, data.locationId || null);
       }
       if (joinedAt) u.joined_at = joinedAt;
-      // Department is a display attribute only past account creation - it must
-      // not silently re-derive the account's RBAC role (that previously made
-      // routine department edits grant/revoke the `admin`/`sales` role as a
-      // side effect). Role changes go through the dedicated role/permissions
-      // endpoints instead.
       Object.assign(u, documentPaths);
+      const previousDepartment = (profile as { department: string | null }).department;
       const updatedAdmin = await tx.admins.update({ where: { id }, data: u });
+
+      // The account holds the access of the department it is saved with:
+      // Sales -> `sales`, Accountant -> `accountant`, anything else
+      // (Operation, Customer Experience, ...) -> plain `admin`, whose web shell
+      // the department then narrows. The sync only adds/removes a role when it
+      // does not match, so a save that keeps the department changes nothing -
+      // unless an older edit left the role out of step, which it corrects. A
+      // super_admin's roles are never re-derived from a department.
+      if (data.department !== undefined) {
+        const superAdminRole = await tx.user_roles.findFirst({
+          where: { user_id: userId, roles: { code: "super_admin" } },
+        });
+        if (!superAdminRole && (await syncSalesRoleForDepartment(tx, userId, updatedAdmin.department))) {
+          await tx.audit_logs.create({
+            data: {
+              actor_id: actorUserId,
+              entity_type: "admin",
+              entity_id: userId,
+              action: "UPDATE_ADMIN_DEPARTMENT_ROLE",
+              old_data: { department: previousDepartment },
+              new_data: { department: updatedAdmin.department },
+            },
+          });
+        }
+      }
       return updatedAdmin;
     }
 
@@ -1264,6 +1288,8 @@ export async function loginUser(data: IuserLoginData) {
     let locationId: string | null | undefined;
     let locationName: string | null | undefined;
     let branchScoped: boolean | undefined;
+    // Picks the Operation / Customer Experience workspace on the web.
+    let department: string | null | undefined;
     if (roles.includes("vendor_staff")) {
       const staffRecord = await prisma.vendor_staff.findFirst({
         where: { user_id: user.id, deleted_at: null, enabled: true },
@@ -1277,6 +1303,7 @@ export async function loginUser(data: IuserLoginData) {
           permissions: true,
           location_id: true,
           branch_scoped: true,
+          department: true,
           locations: { select: { name: true } },
         },
       });
@@ -1284,6 +1311,7 @@ export async function loginUser(data: IuserLoginData) {
       locationId = adminRecord?.location_id ?? null;
       locationName = adminRecord?.locations?.name ?? null;
       branchScoped = adminRecord?.branch_scoped ?? false;
+      department = adminRecord?.department ?? null;
     }
 
     const mustChangePassword = user.must_change_password;
@@ -1319,6 +1347,7 @@ export async function loginUser(data: IuserLoginData) {
         ...(locationId !== undefined && { locationId }),
         ...(locationName !== undefined && { locationName }),
         ...(branchScoped !== undefined && { branchScoped }),
+        ...(department !== undefined && { department }),
       }
     }
 
