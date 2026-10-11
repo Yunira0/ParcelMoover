@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
@@ -78,8 +79,13 @@ const AnnouncementManagement: React.FC = () => {
     }
   };
 
-  const removeAnnouncement = async (a: Announcement) => {
-    if (!window.confirm(`Delete "${a.title}"? Vendors currently seeing it will stop immediately.`)) return;
+  const [pendingDelete, setPendingDelete] = useState<Announcement | null>(null);
+  const removeAnnouncement = (a: Announcement) => setPendingDelete(a);
+
+  const confirmRemove = async () => {
+    const a = pendingDelete;
+    if (!a) return;
+    setPendingDelete(null);
     setBusyId(a.id);
     setError('');
     try {
@@ -152,6 +158,16 @@ const AnnouncementManagement: React.FC = () => {
         loading={loading}
         loadingMessage="Loading announcements..."
         emptyMessage="No announcements yet. Add one to notify vendors on their dashboard."
+      />
+
+      <ConfirmDialog
+        isOpen={Boolean(pendingDelete)}
+        title={`Delete "${pendingDelete?.title ?? ''}"?`}
+        message="Vendors currently seeing it will stop immediately."
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => void confirmRemove()}
+        onCancel={() => setPendingDelete(null)}
       />
     </div>
   );

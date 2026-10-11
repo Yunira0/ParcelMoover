@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Banner from '../components/Banner';
+import { apiErrorMessage } from '../utils/serverValidation';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ShieldCheck, FolderOpen } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
@@ -63,10 +65,13 @@ const AdminManagement: React.FC = () => {
 
   const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
   const [statusError, setStatusError] = useState('');
+  // A failed load must not look like an empty list.
+  const [loadError, setLoadError] = useState('');
 
   const loadAdmins = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const params: Record<string, string | number> = { page, pageSize: pageSizeChoice };
       if (searchQuery) params.search = searchQuery;
       if (filter !== 'all') params.status = filter;
@@ -81,6 +86,7 @@ const AdminManagement: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to load admins:', err);
+      setLoadError(apiErrorMessage(err, 'Could not load admins'));
     } finally {
       setLoading(false);
     }
@@ -269,6 +275,12 @@ const AdminManagement: React.FC = () => {
       </div>
 
       {statusError && <p className="admin-status-error">{statusError}</p>}
+      {loadError && (
+        <Banner tone="danger">
+          {loadError}{' '}
+          <Button variant="outline" size="sm" onClick={() => void loadAdmins()}>Retry</Button>
+        </Banner>
+      )}
 
       {loading ? (
         <div className="loading-state">Loading admins...</div>

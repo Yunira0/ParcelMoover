@@ -28,6 +28,8 @@ import './vendor/VendorFinance.css';
 import './SettlementDetailPage.css';
 import ReceiverPhones from '../components/ReceiverPhones';
 import { receiverPhonesHtml } from '../utils/format';
+import { DeliveryChargeCells, DeliveryChargeHeads, DeliveryChargeTotalRows } from '../components/DeliveryChargeCells';
+import { splitVat, sumVatSplits, vatColumns } from '../utils/vat';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
 const hubNameOnly = (value: string) => ((value || '').split(' - ')[0] ?? '').replace(/\s*Branch\s*$/i, '').trim();
@@ -229,6 +231,17 @@ function buildStatementHtml(detail: SettlementDetail): string {
   // per-row column would repeat the same name on every line.
   const showVendor = detail.payeeType === 'rider';
 
+  // The same split DeliveryChargeCells draws on screen, as print markup.
+  const { vatRate } = detail;
+  const chargeHeads = vatRate
+    ? `<th class="r">Delivery Charges</th><th class="r">VAT ${vatRate}%</th>`
+    : '<th class="r">Delivery Charges</th>';
+  const chargeCells = (charge: number) =>
+    vatRate
+      ? vatColumns(splitVat(charge, vatRate)).map((value) => `<td class="r">${money(value)}</td>`).join('')
+      : `<td class="r">${money(charge)}</td>`;
+  const vatTotals = vatRate ? sumVatSplits(detail.items.map((item) => item.deliveryCharge), vatRate) : null;
+
   const rows = detail.items
     .map(
       (item, index) => `
@@ -253,7 +266,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
           <td class="r">${item.weightKg === null ? '-' : item.weightKg.toFixed(2)}</td>
           <td class="r">${money(item.codAmount)}</td>
           <td class="r">${money(item.collectedAmount)}</td>
-          <td class="r">${money(item.deliveryCharge)}</td>
+          ${chargeCells(item.deliveryCharge)}
           <td class="r">${money(item.settledAmount)}</td>
         </tr>`,
     )
@@ -311,7 +324,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
       <thead><tr>
         <th>SN</th><th>Order ID</th><th>Transaction ID</th>${showVendor ? '<th>Vendor</th>' : ''}<th>Receiver</th><th>Destination</th><th>Number</th>
         <th class="r">Weight</th><th class="r">COD</th>
-        <th class="r">Collected COD</th><th class="r">Delivery Charges</th>
+        <th class="r">Collected COD</th>${chargeHeads}
         <th class="r">Net Payable</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -319,7 +332,12 @@ function buildStatementHtml(detail: SettlementDetail): string {
     <div class="totals">
       <div><span>Total COD</span><span>${money(totals.cod)}</span></div>
       <div><span>Collected COD</span><span>${money(totals.collected)}</span></div>
-      <div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>
+      ${
+        vatTotals
+          ? `<div><span>Delivery Charges (excl. VAT)</span><span>${money(vatTotals.net)}</span></div>
+      <div><span>VAT ${vatRate}%</span><span>${money(vatTotals.vat)}</span></div>`
+          : `<div><span>Delivery Charges</span><span>${money(totals.deliveryCharge)}</span></div>`
+      }
       ${detail.vendorCreditApplied ? `<div><span>Prepaid charges returned</span><span>+${money(detail.vendorCreditApplied)}</span></div>` : ''}
       <div class="payable"><span>${detail.payeeType === 'rider' ? 'Receivable Amount' : 'Payable Amount'}</span><span>${money(detail.payableAmount)}</span></div>
     </div>
@@ -450,6 +468,7 @@ const SettlementDetailPage: React.FC = () => {
 
   const handleDownload = async () => {
     if (!detail) return;
+    const { vatRate } = detail;
     const headers = [
       'SN',
       'Order ID',
@@ -462,8 +481,9 @@ const SettlementDetailPage: React.FC = () => {
       'Weight',
       'COD',
       'Collected COD',
-      'Delivery Charge',
+      ...(vatRate ? ['Delivery Charge', `VAT ${vatRate}%`] : ['Delivery Charge']),
     ];
+    const chargeColumns = (charge: number) => (vatRate ? vatColumns(splitVat(charge, vatRate)) : [charge]);
     const rows = detail.items.map((item, index) => [
       index + 1,
       `#${item.orderNumber}`,
@@ -477,12 +497,15 @@ const SettlementDetailPage: React.FC = () => {
       item.weightKg === null ? '' : item.weightKg,
       item.codAmount,
       item.collectedAmount,
-      item.deliveryCharge,
+      ...chargeColumns(item.deliveryCharge),
     ]);
-    // Totals sit under the last three columns, so pad out however many
-    // leading columns this variant of the sheet happens to have.
-    const leadingBlanks = new Array(headers.length - 3).fill('');
-    rows.push([...leadingBlanks, totals.cod, totals.collected, totals.deliveryCharge]);
+    // Totals sit under the money columns, so pad out however many leading
+    // columns this variant of the sheet happens to have.
+    const chargeTotals = vatRate
+      ? vatColumns(sumVatSplits(detail.items.map((item) => item.deliveryCharge), vatRate))
+      : [totals.deliveryCharge];
+    const leadingBlanks = new Array(headers.length - 2 - chargeTotals.length).fill('');
+    rows.push([...leadingBlanks, totals.cod, totals.collected, ...chargeTotals]);
     await downloadExcel(`${detail.statementId}.xlsx`, 'Statement', headers, rows);
   };
 
@@ -714,7 +737,7 @@ const SettlementDetailPage: React.FC = () => {
                         <th className="sdp-num">Weight</th>
                         <th className="sdp-num">COD</th>
                         <th className="sdp-num">Collected COD</th>
-                        <th className="sdp-num">Delivery Charges</th>
+                        <DeliveryChargeHeads vatRate={detail.vatRate} className="sdp-num" label="Delivery Charges" />
                         <th className="sdp-num">Net Payable</th>
                       </tr>
                     </thead>
@@ -757,7 +780,7 @@ const SettlementDetailPage: React.FC = () => {
                           </td>
                           <td className="sdp-num">{money(item.codAmount)}</td>
                           <td className="sdp-num">{money(item.collectedAmount)}</td>
-                          <td className="sdp-num">{money(item.deliveryCharge)}</td>
+                          <DeliveryChargeCells charge={item.deliveryCharge} vatRate={detail.vatRate} className="sdp-num" format={money} />
                           <td className="sdp-cell-strong sdp-num">{money(item.settledAmount)}</td>
                         </tr>
                       ))}
@@ -775,10 +798,11 @@ const SettlementDetailPage: React.FC = () => {
                   <span>Collected COD</span>
                   <span>{money(totals.collected)}</span>
                 </div>
-                <div>
-                  <span>Delivery Charges</span>
-                  <span>{money(totals.deliveryCharge)}</span>
-                </div>
+                <DeliveryChargeTotalRows
+                  charges={detail.items.map((item) => item.deliveryCharge)}
+                  vatRate={detail.vatRate}
+                  format={money}
+                />
                 {/* Charges the vendor already paid through Billing, handed back
                     so they are not deducted twice. Included in the payable. */}
                 {detail.vendorCreditApplied ? (

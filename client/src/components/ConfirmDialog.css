@@ -36,6 +36,10 @@
   color: var(--color-text-caption);
 }
 
+.confirm-dialog-field {
+  margin-top: var(--space-4, 16px);
+}
+
 .confirm-dialog-actions {
   display: flex;
   justify-content: flex-end;

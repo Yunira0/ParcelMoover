@@ -5,6 +5,8 @@ import { AppError } from '../utils/AppError';
 import { isIssuedBeforeUserRevocation, isTokenRevoked } from '../lib/tokenRevocation';
 import { ACCESS_TOKEN_AUDIENCE, JWT_ISSUER } from '../utils/jwtConfig';
 import { timeAuthentication } from '../lib/requestPerformance';
+import { readAppClient } from '../services/analytics/client';
+import { recordUserActivity } from '../services/analytics/track';
 
 
 interface AuthTokenPayload extends JwtPayload {
@@ -136,6 +138,7 @@ async function authenticateRequest(req: Request, res: Response, next: NextFuncti
             }
         }
 
+        recordUserActivity(user.id, req.user.roles, readAppClient(req));
         next();
     } catch (error) {
         // Genuine authentication failures → 401.

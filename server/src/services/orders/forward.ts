@@ -3,6 +3,7 @@ import { AppError } from "../../utils/AppError";
 import type { ForwardOrderInput } from "../../types/order.type";
 import { invalidateVendorFinanceCache } from "../finance.service";
 import { isStaffActor } from "../vendor-scope.service";
+import { isAccountant } from "../../utils/financeRoles";
 import { invalidateOrderCaches } from "./cache";
 import { getAdminBranchScope, branchTouchesFilter } from "./scope";
 import type { OrderActor } from "./types";
@@ -11,7 +12,7 @@ const DEFAULT_FORWARD_REASON = "Forwarded to another destination";
 
 /**
  * Add a forwarding charge to an already-delivered parcel that had to be
- * forwarded on to a different destination (e.g. by NCM). Admin/super_admin only.
+ * forwarded on to a different destination (e.g. by NCM). Admin, super_admin or the accountant.
  *
  * The twin of redirectOrder, but for after delivery: the status stays
  * "delivered", only the destination changes (the receiver's address is left
@@ -29,8 +30,8 @@ export async function forwardOrder(
   parcelId: string,
   data: ForwardOrderInput,
 ) {
-  if (!isStaffActor(actor)) {
-    throw new AppError(403, "Only an admin can add a forwarding charge");
+  if (!isStaffActor(actor) && !isAccountant(actor)) {
+    throw new AppError(403, "Only an admin or accountant can add a forwarding charge");
   }
 
   const adminBranchIds = await getAdminBranchScope(actor);

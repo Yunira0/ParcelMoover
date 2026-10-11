@@ -23,5 +23,12 @@ dist-ssr
 *.sln
 *.sw?
 
-# Capacitor Android build (regenerate with: npx cap add android && npx cap sync)
-android/
+# The Capacitor Android project IS committed (CI builds the signed APK from
+# it). android/.gitignore excludes its build outputs and generated files.
+android/.idea/
+android/**/.DS_Store
+
+# Release signing material must never be committed
+*.jks
+*.keystore
+keystore.properties

@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
@@ -19,12 +20,12 @@ import Pagination from '../components/Pagination';
 import {
   getOrders,
   getStatusCounts,
-  subscribeToOrderStatusChanged,
   bulkUpdateOrderStatus,
   type Order,
   type ParcelStatus,
 } from '../services/orders.service';
-import { getAllRiders } from '../services/users.service';
+import { getAllRiders } from '../queries/lookups';
+import { queryKeys } from '../queries/keys';
 import { printLabels } from '../utils/printLabels';
 import { toBsDate, toBsDateTimeCell, toNptTime } from '../utils/nepaliDate';
 import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStatus';
@@ -53,6 +54,8 @@ const PAGE_SIZE = 10;
 // counts must cover the full pickup, which parcel-level server paging broke.
 const SERVER_FETCH_PAGE_SIZE = 100;
 const MAX_FETCH_PAGES = 30; // safety cap: 3000 parcels per tab
+const NO_ORDERS: Order[] = [];
+const NO_COUNTS: Record<string, number> = {};
 const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_LABELS: Record<PickupTab, string> = {
@@ -365,8 +368,6 @@ const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 
 
 const PickupOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [capped, setCapped] = useState(false);
   const [activeTab, setActiveTab] = useState<PickupTab>(() => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as PickupTab) : 'pickup_ordered';
@@ -383,8 +384,6 @@ const PickupOperations: React.FC = () => {
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<PickupTab, Set<string | number>>>(createEmptyTabSelections);
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
@@ -395,29 +394,19 @@ const PickupOperations: React.FC = () => {
   const [reasonRemarks, setReasonRemarks] = useState('');
   const [expandedGroupId, setExpandedGroupId] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
-  const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
   const [valleyFilter, setValleyFilter] = useState<ValleyFilter>('all');
 
   // Badge counts follow the search, so a scanned parcel shows "1" on its tab
-  // instead of the unfiltered total. Guarded like loadPickups so a slow earlier
-  // request can't overwrite a newer search's counts.
-  const countsSeqRef = useRef(0);
-  const loadTabCounts = useCallback(async () => {
-    const seq = ++countsSeqRef.current;
-    try {
-      const counts = await getStatusCounts(
-        TAB_STATUSES,
-        debouncedSearch ? { search: debouncedSearch } : undefined,
-      );
-      if (seq === countsSeqRef.current) setTabCounts(counts);
-    } catch {
-      // non-fatal; tabs just won't show counts
-    }
-  }, [debouncedSearch]);
-
-  useEffect(() => { void loadTabCounts(); }, [loadTabCounts]);
-  // Refresh tab counts whenever an order status changes anywhere in the app.
-  useEffect(() => subscribeToOrderStatusChanged(loadTabCounts), [loadTabCounts]);
+  // instead of the unfiltered total. Keyed by the search, so a slow earlier
+  // request can't overwrite a newer search's counts, and refreshed whenever an
+  // order status changes anywhere in the app (queryClient.ts). A failure is
+  // non-fatal; the tabs just won't show counts.
+  const countFilters = debouncedSearch ? { search: debouncedSearch } : undefined;
+  const tabCountsQuery = useQuery({
+    queryKey: queryKeys.orders.statusCounts(TAB_STATUSES, countFilters),
+    queryFn: () => getStatusCounts(TAB_STATUSES, countFilters),
+  });
+  const tabCounts: Record<string, number> = tabCountsQuery.data ?? NO_COUNTS;
 
   useEffect(() => {
     (async () => {
@@ -438,14 +427,14 @@ const PickupOperations: React.FC = () => {
     return () => clearTimeout(handle);
   }, [combinedSearch]);
 
-  // Guards against a slow multi-page fetch landing after the user has already
-  // switched tab or typed a new search - only the latest request may setState.
-  const fetchSeqRef = useRef(0);
-
-  const loadPickups = useCallback(async () => {
-    const seq = ++fetchSeqRef.current;
-    setLoading(true);
-    try {
+  // Every parcel of the tab, walked page by page (selection spans group pages).
+  // Cached per tab + search: flipping back to a tab or returning to this page
+  // shows its last rows at once while they refetch, and a slow fetch for a tab
+  // the user already left can never land on the current one. A tab with no
+  // cached rows yet shows the skeleton rather than another tab's parcels.
+  const pickupsQuery = useQuery({
+    queryKey: queryKeys.orders.list({ view: 'pickup', status: TAB_STATUSES[activeTab], search: debouncedSearch }),
+    queryFn: async ({ signal }) => {
       const all: Order[] = [];
       let cursor: string | undefined;
       let hasMore = false;
@@ -457,8 +446,7 @@ const PickupOperations: React.FC = () => {
           pageSize: SERVER_FETCH_PAGE_SIZE,
           cursor,
           dir: 'next',
-        });
-        if (seq !== fetchSeqRef.current) return;
+        }, signal);
         if (!res?.success || !Array.isArray(res.data)) {
           throw new Error('Unexpected orders response');
         }
@@ -467,19 +455,13 @@ const PickupOperations: React.FC = () => {
         if (!hasMore) break;
         cursor = res.meta!.nextCursor!;
       }
-      setOrders(all);
-      setCapped(hasMore);
-      setLoadError('');
-    } catch {
-      if (seq !== fetchSeqRef.current) return;
-      setLoadError('Failed to load pickup orders. Showing the last loaded data, if any.');
-    } finally {
-      if (seq === fetchSeqRef.current) setLoading(false);
-    }
-  }, [activeTab, debouncedSearch]);
-
-  useEffect(() => { loadPickups(); }, [loadPickups]);
-  useEffect(() => subscribeToOrderStatusChanged(loadPickups), [loadPickups]);
+      return { orders: all, capped: hasMore };
+    },
+  });
+  const orders = pickupsQuery.data?.orders ?? NO_ORDERS;
+  const capped = pickupsQuery.data?.capped ?? false;
+  const loading = pickupsQuery.isPending;
+  const loadError = pickupsQuery.isError ? 'Failed to load pickup orders. Showing the last loaded data, if any.' : '';
 
   useEffect(() => {
     setPage(1);
@@ -653,7 +635,8 @@ const PickupOperations: React.FC = () => {
           riderId: isRiderAssignAction ? riderId : undefined,
         },
       );
-      await loadPickups();
+      // The bulk update already announced itself and started the refetch.
+      await pickupsQuery.refetch({ cancelRefetch: false });
 
       setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
       setIsActionOpen(false);

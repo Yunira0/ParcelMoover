@@ -83,6 +83,11 @@ export const cancelBranchSettlementSchema = z.object({
   remark: z.string().trim().min(1, "Remark is required").max(500),
 });
 
+// Edit an unpaid statement: its full order list. Commission keeps the statement's rate.
+export const updateBranchSettlementSchema = z.object({
+  orderIds: z.array(uuid).min(1, "A statement must include at least one order").max(500),
+});
+
 export const branchBillingQuerySchema = z.object({
   branchId: uuid.optional(),
   status: z.enum(["pending", "verified", "rejected"]).optional(),

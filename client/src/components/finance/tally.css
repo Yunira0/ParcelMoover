@@ -178,10 +178,11 @@
 
 .tly-key-primary:disabled kbd { color: var(--color-text-placeholder); }
 
-/* The key cap. Fixed width so the labels beside them align down the column. */
+/* The key cap. Fixed width so the labels beside them align down the column —
+   wide enough for "Alt+P" and "Ctrl+A". */
 .tly-key kbd {
   flex: none;
-  min-width: 22px;
+  min-width: 40px;
   font-family: inherit;
   font-size: var(--font-size-xxs);
   font-weight: var(--font-weight-bold);

@@ -97,4 +97,13 @@ class DeploymentTest(unittest.TestCase):
         self.assertFalse(any(c[0]=='docker' and ('up' in c or 'pull' in c) for c in calls))
         self.assertEqual((root/'app/deploy/.previous-app-port').read_text(),'3001\n')
 
+    def test_active_container_names_the_live_slot(self):
+        with tempfile.TemporaryDirectory() as temp:
+            upstream=Path(temp)/'upstream'
+            env={**os.environ,'NGINX_UPSTREAM':str(upstream)}
+            run=lambda: subprocess.run(['bash',str(SCRIPT),'active-container'],env=env,capture_output=True,text=True,timeout=15)
+            self.assertEqual(run().stdout.strip(),'deploy-app-1')
+            upstream.write_text('upstream parcelmoover_app { server 127.0.0.1:3001; }\n')
+            self.assertEqual(run().stdout.strip(),'deploy-app-green-1')
+
 if __name__=='__main__': unittest.main()

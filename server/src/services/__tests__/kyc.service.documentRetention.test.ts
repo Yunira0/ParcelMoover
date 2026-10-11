@@ -1,3 +1,4 @@
+import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { db, unlink } = vi.hoisted(() => ({
@@ -81,7 +82,8 @@ describe("rejected KYC document retention", () => {
     await purgeExpiredRejectedKycDocuments();
 
     expect(unlink).toHaveBeenCalledOnce();
-    expect(unlink).toHaveBeenCalledWith(expect.stringContaining(documentPath));
+    // Normalised so the check holds on Windows, where the path is built with backslashes.
+    expect(unlink).toHaveBeenCalledWith(expect.stringContaining(path.normalize(documentPath)));
     expect(db.vendor_kyc_applications.update).toHaveBeenCalledWith({ where: { id: "rejected-1" }, data: { pan_vat_doc: null } });
     expect(db.audit_logs.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ action: "KYC_PURGE_DOCUMENTS", new_data: { purgedFields: ["pan_vat_doc"], retentionDays: 30 } }),

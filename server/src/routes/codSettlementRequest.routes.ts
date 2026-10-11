@@ -14,6 +14,7 @@ import {
   getCodSettlementRequestController,
   getRegisteredBankDetailsController,
   listCodSettlementRequestsController,
+  listSettleableStatementsController,
   updateCodSettlementRequestStatusController,
 } from "../controllers/codSettlementRequest.controller";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
@@ -95,6 +96,16 @@ codSettlementRequestRouter.get(
   authorizeRoles(...READ_ROLES),
   readLimiter,
   getCodSettlementRequestController,
+);
+
+// GET /api/cod-settlement-requests/:id/statements — statements that can settle
+// it: the vendor's, not cancelled, not already linked to another request
+codSettlementRequestRouter.get(
+  "/:id/statements",
+  authMiddleware,
+  authorizeRoles(...ACTION_ROLES),
+  readLimiter,
+  listSettleableStatementsController,
 );
 
 // POST /api/cod-settlement-requests — raise one (refused while one is live)

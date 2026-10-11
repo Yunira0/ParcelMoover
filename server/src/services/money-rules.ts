@@ -76,3 +76,11 @@ export const BALANCE_AFFECTING_STATUSES = EARNED_CHARGE_STATUSES;
 export function statusAffectsBalance(status: string | null | undefined): boolean {
   return Boolean(status) && (EARNED_CHARGE_STATUSES as readonly string[]).includes(status as string);
 }
+
+/**
+ * VAT already included in a delivery charge, as a percentage. Recorded on each
+ * vendor statement when it is created (settlements.vat_rate) so the statement
+ * keeps the rate it was raised under. Display only - the charge itself, and so
+ * the vendor's payout, is unchanged.
+ */
+export const DELIVERY_CHARGE_VAT_RATE = 13;

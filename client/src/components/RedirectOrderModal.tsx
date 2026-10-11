@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import './Modal.css';
 import Button from './Button';
 import FormField from './FormField';
-import { getLocations } from '../services/users.service';
+import { getLocations } from '../queries/lookups';
 
 // Preset reasons cover the common cases; "Other" keeps the free-text escape
 // hatch so ops is never forced into a wrong label.

@@ -13,6 +13,7 @@ import {
 } from '../../services/locations.service';
 import { listUpayaDeliveryAreas, type UpayaDeliveryArea } from '../../services/upaya.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
+import '../../components/Modal.css';
 import './DestinationsSettings.css';
 
 const emptyDest = { name: '', code: '', province: '', district: '', municipality: '', ncmBranch: '', upayaAreaId: '' };
@@ -110,7 +111,7 @@ const DestinationsSettings: React.FC = () => {
   const openAddDest = () => {
     setEditDestId(null);
     setDestForm(emptyDest);
-    setShowDestForm((v) => !v);
+    setShowDestForm(true);
   };
 
   const openEditDest = (dest: Destination) => {
@@ -306,9 +307,23 @@ const DestinationsSettings: React.FC = () => {
         </div>
       )}
 
+      {/* A pop-up, so editing a row far down the list happens where you are
+          rather than in a form scrolled out of sight at the top. */}
       {showDestForm && (
-        <form className="dest-form" onSubmit={addDestination}>
-          <h3 className="dest-form-title">{editDestId ? 'Edit Destination' : 'New Destination'}</h3>
+        <div className="modal-overlay" onClick={() => { if (!savingDest) cancelDestForm(); }}>
+        <form
+          className="modal-content dest-form"
+          onSubmit={addDestination}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => { if (e.key === 'Escape' && !savingDest) cancelDestForm(); }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dest-form-title"
+        >
+          <div className="modal-header">
+            <h2 id="dest-form-title">{editDestId ? 'Edit Destination' : 'New Destination'}</h2>
+            <Button type="button" variant="ghost" onClick={cancelDestForm} aria-label="Close"><X size={18} /></Button>
+          </div>
           <div className="dest-form-row">
             <FormField label="Destination Name" required value={destForm.name}
               onChange={(v) => setDestForm((p) => ({ ...p, name: v }))} placeholder="e.g. Pokhara Branch" />
@@ -342,13 +357,14 @@ const DestinationsSettings: React.FC = () => {
                 ? "Couldn't load Upaya areas. Saved choice is kept."
                 : 'Leave on Automatic to match by name.'} />
           </div>
-          <div className="dest-form-actions">
+          <div className="modal-footer">
             <Button type="button" variant="outline" onClick={cancelDestForm}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={savingDest}>
               {savingDest ? 'Saving…' : editDestId ? 'Update Destination' : 'Save Destination'}
             </Button>
           </div>
         </form>
+        </div>
       )}
 
       {error && <p className="dest-error">{error}</p>}

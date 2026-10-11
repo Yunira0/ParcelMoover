@@ -4,11 +4,13 @@ import { ArrowLeft, CheckCircle, Upload, X, User, Building2, FileText, CreditCar
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import DocLink from '../components/DocLink';
-import { registerUser, getManagedUser, updateUserProfile, getLocations, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
+import { registerUser, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
+import { getLocations } from '../queries/lookups';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, normalizePhone } from '../utils/serverValidation';
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { adminDocumentSizeError, adminSaveErrorMessage, formatAdminFileSize } from '../utils/adminUpload';
 import { useHubLock } from '../hooks/useHubLock';
+import Banner from '../components/Banner';
 import './AdminFormPage.css';
 
 // API validation-error field → form field, for errors returned by the server.
@@ -62,6 +64,21 @@ const DEPARTMENT_OPTIONS = [
   { value: 'Customer Experience', label: 'Customer Experience' },
   { value: 'Sales', label: 'Sales' },
 ];
+
+type AdminRole = 'admin' | 'accountant' | 'sales';
+
+/** What each role can open, as the form describes it. */
+const ROLE_LABELS: Record<AdminRole, string> = {
+  admin: 'Admin — operations',
+  accountant: 'Accountant — Finance only',
+  sales: 'Sales — their own vendors only',
+};
+
+/** The role a department gives an account; mirrors roleForDepartment on the server. */
+const roleForDepartment = (department: string): AdminRole => {
+  const key = department.trim().toLowerCase();
+  return key === 'sales' ? 'sales' : key === 'accountant' ? 'accountant' : 'admin';
+};
 
 const emptyForm: AdminFormInput = {
   employeeId: '',
@@ -180,6 +197,8 @@ const AdminFormPage: React.FC = () => {
   const { id: editId } = useParams();
   const isEdit = !!editId;
   const [form, setForm] = useState<AdminFormInput>(emptyForm);
+  // Edit only: the access the account has now, to warn before a department change alters it.
+  const [access, setAccess] = useState<{ saved: AdminRole | ''; superAdmin: boolean }>({ saved: '', superAdmin: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -237,6 +256,8 @@ const AdminFormPage: React.FC = () => {
         if (!res?.success || !res.data) return;
         const d = res.data;
         const s = (v: unknown) => (v == null ? '' : String(v));
+        const role = (d.role ?? '') as AdminRole | '';
+        setAccess({ saved: role, superAdmin: !!d.isSuperAdmin });
         setForm((prev) => ({
           ...prev,
           employeeId: s(d.employeeId),
@@ -609,6 +630,19 @@ const AdminFormPage: React.FC = () => {
                   options={DEPARTMENT_OPTIONS}
                 />
                 {fieldErrors.department && <span className="afp-field-error">{fieldErrors.department}</span>}
+                {access.superAdmin ? (
+                  <p className="afp-hint">Access: Super admin — full access. The department doesn&apos;t change it.</p>
+                ) : form.department && (
+                  <>
+                    <p className="afp-hint">Access: {ROLE_LABELS[roleForDepartment(form.department)]} — set by the department.</p>
+                    {isEdit && access.saved && access.saved !== roleForDepartment(form.department) && (
+                      <Banner tone="warning">
+                        Saving changes their access from {ROLE_LABELS[access.saved].split(' — ')[0]} to{' '}
+                        {ROLE_LABELS[roleForDepartment(form.department)].split(' — ')[0]}.
+                      </Banner>
+                    )}
+                  </>
+                )}
                 <FormField
                   label="Designation"
                   required

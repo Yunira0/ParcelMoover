@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useBranchAccess } from '../hooks/useBranchAccess';
-import { listBranches, type Branch } from '../services/branchTracking.service';
+import type { Branch } from '../services/branchTracking.service';
+import { listBranches } from '../queries/lookups';
 import { getCurrentUserLocationId } from '../utils/auth';
 
 /**

@@ -114,9 +114,13 @@ async function checkTrialBalance(): Promise<boolean> {
 // copies of a money rule is how a ledger starts lying. Asking "is there a live
 // entry exactly where there should be one" needs no second copy of anything.
 async function checkSettlementCoverage(limit: number): Promise<string[]> {
-  const rows = await prisma.$queryRaw<Array<{ statement_id: string; status: string; entries: bigint }>>(Prisma.sql`
+  // Instalments post entries of their own (event key `..._payment:<id>`), so
+  // "exactly one" is about the statement entry; instalment entries only count
+  // here on a cancelled statement, which must carry nothing live at all.
+  const rows = await prisma.$queryRaw<Array<{ statement_id: string; status: string; entries: bigint; instalments: bigint }>>(Prisma.sql`
     SELECT s.statement_id, s.status::text AS status,
-           COUNT(e.id) FILTER (WHERE e.status = 'posted') AS entries
+           COUNT(e.id) FILTER (WHERE e.status = 'posted' AND e.event_key NOT LIKE '%payment:%') AS entries,
+           COUNT(e.id) FILTER (WHERE e.status = 'posted' AND e.event_key LIKE '%payment:%') AS instalments
       FROM settlements s
       LEFT JOIN journal_entries e
         ON e.source_type = 'settlement' AND e.source_id = s.id
@@ -125,7 +129,7 @@ async function checkSettlementCoverage(limit: number): Promise<string[]> {
 
   const problems: string[] = [];
   for (const row of rows) {
-    const posted = Number(row.entries);
+    const posted = Number(row.entries) + (row.status === "cancelled" ? Number(row.instalments) : 0);
     // A cancelled statement moved no money, so it must carry nothing live.
     // Everything else was created, and creating it is the money event.
     if (row.status === "cancelled" && posted > 0) {
@@ -135,7 +139,7 @@ async function checkSettlementCoverage(limit: number): Promise<string[]> {
       // describeVendorSettlement's skip - so this is a lead, not a verdict.
       problems.push(`${row.statement_id} (${row.status}) has no live entry`);
     } else if (posted > 1) {
-      problems.push(`${row.statement_id} has ${posted} live entries; a statement posts exactly one`);
+      problems.push(`${row.statement_id} has ${posted} live entries; a statement posts exactly one statement entry`);
     }
   }
 

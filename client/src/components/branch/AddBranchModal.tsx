@@ -5,7 +5,8 @@ import Button from '../Button';
 import SearchableSelect from '../SearchableSelect';
 import MultiSearchableSelect from '../MultiSearchableSelect';
 import { listManagedLocations, type ManagedLocation } from '../../services/locations.service';
-import { createBranch, listBranches, updateBranch, type Branch } from '../../services/branchTracking.service';
+import { createBranch, updateBranch, type Branch } from '../../services/branchTracking.service';
+import { listBranches } from '../../queries/lookups';
 import { apiErrorMessage } from '../../utils/serverValidation';
 
 interface AddBranchModalProps {

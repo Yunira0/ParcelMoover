@@ -31,7 +31,7 @@ vi.mock("../branch-billing.service", () => ({ evaluateBranchBilling: vi.fn() }))
 vi.mock("../accounting/sync", () => ({ syncBranchSettlementPostings: vi.fn() }));
 
 import prisma from "../../lib/prisma";
-import { createBranchSettlement, getBranchSettlementDetail, resolveBranchLocationIds } from "../branch.service";
+import { createBranchSettlement, getBranchSettlementDetail, resolveBranchLocationIds, updateBranchSettlement } from "../branch.service";
 
 const mockedFindFirst = (prisma as unknown as { locations: { findFirst: ReturnType<typeof vi.fn> } })
   .locations.findFirst;
@@ -246,5 +246,70 @@ describe("createBranchSettlement", () => {
       message: "The receiving master branch must be Imadol",
     });
     expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateBranchSettlement", () => {
+  const office = { id: "office-admin", roles: ["super_admin"] } as any;
+  const statement = (overrides: Record<string, unknown> = {}) => ({
+    id: "statement-1",
+    from_branch_id: "paying-branch",
+    status: "pending",
+    paid_amount: new Prisma.Decimal(0),
+    commission_per_parcel: new Prisma.Decimal(50),
+    net_payable: new Prisma.Decimal(950),
+    items: [{ parcel_id: "parcel-1" }],
+    ...overrides,
+  });
+  const parcel = (id: string, cod: number) => ({
+    id,
+    cod_amount: new Prisma.Decimal(cod),
+    cod_collections: { collected_amount: new Prisma.Decimal(cod) },
+  });
+
+  function stubTx(found: ReturnType<typeof statement>, parcels: ReturnType<typeof parcel>[]) {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: found.id }]),
+      branch_settlements: {
+        findUnique: vi.fn().mockResolvedValue(found),
+        update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+          id: found.id, statement_no: "BRS-1", from_branch_id: found.from_branch_id, status: "pending", ...data,
+        })),
+      },
+      branch_payments: { count: vi.fn().mockResolvedValue(0) },
+      parcels: { findMany: vi.fn().mockResolvedValue(parcels) },
+      branch_settlement_items: { deleteMany: vi.fn(), createMany: vi.fn() },
+      audit_logs: { create: vi.fn() },
+    };
+    transaction.mockImplementation(async (callback: (t: any) => Promise<unknown>) => callback(tx));
+    mockedFindFirst.mockResolvedValue({ id: "paying-branch", other_locations: [], branch_virtual_coverage_branch: [] });
+    return tx;
+  }
+
+  it("refuses once a payment has been recorded", async () => {
+    const tx = stubTx(statement({ paid_amount: new Prisma.Decimal(100) }), []);
+
+    await expect(updateBranchSettlement(office, "statement-1", ["parcel-1"])).rejects.toMatchObject({ statusCode: 409 });
+    expect(tx.branch_settlement_items.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps the statement's commission rate and recomputes its totals", async () => {
+    const tx = stubTx(statement(), [parcel("parcel-1", 1_000), parcel("parcel-2", 500)]);
+
+    const result = await updateBranchSettlement(office, "statement-1", ["parcel-1", "parcel-2"]);
+
+    expect(result).toMatchObject({ grossCod: 1_500, commissionAmount: 100, netPayable: 1_400, orderCount: 2 });
+    // Its own orders stay eligible alongside unstatemented ones.
+    expect(tx.parcels.findMany.mock.calls[0]![0].where.OR).toEqual([
+      { branch_settlement_items: { none: {} } },
+      { branch_settlement_items: { some: { settlement_id: "statement-1" } } },
+    ]);
+  });
+
+  it("rejects an order that is not eligible for this statement", async () => {
+    const tx = stubTx(statement(), [parcel("parcel-1", 1_000)]);
+
+    await expect(updateBranchSettlement(office, "statement-1", ["parcel-1", "parcel-9"])).rejects.toMatchObject({ statusCode: 409 });
+    expect(tx.branch_settlement_items.deleteMany).not.toHaveBeenCalled();
   });
 });

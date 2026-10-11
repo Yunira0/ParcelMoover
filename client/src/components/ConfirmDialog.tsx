@@ -15,6 +15,10 @@ interface ConfirmDialogProps {
   danger?: boolean;
   /** Disables both buttons while the action is in flight. */
   busy?: boolean;
+  /** Disables only Confirm, e.g. until a required field below is filled. */
+  confirmDisabled?: boolean;
+  /** A field the decision needs, shown under the message. */
+  children?: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -35,6 +39,8 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   cancelLabel = 'Cancel',
   danger = false,
   busy = false,
+  confirmDisabled = false,
+  children,
   onConfirm,
   onCancel,
 }) => {
@@ -70,13 +76,15 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           </div>
         </div>
 
+        {children && <div className="confirm-dialog-field">{children}</div>}
+
         <div className="confirm-dialog-actions">
           {/* autoFocus rather than a ref: Button is a plain function component
               and doesn't forward one. */}
           <Button variant="secondary" onClick={onCancel} disabled={busy} autoFocus>
             {cancelLabel}
           </Button>
-          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} disabled={busy}>
+          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} disabled={busy || confirmDisabled}>
             {busy ? 'Working…' : confirmLabel}
           </Button>
         </div>

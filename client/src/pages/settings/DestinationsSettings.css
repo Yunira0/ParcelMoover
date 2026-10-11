@@ -44,10 +44,9 @@
   gap: var(--space-3);
 }
 
-.dest-form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
+/* Two fields a row, so the pop-up is wider than the default modal. */
+.modal-content.dest-form {
+  width: 680px;
 }
 
 .dest-error {
@@ -190,13 +189,6 @@
 .dest-edit-btn:hover {
   background: var(--color-background-canvas);
   color: #000;
-}
-
-.dest-form-title {
-  margin: 0 0 var(--space-2);
-  font-size: 0.95rem;
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-default);
 }
 
 .dest-confirm-delete {

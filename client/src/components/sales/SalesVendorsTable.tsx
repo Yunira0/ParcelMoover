@@ -162,7 +162,7 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
         emptyMessage="This sales rep has no vendors yet."
         minWidth="1120px"
         tableClassName="sales-vendors-table"
-        onRowClick={(v) => onSelectVendor(selectedVendor?.id === v.id ? null : v)}
+        onRowClick={(v) => onSelectVendor(v)}
         getRowClassName={(v) => (isSelected(v) ? 'selected-row' : '')}
       />}
 

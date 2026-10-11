@@ -46,8 +46,7 @@ export function requestPerformance(req: Request, res: Response, next: NextFuncti
     console.info(JSON.stringify({
       event: "request_performance",
       method: req.method,
-      // Route templates retain /:id, rather than logging a customer's URL.
-      route: typeof req.route?.path === "string" ? `${req.baseUrl}${req.route.path}` : "unmatched",
+      route: routeTemplate(req),
       status: res.statusCode,
       durationMs: Number((performance.now() - current.startedAt).toFixed(1)),
       databaseMs: Number(current.databaseMs.toFixed(1)),
@@ -57,6 +56,15 @@ export function requestPerformance(req: Request, res: Response, next: NextFuncti
     }));
   });
   metrics.run(current, next);
+}
+
+// Route templates retain /:id, rather than logging a customer's URL. Only
+// meaningful once the response has finished routing.
+export function routeTemplate(req: Request): string {
+  const path = req.route?.path;
+  if (typeof path !== "string") return "unmatched";
+  // A router's root route reads "/api/orders", not "/api/orders/".
+  return path === "/" && req.baseUrl ? req.baseUrl : `${req.baseUrl}${path}`;
 }
 
 export async function timeDatabaseOperation<T>(run: () => Promise<T>): Promise<T> {

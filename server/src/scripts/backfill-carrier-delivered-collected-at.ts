@@ -60,6 +60,10 @@ async function main() {
   const args = process.argv.slice(2);
   const dryRun = !args.includes("--commit");
   const once = args.includes("--once");
+  if (once && process.env.SKIP_STARTUP_DATA_REPAIRS === "true") {
+    console.log("backfill-carrier-delivered-collected-at: skipped by SKIP_STARTUP_DATA_REPAIRS.");
+    return;
+  }
 
   await printTarget();
 

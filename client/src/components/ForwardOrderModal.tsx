@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import './Modal.css';
 import Button from './Button';
 import FormField from './FormField';
-import { getLocations } from '../services/users.service';
+import { getLocations } from '../queries/lookups';
 
 // Same shape as RedirectOrderModal: preset reasons plus a free-text "Other".
 const REASON_OPTIONS = [

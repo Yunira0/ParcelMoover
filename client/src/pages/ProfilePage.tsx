@@ -7,7 +7,7 @@ import StatusChip from '../components/StatusChip';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
 import { getCurrentUser as fetchMe, changePassword, logout, updateMe } from '../services/auth.service';
-import { getLocations } from '../services/users.service';
+import { getLocations } from '../queries/lookups';
 import { getCurrentUser, getCurrentUserRoles } from '../utils/auth';
 import './ProfilePage.css';
 

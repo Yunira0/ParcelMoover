@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronsLeft, ChevronsRight, Download, FileUp, Plus, Printer, Search, X } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
@@ -12,7 +13,6 @@ import QuickRemarkPopup from '../../components/QuickRemarkPopup';
 import {
   bulkUpdateOrderStatus,
   getOrders,
-  subscribeToOrderStatusChanged,
   type CreateOrderInput,
   type Order,
   type OrdersPageMeta,
@@ -27,6 +27,7 @@ import NepaliDatePicker from '../../components/NepaliDatePicker';
 import { useCursorPagination } from '../../hooks/useCursorPagination';
 import './VendorOrders.css';
 import ReceiverPhones from '../../components/ReceiverPhones';
+import { queryKeys } from '../../queries/keys';
 
 const STATUS_LABELS: Record<ParcelStatus, string> = {
   pickup_ordered: 'Pickup Ordered',
@@ -58,6 +59,7 @@ const ORDER_TYPE_LABELS: Record<Order['orderType'], string> = {
 };
 
 const PAGE_SIZE = 10;
+const NO_ORDERS: Order[] = [];
 const SEARCH_DEBOUNCE_MS = 300;
 
 const getStatusTone = (status: ParcelStatus): StatusChipTone => {
@@ -155,11 +157,6 @@ const statusesFromFilter = (value: string): ParcelStatus[] | undefined => {
 const VendorOrders: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
-  const [optionsOrders, setOptionsOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
   // Draft holds in-progress selections; applied is what actually filters the list,
   // so the Apply/Clear buttons behave the way the order screen leads users to expect.
   const [draft, setDraft] = useState<VendorOrderFilters>(() => filtersFromSearchParams(searchParams));
@@ -198,33 +195,32 @@ const VendorOrders: React.FC = () => {
     return () => clearTimeout(handle);
   }, [trackingSearch]);
 
-  const loadOrders = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getOrders({
-        status: statusesFromFilter(applied.status),
-        orderType: (applied.orderType as OrderType) || undefined,
-        search: debouncedSearch || undefined,
-        pageSize: pageSizeChoice,
-        ...(applied.fromDate ? { dateFrom: applied.fromDate } : {}),
-        ...(applied.toDate ? { dateTo: applied.toDate } : {}),
-        cursor: pager.request.cursor,
-        dir: pager.request.dir,
-      });
-      if (res?.success && Array.isArray(res.data)) {
-        setOrders(res.data);
-        setMeta(res.meta ?? null);
-        setLoadError('');
-      }
-    } catch {
-      setLoadError('Failed to load orders. Showing the last loaded data, if any.');
-    } finally {
-      setLoading(false);
-    }
-  }, [applied.status, applied.orderType, applied.fromDate, applied.toDate, debouncedSearch, pager.request, pageSizeChoice]);
+  const ordersParams = {
+    status: statusesFromFilter(applied.status),
+    orderType: (applied.orderType as OrderType) || undefined,
+    search: debouncedSearch || undefined,
+    pageSize: pageSizeChoice,
+    ...(applied.fromDate ? { dateFrom: applied.fromDate } : {}),
+    ...(applied.toDate ? { dateTo: applied.toDate } : {}),
+    cursor: pager.request.cursor,
+    dir: pager.request.dir,
+  };
+  // Cached per filter set: Back or the sidebar paints the last rows at once
+  // while they refetch; any order change refetches it (queryClient.ts).
+  const ordersQuery = useQuery({
+    queryKey: queryKeys.orders.list(ordersParams),
+    queryFn: ({ signal }) => getOrders(ordersParams, signal),
+  });
+  const orders: Order[] =
+    ordersQuery.data?.success && Array.isArray(ordersQuery.data.data) ? ordersQuery.data.data : NO_ORDERS;
+  const meta: OrdersPageMeta | null = ordersQuery.data?.meta ?? null;
+  const loading = ordersQuery.isPending;
+  // A failed cancel stays up until the list next loads, like a fetch error.
+  const [actionError, setActionError] = useState<{ message: string; dataUpdatedAt: number } | null>(null);
+  const loadError = actionError && actionError.dataUpdatedAt === ordersQuery.dataUpdatedAt
+    ? actionError.message
+    : ordersQuery.isError ? 'Failed to load orders. Showing the last loaded data, if any.' : '';
 
-  useEffect(() => { loadOrders(); }, [loadOrders]);
-  useEffect(() => subscribeToOrderStatusChanged(loadOrders), [loadOrders]);
   useEffect(() => { pager.reset(); }, [applied, debouncedSearch, pager.reset]);
 
   // Keep applied filters/search bookmarkable - mirror into the URL (replacing
@@ -241,24 +237,19 @@ const VendorOrders: React.FC = () => {
   }, [applied, debouncedSearch, setSearchParams]);
 
   // Separate, wider (unpaginated) fetch scoped only by status/type so the hub
-  // dropdown has more than the current page to derive options from.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await getOrders({
-          status: statusesFromFilter(applied.status),
-          orderType: (applied.orderType as OrderType) || undefined,
-        });
-        if (!cancelled && res?.success && Array.isArray(res.data)) {
-          setOptionsOrders(res.data);
-        }
-      } catch {
-        // hub dropdown just won't refresh; not fatal
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [applied.status, applied.orderType]);
+  // dropdown has more than the current page to derive options from. Kept for
+  // a minute; failing just leaves the previous options.
+  const hubOptionsParams = {
+    status: statusesFromFilter(applied.status),
+    orderType: (applied.orderType as OrderType) || undefined,
+  };
+  const optionsQuery = useQuery({
+    queryKey: queryKeys.orderFilterOptions({ view: 'vendor-hubs', ...hubOptionsParams }),
+    queryFn: ({ signal }) => getOrders(hubOptionsParams, signal),
+    staleTime: 60_000,
+  });
+  const optionsOrders: Order[] =
+    optionsQuery.data?.success && Array.isArray(optionsQuery.data.data) ? optionsQuery.data.data : NO_ORDERS;
 
   const hubOptions = useMemo(
     () => uniqueValues(optionsOrders.map(order => order.destination)),
@@ -344,10 +335,14 @@ const VendorOrders: React.FC = () => {
     try {
       await bulkUpdateOrderStatus([order.id], 'cancelled', { remarks: 'Cancelled by vendor' });
       setCancelTarget(null);
-      await loadOrders();
+      // The cancel already announced itself and started the refetch.
+      await ordersQuery.refetch({ cancelRefetch: false });
     } catch (err: any) {
       setCancelTarget(null);
-      setLoadError(err?.response?.data?.message || err?.message || 'Failed to cancel the order.');
+      setActionError({
+        message: err?.response?.data?.message || err?.message || 'Failed to cancel the order.',
+        dataUpdatedAt: ordersQuery.dataUpdatedAt,
+      });
     } finally {
       setCancelling(false);
     }

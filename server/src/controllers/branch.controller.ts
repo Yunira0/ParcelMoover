@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import {
-  cancelBranchSettlement, createBranchSettlement, createOrPromoteBranch, exportBranchOrders, getBranchOverview,
+  cancelBranchSettlement, updateBranchSettlement, createBranchSettlement, createOrPromoteBranch, exportBranchOrders, getBranchOverview,
   getBranchSettlementDetail, listBranchesForTracking, listBranchOrders, listBranchSettlements,
   payBranchSettlement, updateBranch,
 } from "../services/branch.service";
@@ -60,6 +60,13 @@ export async function cancelBranchSettlementController(req: Request, res: Respon
     const data = await cancelBranchSettlement(actor(req), String(req.params.id), req.body.remark);
     return res.json({ success: true, message: "Branch settlement cancelled", data });
   } catch (e) { return fail(res, e, "Failed to cancel branch settlement"); }
+}
+
+export async function updateBranchSettlementController(req: Request, res: Response) {
+  try {
+    const data = await updateBranchSettlement(actor(req), String(req.params.id), req.body.orderIds);
+    return res.json({ success: true, message: "Branch settlement updated", data });
+  } catch (e) { return fail(res, e, "Failed to update branch settlement"); }
 }
 
 export async function getBranchBillingStatusController(req: Request, res: Response) {

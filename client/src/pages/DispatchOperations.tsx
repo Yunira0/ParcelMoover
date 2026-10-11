@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Download,
@@ -19,14 +20,14 @@ import {
   bulkUpdateOrderStatus,
   getOrders,
   getStatusCounts,
-  subscribeToOrderStatusChanged,
   MAX_ORDER_PAGE_SIZE,
   type Order,
   type OrdersPageMeta,
   type ParcelStatus,
 } from '../services/orders.service';
 import { downloadExcel } from '../utils/excel';
-import { getAllRiders, searchVendors } from '../services/users.service';
+import { getAllRiders, searchVendors } from '../queries/lookups';
+import { queryKeys } from '../queries/keys';
 import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import { toBsDate, toBsDateTime, toBsDateTimeCell } from '../utils/nepaliDate';
@@ -46,6 +47,8 @@ type DispatchTab =
   | 'failed';
 
 const PAGE_SIZE = 10;
+const NO_ORDERS: Order[] = [];
+const NO_COUNTS: Record<string, number> = {};
 const SEARCH_DEBOUNCE_MS = 300;
 
 const TAB_LABELS: Record<DispatchTab, string> = {
@@ -133,8 +136,6 @@ const REASON_REQUIRED_STATUSES: ParcelStatus[] = ['cancelled', 'failed_pickup', 
 
 const DispatchOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
   const [activeTab, setActiveTab] = useState<DispatchTab>(() => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as DispatchTab) : 'ready_to_deliver';
@@ -151,8 +152,6 @@ const DispatchOperations: React.FC = () => {
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const pager = useCursorPagination();
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
   const [selectedIdsByTab, setSelectedIdsByTab] = useState<Record<DispatchTab, Set<string | number>>>(createEmptyTabSelections);
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [selectedNextStatus, setSelectedNextStatus] = useState<ParcelStatus | ''>('');
@@ -175,29 +174,22 @@ const DispatchOperations: React.FC = () => {
   const [partialCodCollected, setPartialCodCollected] = useState('');
   const [reasonRemarks, setReasonRemarks] = useState('');
   const [remarkPopupOrder, setRemarkPopupOrder] = useState<Order | null>(null);
-  const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
 
   // Badge counts follow the same rider filter and search as the table, so a
-  // scanned parcel shows "1" on its tab instead of the unfiltered total.
-  // Guarded like loadDispatches so a slow earlier request can't overwrite a
-  // newer filter's counts.
-  const countsRequestIdRef = useRef(0);
-  const loadTabCounts = useCallback(async () => {
-    const requestId = ++countsRequestIdRef.current;
-    try {
-      const counts = await getStatusCounts(TAB_STATUSES, {
-        ...(riderFilter ? { deliveryRiderId: riderFilter } : {}),
-        ...(vendorFilter ? { vendorId: [vendorFilter] } : {}),
-        ...(debouncedSearch ? { search: debouncedSearch } : {}),
-      });
-      if (requestId === countsRequestIdRef.current) setTabCounts(counts);
-    } catch {
-      // non-fatal; tabs just won't show counts
-    }
-  }, [riderFilter, vendorFilter, debouncedSearch]);
-
-  useEffect(() => { void loadTabCounts(); }, [loadTabCounts]);
-  useEffect(() => subscribeToOrderStatusChanged(loadTabCounts), [loadTabCounts]);
+  // scanned parcel shows "1" on its tab instead of the unfiltered total. Keyed
+  // by those filters, so a slow earlier request can't overwrite a newer
+  // filter's counts; refreshed on any status change (queryClient.ts). A
+  // failure is non-fatal; the tabs just won't show counts.
+  const countFilters = {
+    ...(riderFilter ? { deliveryRiderId: riderFilter } : {}),
+    ...(vendorFilter ? { vendorId: [vendorFilter] } : {}),
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+  };
+  const tabCountsQuery = useQuery({
+    queryKey: queryKeys.orders.statusCounts(TAB_STATUSES, countFilters),
+    queryFn: () => getStatusCounts(TAB_STATUSES, countFilters),
+  });
+  const tabCounts: Record<string, number> = tabCountsQuery.data ?? NO_COUNTS;
 
   useEffect(() => {
     (async () => {
@@ -271,46 +263,33 @@ const DispatchOperations: React.FC = () => {
     setSearchParams(next, { replace: true });
   }, [activeTab, debouncedSearch, riderFilter, vendorFilter, setSearchParams]);
 
-  // Scanning several parcels in a row fires one debounced search per scan -
-  // without this, a slower-to-resolve earlier request can land after a later
-  // one and stomp its results, making an already-scanned parcel vanish again.
-  const loadRequestIdRef = useRef(0);
-
-  const loadDispatches = useCallback(async () => {
-    const requestId = ++loadRequestIdRef.current;
-    setLoading(true);
-    try {
-      // A scanner builds up a comma-separated list of tracking ids - fetch
-      // enough rows in one page to fit the whole scanned batch, instead of
-      // silently cutting it off at the default page size.
-      const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
-      const pageSize = scannedTermCount > 1 ? Math.min(MAX_ORDER_PAGE_SIZE, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice;
-
-      const res = await getOrders({
-        status: TAB_STATUSES[activeTab],
-        search: debouncedSearch || undefined,
-        deliveryRiderId: riderFilter || undefined,
-        vendorId: vendorFilter ? [vendorFilter] : undefined,
-        pageSize,
-        cursor: pager.request.cursor,
-        dir: pager.request.dir,
-      });
-      if (requestId !== loadRequestIdRef.current) return;
-      if (res?.success && Array.isArray(res.data)) {
-        setOrders(res.data);
-        setMeta(res.meta ?? null);
-        setLoadError('');
-      }
-    } catch {
-      if (requestId !== loadRequestIdRef.current) return;
-      setLoadError('Failed to load dispatch orders. Showing the last loaded data, if any.');
-    } finally {
-      if (requestId === loadRequestIdRef.current) setLoading(false);
-    }
-  }, [activeTab, debouncedSearch, riderFilter, vendorFilter, pager.request, pageSizeChoice]);
-
-  useEffect(() => { loadDispatches(); }, [loadDispatches]);
-  useEffect(() => subscribeToOrderStatusChanged(loadDispatches), [loadDispatches]);
+  // A scanner builds up a comma-separated list of tracking ids - fetch
+  // enough rows in one page to fit the whole scanned batch, instead of
+  // silently cutting it off at the default page size.
+  const scannedTermCount = debouncedSearch ? debouncedSearch.split(',').map(t => t.trim()).filter(Boolean).length : 0;
+  const ordersParams = {
+    status: TAB_STATUSES[activeTab],
+    search: debouncedSearch || undefined,
+    deliveryRiderId: riderFilter || undefined,
+    vendorId: vendorFilter ? [vendorFilter] : undefined,
+    pageSize: scannedTermCount > 1 ? Math.min(MAX_ORDER_PAGE_SIZE, Math.max(pageSizeChoice, scannedTermCount)) : pageSizeChoice,
+    cursor: pager.request.cursor,
+    dir: pager.request.dir,
+  };
+  // Cached per filter set: a revisit paints the last rows at once while they
+  // refetch, and the current rows stay up while a new tab/page loads. Scanning
+  // fires one debounced search per scan; each result is keyed by its own
+  // params, so a slower earlier response can never stomp a later one.
+  const dispatchesQuery = useQuery({
+    queryKey: queryKeys.orders.list(ordersParams),
+    queryFn: ({ signal }) => getOrders(ordersParams, signal),
+    placeholderData: keepPreviousData,
+  });
+  const orders: Order[] =
+    dispatchesQuery.data?.success && Array.isArray(dispatchesQuery.data.data) ? dispatchesQuery.data.data : NO_ORDERS;
+  const meta: OrdersPageMeta | null = dispatchesQuery.data?.meta ?? null;
+  const loading = dispatchesQuery.isFetching;
+  const loadError = dispatchesQuery.isError ? 'Failed to load dispatch orders. Showing the last loaded data, if any.' : '';
 
   const visibleOrders = orders;
   const totalPages = meta?.totalPages ?? 1;
@@ -446,7 +425,8 @@ const DispatchOperations: React.FC = () => {
         effectiveNextStatus,
         options,
       );
-      await loadDispatches();
+      // The bulk update already announced itself and started the refetch.
+      await dispatchesQuery.refetch({ cancelRefetch: false });
 
       setSelectedIdsByTab(prev => ({ ...prev, [activeTab]: new Set() }));
       setIsActionOpen(false);

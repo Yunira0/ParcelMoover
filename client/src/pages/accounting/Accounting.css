@@ -439,6 +439,15 @@ th.acc-num {
   min-width: 0;
 }
 
+.acc-staff-ledger-picker {
+  width: min(320px, 100%);
+}
+
+.acc-staff-ledger-picker .acc-entry-party {
+  padding-left: 0;
+  border-left: 0;
+}
+
 .acc-party-results {
   position: absolute;
   z-index: var(--z-dropdown);

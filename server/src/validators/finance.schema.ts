@@ -70,17 +70,22 @@ export const paySettlementSchema = z.object({
   remark: z.string().trim().max(500).optional(),
 });
 
+const carrierItemsSchema = z
+  .array(z.object({ codCollectionId: uuidSchema, carrierCharge: z.number().min(0, "Carrier charge cannot be negative") }))
+  .min(1, "Select at least one order");
+
 export const createCarrierSettlementSchema = z.object({
   carrier: z.enum(["ncm", "upaya"]),
   settlementDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "settlementDate must be YYYY-MM-DD")
     .refine((v) => !Number.isNaN(Date.parse(`${v}T00:00:00.000Z`)), "settlementDate is not a real date"),
-  items: z
-    .array(z.object({ codCollectionId: uuidSchema, carrierCharge: z.number().min(0, "Carrier charge cannot be negative") }))
-    .min(1, "Select at least one order"),
+  items: carrierItemsSchema,
   remark: z.string().trim().max(500).optional(),
 });
+
+/** Edit an unpaid 3PL statement: its full order list, each with its charge. */
+export const updateCarrierSettlementSchema = z.object({ items: carrierItemsSchema });
 
 // The service enforces the amount rules that need the statement in hand: the
 // total can be anything from a part payment up to whatever is still

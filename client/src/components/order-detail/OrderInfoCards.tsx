@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowRight, Banknote, Truck, Package, Pencil, Check, X, Lock } from 'lucide-react';
 import SearchableSelect, { type SearchableSelectOption } from '../SearchableSelect';
 import Button from '../Button';
-import { getLocations } from '../../services/users.service';
+import { getLocations } from '../../queries/lookups';
 import type { UpdateOrderInput } from '../../services/orders.service';
 import '../Modal.css';
 

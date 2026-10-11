@@ -857,6 +857,11 @@ model settlements {
   // handed back on this statement so they are not deducted a second time.
   // Already included in payable_amount. Vendor statements only.
   vendor_credit_applied                Decimal                   @default(0) @db.Decimal(12, 2)
+  // VAT already inside each delivery charge, as a percentage, captured when the
+  // statement is created so a later rate change cannot restate it. Shown as a
+  // split on the staff screens; payable_amount is unaffected. Null on statements
+  // created before VAT was shown, and on rider statements.
+  vat_rate                             Decimal?                  @db.Decimal(5, 2)
   settlement_date                      DateTime?                 @db.Date
   status                               settlement_status         @default(pending)
   remark                               String?
@@ -1080,6 +1085,7 @@ model users {
   accounting_periods                                     accounting_periods[]
   expenses_created                                       expenses[]                @relation("expenses_created_by")
   expenses_voided                                        expenses[]                @relation("expenses_voided_by")
+  user_daily_activity                                    user_daily_activity[]
   user_roles                                             user_roles[]
   vendor_staff                                           vendor_staff?
   vendors                                                vendors?                  @relation("vendor_owner")
@@ -2063,4 +2069,32 @@ model vendor_staff {
   users       users?    @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([vendor_id], map: "idx_vendor_staff_vendor_id")
+}
+
+// One row per person per Nepal calendar day with a logged-in request.
+// Written by services/analytics/track.ts, read by pm-stats.
+model user_daily_activity {
+  day           DateTime @db.Date
+  user_id       String   @db.Uuid
+  user_group    String
+  first_seen_at DateTime @default(now()) @db.Timestamptz(6)
+  last_seen_at  DateTime @default(now()) @db.Timestamptz(6)
+  app_platform  String?
+  app_version   String?
+  users         users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([day, user_id])
+  @@index([last_seen_at(sort: Desc)], map: "idx_user_daily_activity_last_seen")
+}
+
+// Lasting copy of pm-stats request counts kept in Redis (one row per Redis
+// hash field). Written by services/analytics/persist.ts, read by pm-stats.
+model analytics_counters {
+  bucket     String
+  field      String
+  count      BigInt
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@id([bucket, field])
+  @@index([updated_at], map: "idx_analytics_counters_updated_at")
 }

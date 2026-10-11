@@ -95,6 +95,27 @@ export async function getUnsettledCarrierOrders(actor: Actor, carrierParam: unkn
 
 // ── Create ──────────────────────────────────────────────────────────────────
 
+/** A statement's item rows: each order's COD, the carrier's charge on it, and what is left. */
+function carrierItems(
+  collections: Array<{ id: string; collected_amount: Prisma.Decimal }>,
+  charges: Map<string, number>,
+) {
+  return collections.map((c) => {
+    const collected = money(c.collected_amount);
+    const charge = charges.get(c.id)!;
+    if (!(charge >= 0 && charge <= collected)) {
+      throw new AppError(400, "Each carrier charge must be between 0 and the COD collected on that order");
+    }
+    return { cod_collection_id: c.id, collected_amount: collected, carrier_charge: charge, net_amount: round2(collected - charge) };
+  });
+}
+
+function carrierTotals(items: ReturnType<typeof carrierItems>) {
+  const gross = round2(items.reduce((sum, i) => sum + i.collected_amount, 0));
+  const chargeTotal = round2(items.reduce((sum, i) => sum + i.carrier_charge, 0));
+  return { gross, chargeTotal, net: round2(gross - chargeTotal) };
+}
+
 export interface CreateCarrierSettlementInput {
   carrier: string;
   settlementDate: string;
@@ -117,16 +138,8 @@ export async function createCarrierSettlement(actor: Actor, input: CreateCarrier
       throw new AppError(409, `Some selected orders were not delivered by ${carrier.toUpperCase()} or are already settled or on a statement`);
     }
 
-    const items = collections.map((c) => {
-      const collected = money(c.collected_amount);
-      const charge = charges.get(c.id)!;
-      if (!(charge >= 0 && charge <= collected)) {
-        throw new AppError(400, "Each carrier charge must be between 0 and the COD collected on that order");
-      }
-      return { cod_collection_id: c.id, collected_amount: collected, carrier_charge: charge, net_amount: round2(collected - charge) };
-    });
-    const gross = round2(items.reduce((sum, i) => sum + i.collected_amount, 0));
-    const chargeTotal = round2(items.reduce((sum, i) => sum + i.carrier_charge, 0));
+    const items = carrierItems(collections, charges);
+    const { gross, chargeTotal, net } = carrierTotals(items);
     const statementNo = `CRS-${input.settlementDate.replace(/-/g, "")}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
     const settlement = await tx.carrier_settlements.create({
@@ -136,7 +149,7 @@ export async function createCarrierSettlement(actor: Actor, input: CreateCarrier
         settlement_date: new Date(`${input.settlementDate}T00:00:00.000Z`),
         gross_cod: gross,
         carrier_charges: chargeTotal,
-        net_receivable: round2(gross - chargeTotal),
+        net_receivable: net,
         remark: input.remark?.trim() || null,
         created_by: actor.id,
         items: { create: items },
@@ -391,6 +404,80 @@ export async function cancelCarrierSettlement(actor: Actor, id: string, remark: 
     await syncCarrierSettlementPostings(tx, [id], { actorId: actor.id, reason: "carrier statement cancelled" });
     return { id, statementNo: updated.statement_no, status: updated.status };
   }, TX_OPTIONS);
+}
+
+// ── Edit ────────────────────────────────────────────────────────────────────
+
+/**
+ * Replaces an unpaid statement's orders and their charges: keep, drop, add any
+ * order still eligible for this carrier, and correct a charge. Same gate as
+ * cancelling - once money has moved, a statement is fixed.
+ */
+export async function updateCarrierSettlement(
+  actor: Actor,
+  id: string,
+  input: { items: Array<{ codCollectionId: string; carrierCharge: number }> },
+) {
+  await assertHeadOfficeOnly(actor, HEAD_OFFICE_ONLY);
+  const charges = new Map(input.items.map((item) => [item.codCollectionId, round2(item.carrierCharge)]));
+  if (charges.size === 0) throw new AppError(400, "A statement must include at least one order");
+
+  const run = () => prisma.$transaction(async (tx) => {
+    await lockCarrierSettlement(tx, id);
+    const s = await tx.carrier_settlements.findUniqueOrThrow({
+      where: { id },
+      include: { items: { select: { cod_collection_id: true, carrier_charge: true } } },
+    });
+    if (s.status !== "pending" || money(s.paid_amount) > 0) {
+      throw new AppError(409, "Only a statement with no payment recorded can be edited");
+    }
+    const carrier = assertCarrier(s.carrier_code);
+
+    // Its own orders stay eligible; anything else must be one this carrier
+    // could start a new statement with.
+    const collections = await tx.cod_collections.findMany({
+      where: {
+        id: { in: [...charges.keys()] },
+        OR: [unsettledWhere(carrier), { carrier_settlement_item: { is: { settlement_id: id } } }],
+      },
+      select: { id: true, collected_amount: true },
+    });
+    if (collections.length !== charges.size) {
+      throw new AppError(409, `Some selected orders were not delivered by ${carrier.toUpperCase()} or are already on another statement`);
+    }
+
+    const items = carrierItems(collections, charges);
+    const { gross, chargeTotal, net } = carrierTotals(items);
+    await tx.carrier_settlement_items.deleteMany({ where: { settlement_id: id } });
+    await tx.carrier_settlement_items.createMany({ data: items.map((item) => ({ ...item, settlement_id: id })) });
+    const updated = await tx.carrier_settlements.update({
+      where: { id },
+      data: { gross_cod: gross, carrier_charges: chargeTotal, net_receivable: net },
+    });
+    await tx.audit_logs.create({ data: {
+      actor_id: actor.id,
+      entity_type: "carrier_settlement",
+      entity_id: id,
+      action: "EDIT_CARRIER_SETTLEMENT",
+      old_data: {
+        items: s.items.map((i) => ({ codCollectionId: i.cod_collection_id, carrierCharge: money(i.carrier_charge) })),
+        grossCod: money(s.gross_cod),
+        carrierCharges: money(s.carrier_charges),
+      },
+      new_data: { items: input.items, grossCod: gross, carrierCharges: chargeTotal },
+    } });
+    await syncCarrierSettlementPostings(tx, [id], { actorId: actor.id, reason: "carrier statement edited" });
+    return { id, statementNo: updated.statement_no, grossCod: gross, carrierCharges: chargeTotal, netReceivable: net };
+  }, TX_OPTIONS);
+
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new AppError(409, "Some selected orders were just added to another statement. Refresh and try again.");
+    }
+    throw error;
+  }
 }
 
 // ── Attached files ──────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, attachSettlementDocuments, deleteSettlementDocument, updateSettlement, revertSettlement, cancelSettlement, getSettlementDetail, getSettlementDocumentPath } from "../services/finance.service";
+import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, attachSettlementDocuments, deleteSettlementDocument, updateSettlement, revertSettlement, cancelSettlement, getSettlementDetail, getSettlementBillingPayments, getSettlementDocumentPath } from "../services/finance.service";
 import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput, UpdateSettlementInput, RevertSettlementInput, CancelSettlementInput } from "../types/finance.type";
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
 import { sendEncryptedFile } from "../lib/serveEncryptedDocument";
@@ -496,6 +496,27 @@ export async function getUnsettledOrdersController(req: Request, res: Response) 
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load unsettled orders",
+    });
+  }
+}
+
+export async function getSettlementBillingPaymentsController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (typeof id !== "string" || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ success: false, message: "Invalid settlement id" });
+    }
+
+    const data = await getSettlementBillingPayments({ id: req.user.id, roles: req.user.roles }, id);
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load Billing payments",
     });
   }
 }

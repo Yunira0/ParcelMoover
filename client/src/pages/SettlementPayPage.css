@@ -152,6 +152,106 @@
   padding: var(--space-3) var(--space-4);
 }
 
+/* Billing overlap: the vendor's transfer may already be in Billing. Same
+   warning tone as .mpp-warning, laid out as a short checklist because staff
+   have to compare amounts and then confirm. */
+.mpp-billing {
+  background: var(--color-warning-surface);
+  border: 1px solid var(--color-background-warning-default);
+  border-radius: var(--border-radius-default);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.mpp-billing-icon {
+  color: var(--color-background-warning-default);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.mpp-billing-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.mpp-billing-body h2 {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+  line-height: var(--line-height-sm);
+  margin: 0;
+}
+
+.mpp-billing-body p {
+  color: var(--color-text-default);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  margin: 0;
+}
+
+.mpp-billing-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mpp-billing-list li {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-sm);
+  gap: var(--space-2);
+}
+
+.mpp-billing-amount {
+  color: var(--color-text-default);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.mpp-billing-meta {
+  color: var(--color-text-caption);
+}
+
+.mpp-billing-tag {
+  border: 1px solid currentColor;
+  border-radius: var(--border-radius-full);
+  color: var(--color-background-warning-default);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  padding: 0 var(--space-2);
+}
+
+.mpp-billing-link {
+  align-self: flex-start;
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semi-bold);
+}
+
+.mpp-billing-confirm {
+  align-items: center;
+  color: var(--color-text-default);
+  cursor: pointer;
+  display: flex;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  gap: var(--space-2);
+}
+
+.mpp-billing-confirm input {
+  accent-color: var(--color-primary);
+  height: 16px;
+  margin: 0;
+  width: 16px;
+}
+
 /* Payment-recorded confirmation, step 2 */
 .mpp-confirm {
   align-items: center;

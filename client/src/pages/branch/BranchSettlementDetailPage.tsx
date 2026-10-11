@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Ban, CreditCard, ExternalLink, FileText, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, CreditCard, ExternalLink, FileText, Pencil, Plus, Trash2 } from 'lucide-react';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import SegmentedTabs from '../../components/SegmentedTabs';
@@ -9,6 +9,7 @@ import Table from '../../components/Table';
 import { Banner } from '../accounting/ui';
 import { hasAdminPermission, hasAnyRole, isBranchWorkspaceUser } from '../../utils/auth';
 import RevertSettlementModal from '../../components/RevertSettlementModal';
+import BranchEditSettlementModal from './BranchEditSettlementModal';
 import {
   cancelBranchSettlement,
   getBranchSettlement,
@@ -41,6 +42,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   // Same gate as cancelling a vendor statement; the server also limits it to head office.
   const canCancel = canRecordOfficePayment || (hasAdminPermission('EDIT_SETTLEMENTS') && !isBranchWorkspaceUser());
   const [showCancel, setShowCancel] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [detail, setDetail] = useState<BranchSettlementDetail | null>(null);
   const [methods, setMethods] = useState<PaymentMethodOption[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([{ method: '', amount: '' }]);
@@ -126,7 +128,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   return (
     <div className="scp-page bsd-page">
       <button type="button" className="scp-back" onClick={() => navigate('/branches/settlement')}><ArrowLeft size={15} />Branch COD</button>
-      <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p><strong>{detail.fromBranch.name}</strong> pays collected COD to master branch <strong>{detail.toBranch.name}</strong>.</p></div><div className="bsd-heading-actions">{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="danger" size="sm" onClick={() => setShowCancel(true)}><Ban size={15} /> Cancel statement</Button>}<StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div></div>
+      <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p><strong>{detail.fromBranch.name}</strong> pays collected COD to master branch <strong>{detail.toBranch.name}</strong>.</p></div><div className="bsd-heading-actions">{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="secondary" size="sm" onClick={() => setShowEdit(true)}><Pencil size={15} /> Edit statement</Button>}{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="danger" size="sm" onClick={() => setShowCancel(true)}><Ban size={15} /> Cancel statement</Button>}<StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div></div>
       {notice && <Banner tone="success">{notice}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
 
@@ -214,6 +216,16 @@ const BranchSettlementDetailPage: React.FC = () => {
           onClose={() => setShowCancel(false)}
           onSuccess={() => {
             setNotice(`${detail.statementNo} cancelled. Its orders can go on a new statement.`);
+            load();
+          }}
+        />
+      )}
+      {showEdit && (
+        <BranchEditSettlementModal
+          detail={detail}
+          onClose={() => setShowEdit(false)}
+          onSuccess={() => {
+            setNotice(`${detail.statementNo} updated.`);
             load();
           }}
         />

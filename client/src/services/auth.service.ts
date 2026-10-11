@@ -6,9 +6,23 @@ export const login = async (credentials: LoginCredentials)=> {
   return response.data;
 };
 
+const SESSION_ENDED_EVENT = 'parcelmoover:session-ended';
+
+// Fired on every logout, whether or not the server call succeeds - callers
+// clear the local session either way, so anything cached for this user (the
+// query cache) has to go with it before the next person signs in.
+export const subscribeToSessionEnded = (handler: () => void) => {
+  window.addEventListener(SESSION_ENDED_EVENT, handler);
+  return () => window.removeEventListener(SESSION_ENDED_EVENT, handler);
+};
+
 export const logout = async () => {
-  const response = await api.post('/auth/logout');
-  return response.data;
+  try {
+    const response = await api.post('/auth/logout');
+    return response.data;
+  } finally {
+    window.dispatchEvent(new Event(SESSION_ENDED_EVENT));
+  }
 };
 
 export const getCurrentUser = async () => {

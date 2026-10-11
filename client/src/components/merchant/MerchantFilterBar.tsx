@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import SearchableSelectAsync from '../SearchableSelectAsync';
 import NepaliDatePicker from '../NepaliDatePicker';
 import Button from '../Button';
-import { searchVendors } from '../../services/users.service';
+import { searchVendors } from '../../queries/lookups';
 import './MerchantFilterBar.css';
 
 interface MerchantFilterBarProps {

@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Check, CheckCircle2, X } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { AlertTriangle, ArrowLeft, Check, CheckCircle2, X } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import AttachSettlementDocumentsCard from '../components/AttachSettlementDocumentsCard';
 import {
+  getSettlementBillingPayments,
   getSettlementDetail,
   paySettlement,
+  type SettlementBillingPayments,
   type SettlementDetail,
 } from '../services/finance.service';
 import {
@@ -16,6 +18,7 @@ import {
   type PaymentMethodOption,
 } from '../services/paymentMethods.service';
 import { hasAnyRole } from '../utils/auth';
+import { formatDate } from '../utils/format';
 import './SettlementPayPage.css';
 
 type PaymentRow = { method: string; amount: string };
@@ -91,6 +94,11 @@ const SettlementPayPage: React.FC = () => {
     remaining: number;
   } | null>(null);
   const [amountMode, setAmountMode] = useState<AmountMode>('full');
+  // Billing and statement payments are not linked, so a vendor's transfer that
+  // is already in Billing can be recorded here a second time. Staff must say
+  // the money is separate before recording it.
+  const [billing, setBilling] = useState<SettlementBillingPayments | null>(null);
+  const [confirmedSeparate, setConfirmedSeparate] = useState(false);
 
   // Super-admin inline management of the method list.
   const [showManage, setShowManage] = useState(false);
@@ -126,6 +134,12 @@ const SettlementPayPage: React.FC = () => {
   // Vendors only. Bank details are here so whoever makes the transfer can read
   // off where to send it — on a rider statement the money is coming *in* over
   // the counter, so the rider's account is not part of the transaction.
+  // Only when money comes in from the vendor: Billing payments are vendor to
+  // office, so they can only duplicate a payment received from the vendor.
+  const billingPending = billing?.pendingPayments ?? [];
+  const billingCredit = billing?.availableCredit ?? 0;
+  const hasBillingOverlap =
+    detail?.payeeType === 'vendor' && vendorOwesOffice && (billingPending.length > 0 || billingCredit > 0);
   const hasBankDetails =
     detail?.payeeType === 'vendor' &&
     Boolean(detail.bankName || detail.bankAccountNo || detail.bankAccountHolder);
@@ -136,6 +150,14 @@ const SettlementPayPage: React.FC = () => {
       .then((data) => {
         if (!active) return;
         setDetail(data);
+        // Best effort: the warning is a guard, not a gate on loading the page.
+        if (data.payeeType === 'vendor' && data.payableAmount < 0) {
+          getSettlementBillingPayments(id)
+            .then((result) => {
+              if (active) setBilling(result);
+            })
+            .catch(() => {});
+        }
         // Prefill the single row with what's still owed, as the modal did with
         // the full amount - on a statement already part paid, the balance is
         // the figure staff are about to hand over.
@@ -250,6 +272,10 @@ const SettlementPayPage: React.FC = () => {
       setError(
         `Payment total is more than the ${money(outstanding)} outstanding on this statement.`,
       );
+      return;
+    }
+    if (hasBillingOverlap && !confirmedSeparate) {
+      setError('Confirm this is a separate payment from the Billing payments listed above.');
       return;
     }
     if (amountMode === 'full' && !clearsStatement) {
@@ -406,6 +432,56 @@ const SettlementPayPage: React.FC = () => {
             This vendor owes the office Rs. {expectedTotal.toLocaleString()} — the delivery charges
             exceeded the COD collected. Record the amount received <strong>from the vendor</strong> below.
           </div>
+        )}
+
+        {hasBillingOverlap && (
+          <section className="mpp-billing" aria-labelledby="mpp-billing-title">
+            <AlertTriangle size={16} className="mpp-billing-icon" aria-hidden="true" />
+            <div className="mpp-billing-body">
+              <h2 id="mpp-billing-title">This vendor may have paid through Billing already</h2>
+              <ul className="mpp-billing-list">
+                {billingPending.map((p) => (
+                  <li key={p.id}>
+                    <span className="mpp-billing-amount">{money(p.amount)}</span>
+                    <span className="mpp-billing-meta">
+                      {p.method}
+                      {p.reference ? ` · ref ${p.reference}` : ''} · submitted {formatDate(p.submittedAt)}
+                    </span>
+                    <span className="mpp-billing-tag">Awaiting review</span>
+                  </li>
+                ))}
+                {billingCredit > 0 && (
+                  <li>
+                    <span className="mpp-billing-amount">{money(billingCredit)}</span>
+                    <span className="mpp-billing-meta">Verified, not applied to any statement yet</span>
+                    <span className="mpp-billing-tag">Unapplied credit</span>
+                  </li>
+                )}
+              </ul>
+              <p>
+                If the money you're recording is one of these, don't record it here or it will be counted
+                twice.
+                {billingPending.length > 0 &&
+                  ' Verify the pending payment in Billing instead. That pays this statement down automatically.'}
+                {billingCredit > 0 &&
+                  " Verified credit isn't applied to an open statement on its own. Cancel and re-create this statement to apply it."}
+              </p>
+              <Link to="/billing" className="mpp-billing-link">
+                Open Billing
+              </Link>
+              <label className="mpp-billing-confirm">
+                <input
+                  type="checkbox"
+                  checked={confirmedSeparate}
+                  onChange={(event) => {
+                    setConfirmedSeparate(event.target.checked);
+                    setError('');
+                  }}
+                />
+                This is a separate payment, not one listed above
+              </label>
+            </div>
+          </section>
         )}
 
         <form className="mpp-ledger" onSubmit={handleSubmit} noValidate>

@@ -2,9 +2,14 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import pkg from './package.json' with { type: 'json' }
 
 export default defineConfig({
   base: './',
+  define: {
+    // Shown on the Profile page; the APK's versionName comes from the same field.
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   server: {
     port: 5200,
     strictPort: true,
@@ -29,6 +34,10 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Registered from main.tsx instead, and only in the browser: inside the
+      // Android APK the assets are already on-device, and a service worker
+      // would keep serving the previous version's bundle after an in-app update.
+      injectRegister: null,
       includeAssets: ['icons/*.png'],
       manifest: {
         name: 'ParcelMoover Rider',

@@ -27,7 +27,7 @@ import {
   type RunSheet,
   type RunSheetParcel,
 } from '../services/orders.service';
-import { getAllRiders } from '../services/users.service';
+import { getAllRiders } from '../queries/lookups';
 import { formatCurrency } from '../utils/format';
 import { toBsDate, toNptTime } from '../utils/nepaliDate';
 import { printRunSheet } from '../utils/printRunSheet';

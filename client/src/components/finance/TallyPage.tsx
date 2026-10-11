@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
+import { keyLabel } from './tallyKeys';
 import './tally.css';
+import './tallyVoucher.css';
 
 /**
  * One action in the right-hand panel.
@@ -33,7 +35,19 @@ interface TallyPageProps {
   filters?: React.ReactNode;
   error?: unknown;
   loading?: boolean;
+  /** Repeat the actions as a menu line under the sheet, as Tally's reports do. */
+  menu?: boolean;
   children: React.ReactNode;
+}
+
+/**
+ * The key as an action names it: "F5", "Escape", or a combination such as
+ * "Alt+P" / "Ctrl+A". Letters come from `code`, so Alt+P is still P on a
+ * layout where Alt changes the character typed.
+ */
+function comboOf(event: KeyboardEvent): string {
+  const base = /^Key[A-Z]$/.test(event.code) ? event.code.slice(3) : event.key === 'Enter' ? 'Enter' : event.key;
+  return `${event.ctrlKey || event.metaKey ? 'Ctrl+' : ''}${event.altKey ? 'Alt+' : ''}${event.shiftKey ? 'Shift+' : ''}${base}`;
 }
 
 /** Pulls a readable message out of whatever the caller caught. */
@@ -61,25 +75,40 @@ const TallyPage: React.FC<TallyPageProps> = ({
   filters,
   error,
   loading = false,
+  menu = false,
   children,
 }) => {
   useEffect(() => {
     if (actions.length === 0) return undefined;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      // Never steal a key from someone who is typing. Tally has no text fields
-      // competing for F-keys; a web page does.
-      const target = event.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      // A dialog on top owns the keyboard: Esc closes it, not the screen.
+      if (document.querySelector('.modal-overlay')) return;
+      const combo = comboOf(event);
+      const action = actions.find((candidate) => candidate.key === combo);
+      // Anything this screen doesn't claim — Ctrl+F5, Ctrl+C — stays the
+      // browser's.
+      if (!action) return;
 
-      const action = actions.find((candidate) => candidate.key === event.key);
-      if (!action || action.disabled) return;
+      // Function keys and Ctrl/Alt combinations fire even from inside a field:
+      // they never type anything, and on a voucher the cursor is always in a
+      // field. A bare key (Escape) still belongs to whoever is typing — it
+      // closes an open dropdown before it quits the screen.
+      const isFunctionKey = /^F([1-9]|1[0-2])$/.test(event.key);
+      const isCombo = event.ctrlKey || event.altKey || event.metaKey;
+      const target = event.target as HTMLElement | null;
+      const typing = target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable);
+      if (typing && !isFunctionKey && !isCombo) return;
+      // Claimed even when disabled, so a greyed-out F5 doesn't fall through
+      // to the browser and reload the half-filled voucher.
       event.preventDefault();
-      action.onSelect();
+      event.stopPropagation();
+      if (!action.disabled) action.onSelect();
     };
 
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    // Capture phase, so a dropdown that stops propagation can't swallow it.
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [actions]);
 
   const message = errorText(error);
@@ -105,6 +134,22 @@ const TallyPage: React.FC<TallyPageProps> = ({
         {message && <p className="tly-note tly-note-danger">{message}</p>}
 
         {loading ? <p className="tly-note">Loading…</p> : children}
+
+        {menu && actions.length > 0 && (
+          <nav className="jv-menu tly-menu" aria-label="Menu">
+            {actions.map((action) => (
+              <button
+                key={action.key}
+                type="button"
+                className={action.primary ? 'jv-menu-item is-primary' : 'jv-menu-item'}
+                onClick={action.onSelect}
+                disabled={action.disabled}
+              >
+                {action.label}
+              </button>
+            ))}
+          </nav>
+        )}
       </div>
 
       {actions.length > 0 && (
@@ -118,7 +163,7 @@ const TallyPage: React.FC<TallyPageProps> = ({
               onClick={action.onSelect}
               disabled={action.disabled}
             >
-              <kbd>{action.key}</kbd>
+              <kbd>{keyLabel(action.key)}</kbd>
               <span>{action.label}</span>
             </button>
           ))}

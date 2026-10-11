@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React from 'react';
 import DashboardHeader from '../../components/DashboardHeader';
 import SalesQuickActions from '../../components/sales/SalesQuickActions';
 import SalesTicketsPanel from '../../components/sales/SalesTicketsPanel';
@@ -7,12 +7,10 @@ import VendorOverviewCards from '../../components/vendor/VendorOverviewCards';
 import OrdersTrendDonut from '../../components/vendor/OrdersTrendDonut';
 import VendorOrdersTrendChart from '../../components/vendor/VendorOrdersTrendChart';
 import VendorTodayPanel from '../../components/vendor/VendorTodayPanel';
-import { EMPTY_VALLEY_SPLIT, getDashboardSummary, type DashboardSummary } from '../../services/orders.service';
-import { subscribeToRemarkStatusChanged } from '../../services/remarks.service';
+import { EMPTY_VALLEY_SPLIT, type DashboardSummary } from '../../services/orders.service';
 import { getCurrentUser } from '../../utils/auth';
+import { useDashboardSummary } from '../../queries/dashboard';
 import './SalesDashboard.css';
-
-const REFRESH_INTERVAL_MS = 15_000;
 
 const EMPTY_SUMMARY: DashboardSummary = {
   overview: {
@@ -92,44 +90,13 @@ const EMPTY_SUMMARY: DashboardSummary = {
 // vendors this sales rep owns (vendors.sales_user_id), so no separate
 // endpoint or client-side filtering is needed here.
 const SalesDashboard: React.FC = () => {
-  const [summary, setSummary] = useState<DashboardSummary>(EMPTY_SUMMARY);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  const loadSummary = useCallback(async () => {
-    try {
-      const res = await getDashboardSummary();
-      if (res?.success && res.data) {
-        setSummary(res.data);
-        setError('');
-      } else {
-        setError('Dashboard data is unavailable.');
-      }
-    } catch {
-      setError('Dashboard data is unavailable.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadSummary();
-    const intervalId = window.setInterval(() => loadSummary(), REFRESH_INTERVAL_MS);
-    const handleVisibilityChange = () => {
-      if (!document.hidden) loadSummary();
-    };
-    // Closing/reopening a remark elsewhere in this tab has to land here at
-    // once - otherwise Today's activity keeps showing the stale count until
-    // the next poll while the nav badge (same event) has already dropped.
-    const unsubscribeRemarks = subscribeToRemarkStatusChanged(loadSummary);
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      window.clearInterval(intervalId);
-      unsubscribeRemarks();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [loadSummary]);
+  const summaryQuery = useDashboardSummary();
+  const summary: DashboardSummary =
+    summaryQuery.data?.success && summaryQuery.data.data ? summaryQuery.data.data : EMPTY_SUMMARY;
+  const loading = summaryQuery.isPending;
+  const error = summaryQuery.isError || (summaryQuery.data && !summaryQuery.data.success)
+    ? 'Dashboard data is unavailable.'
+    : '';
 
   const { overview, today, weeklyTrend } = summary;
 
