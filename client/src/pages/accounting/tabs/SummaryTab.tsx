@@ -207,14 +207,13 @@ const SummaryTab: React.FC = () => {
               columns={[
                 {
                   header: 'Entry',
-                  width: '130px',
                   accessor: (entry) => (
                     <Link className="acc-entry-no acc-link" to={`/accounting/transactions/journal?search=${entry.entryNo}`}>
                       {entry.entryNo}
                     </Link>
                   ),
                 },
-                { header: 'Date (BS)', width: '110px', accessor: 'bsDate' },
+                { header: 'Date (BS)', accessor: 'bsDate' },
                 {
                   header: 'Description',
                   accessor: (entry) => (
@@ -228,7 +227,6 @@ const SummaryTab: React.FC = () => {
                 },
                 {
                   header: 'Amount',
-                  width: '130px',
                   className: 'acc-num',
                   accessor: (entry) => <span className="acc-num">{money(entry.totalAmount)}</span>,
                 },

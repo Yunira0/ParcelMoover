@@ -121,10 +121,9 @@ const VendorCodSettlementRequests: React.FC = () => {
   };
 
   const columns = [
-    { header: 'Request', accessor: (r: CodSettlementRequest) => r.requestNo, width: '170px' },
+    { header: 'Request', accessor: (r: CodSettlementRequest) => r.requestNo },
     {
       header: 'Status',
-      width: '130px',
       accessor: (r: CodSettlementRequest) => (
         <StatusChip variant="solid" tone={STATUS_TONE[r.status]}>
           {COD_REQUEST_STATUS_LABELS[r.status]}
@@ -133,7 +132,6 @@ const VendorCodSettlementRequests: React.FC = () => {
     },
     {
       header: 'Account',
-      width: '220px',
       accessor: (r: CodSettlementRequest) => (
         <>
           <span className="vcr-line">{r.bankName}</span>
@@ -143,7 +141,6 @@ const VendorCodSettlementRequests: React.FC = () => {
     },
     {
       header: 'Raised',
-      width: '130px',
       accessor: (r: CodSettlementRequest) => formatDate(r.createdAt),
     },
     {
@@ -255,7 +252,6 @@ const VendorCodSettlementRequests: React.FC = () => {
           loading={loading}
           loadingMessage="Loading your requests…"
           emptyMessage="You have not raised a settlement request yet."
-          minWidth="880px"
         />
       </section>
     </div>

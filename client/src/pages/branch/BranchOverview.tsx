@@ -156,7 +156,7 @@ const BranchOverview: React.FC = () => {
   };
 
   const columns = [
-    { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}`, width: '70px' },
+    { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}` },
     {
       header: 'TRACKING ID',
       accessor: (o: Order) => (
@@ -164,25 +164,22 @@ const BranchOverview: React.FC = () => {
           {o.trackingId}
         </Link>
       ),
-      width: '170px',
       className: 'tracking-cell',
     },
-    { header: 'CREATED', accessor: (o: Order) => toBsDate(o.createdAt) || '-', width: '110px' },
-    { header: 'ORIGIN', accessor: (o: Order) => (o.origin ? hubName(o.origin) : '-'), width: '110px' },
-    { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-', width: '130px' },
+    { header: 'CREATED', accessor: (o: Order) => toBsDate(o.createdAt) || '-' },
+    { header: 'ORIGIN', accessor: (o: Order) => (o.origin ? hubName(o.origin) : '-') },
+    { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-' },
     {
       header: 'SENDER',
       accessor: (o: Order) => (
         <div className="party-cell"><span>{o.senderName}</span><small>{o.senderPhone}</small></div>
       ),
-      width: '170px',
     },
     {
       header: 'RECEIVER',
       accessor: (o: Order) => (
         <div className="party-cell"><span>{o.receiverName}</span><small><ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} /></small></div>
       ),
-      width: '150px',
     },
     {
       header: 'FINANCE',
@@ -192,9 +189,8 @@ const BranchOverview: React.FC = () => {
           <span>Collected: {formatMoneyCompact(o.collectedAmount)}</span>
         </div>
       ),
-      width: '140px',
     },
-    { header: 'WEIGHT', accessor: (o: Order) => (o.weightKg ? `${o.weightKg} Kg` : '-'), width: '90px' },
+    { header: 'WEIGHT', accessor: (o: Order) => (o.weightKg ? `${o.weightKg} Kg` : '-') },
     {
       header: 'STATUS',
       accessor: (o: Order) => (
@@ -203,7 +199,6 @@ const BranchOverview: React.FC = () => {
           {o.carrierCode && <span className="om-carrier-chip">{CARRIER_LABELS[o.carrierCode]}</span>}
         </span>
       ),
-      width: '150px',
     },
   ];
 
@@ -298,7 +293,6 @@ const BranchOverview: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders for this branch pair and range."
-        minWidth="1450px"
         tableClassName="orders-table merchant-overview-table"
       />
 

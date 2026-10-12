@@ -874,14 +874,12 @@ const OrderManagement: React.FC = () => {
     {
       header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '70px',
     },
     {
       header: sortableHeader('TRACKING ID', 'trackingId'),
       accessor: (order: Order) => (
         <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
       ),
-      width: '180px',
       className: 'tracking-cell',
     },
     {
@@ -889,14 +887,12 @@ const OrderManagement: React.FC = () => {
       // date the "Order Created Date" filter and the Excel export show.
       header: sortableHeader('CREATED DATE', 'createdAt'),
       accessor: (order: Order) => toBsDate(order.createdAt) || '-',
-      width: '120px',
       className: 'created-cell',
     },
-    { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-'), width: '100px' },
+    { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-') },
     {
       header: 'DESTINATION',
       accessor: (order: Order) => <span title={order.destination || '-'}>{order.destination || '-'}</span>,
-      width: '130px',
       className: 'destination-cell',
     },
     {
@@ -907,7 +903,6 @@ const OrderManagement: React.FC = () => {
           <small>{order.senderPhone}</small>
         </div>
       ),
-      width: '180px',
     },
     {
       header: 'RECEIVER',
@@ -917,7 +912,6 @@ const OrderManagement: React.FC = () => {
           <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
-      width: '140px',
     },
     {
       header: sortableHeader('FINANCE', 'codAmount'),
@@ -928,9 +922,8 @@ const OrderManagement: React.FC = () => {
           <span>Collected: {formatMoney(order.collectedAmount)}</span>
         </div>
       ),
-      width: '130px',
     },
-    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '120px' },
+    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-') },
     {
       header: sortableHeader('STATUS', 'status'),
       accessor: (order: Order) => (
@@ -941,9 +934,8 @@ const OrderManagement: React.FC = () => {
           {order.carrierCode && <span className="om-carrier-chip">{CARRIER_LABELS[order.carrierCode]}</span>}
         </span>
       ),
-      width: '160px',
     },
-    { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '140px' },
+    { header: 'RIDER', accessor: (order: Order) => order.riderName || '-' },
     { header: 'REMARKS', accessor: (order: Order) => readOnlyRemarks ? (
       <span title={order.remarks || undefined}>{order.remarks || '-'}</span>
     ) : (
@@ -955,7 +947,7 @@ const OrderManagement: React.FC = () => {
       >
         {order.remarks || 'Add remark'}
       </button>
-    ), width: '160px', className: 'remarks-cell' },
+    ), className: 'remarks-cell' },
     {
       header: 'LAST UPDATED BY',
       accessor: (order: Order) => (
@@ -964,7 +956,6 @@ const OrderManagement: React.FC = () => {
           <span>{toBsDateTime(order.lastUpdatedAt) || 'date'}</span>
         </div>
       ),
-      width: '160px',
     },
     {
       header: 'ACTION',
@@ -1050,7 +1041,6 @@ const OrderManagement: React.FC = () => {
           )}
         </div>
       ),
-      width: '124px',
       className: 'actions-column',
     },
   ];
@@ -1275,7 +1265,6 @@ const OrderManagement: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
-        minWidth="2115px"
         tableClassName="orders-table"
       />
 

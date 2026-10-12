@@ -163,7 +163,7 @@ const VendorManagement: React.FC = () => {
   }, [searchQuery, activeStatus, filter]);
 
   const columns = [
-    { header: 'SN', accessor: 'sn' as keyof VendorUser, width: '50px' },
+    { header: 'SN', accessor: 'sn' as keyof VendorUser },
     // Vendor name leads - it's the company staff actually deal with day to
     // day. Owner name stays alongside it rather than folded into a subtext,
     // since it's still a real column vendors are searched and sorted by.
@@ -228,7 +228,6 @@ const VendorManagement: React.FC = () => {
               View
             </Button>
           ),
-          width: '120px',
         }]
       : []),
     ...(canEdit
@@ -271,7 +270,6 @@ const VendorManagement: React.FC = () => {
               </TableRowActions>
             );
           },
-          width: '220px',
         }]
       : []),
   ];

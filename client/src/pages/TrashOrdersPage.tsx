@@ -109,7 +109,6 @@ const TrashOrdersPage: React.FC = () => {
     {
       header: 'ORDER',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '100px',
     },
     {
       header: 'TRACKING ID',
@@ -118,7 +117,6 @@ const TrashOrdersPage: React.FC = () => {
           {order.trackingId}
         </Link>
       ),
-      width: '180px',
       className: 'trash-tracking-cell',
     },
     {
@@ -149,13 +147,11 @@ const TrashOrdersPage: React.FC = () => {
           {order.status.replace(/_/g, ' ')}
         </StatusChip>
       ),
-      width: '140px',
     },
     {
       header: 'CANCELLED FROM',
       accessor: (order: Order) =>
         order.cancelledFromStatus ? STATUS_LABELS[order.cancelledFromStatus] : '—',
-      width: '150px',
     },
     {
       header: 'REMARK',
@@ -175,7 +171,6 @@ const TrashOrdersPage: React.FC = () => {
           </Button>
         </div>
       ),
-      width: '130px',
       className: 'trash-actions-column',
     },
   ];

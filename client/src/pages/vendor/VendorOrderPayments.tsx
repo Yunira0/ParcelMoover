@@ -102,7 +102,7 @@ const VendorOrderPayments: React.FC = () => {
   const rows = items.map((item, index) => ({ ...item, sn: (page - 1) * pageSizeChoice + index + 1 }));
 
   const columns = [
-    { header: 'SN', accessor: 'sn' as const, width: '60px' },
+    { header: 'SN', accessor: 'sn' as const },
     { header: 'TRACKING ID', accessor: 'trackingId' as const },
     {
       header: 'RECEIVER NAME',

@@ -156,8 +156,8 @@ const AdminManagement: React.FC = () => {
   };
 
   const columns = [
-    { header: 'SN', accessor: 'sn' as keyof AdminUser, width: '50px' },
-    { header: 'EMPLOYEE ID', accessor: (a: AdminUser) => a.employeeId || '—', width: '110px' },
+    { header: 'SN', accessor: 'sn' as keyof AdminUser },
+    { header: 'EMPLOYEE ID', accessor: (a: AdminUser) => a.employeeId || '—' },
     { header: 'NAME', accessor: 'name' as keyof AdminUser },
     { header: 'EMAIL', accessor: 'email' as keyof AdminUser },
     { header: 'PHONE', accessor: 'phone' as keyof AdminUser },
@@ -197,9 +197,7 @@ const AdminManagement: React.FC = () => {
             {item.status}
           </StatusChip>
         </div>
-      ),
-      width: '150px'
-    },
+      ) },
     // Registration documents, in the same slot vendor management puts them:
     // last read-only column before the row actions.
     {
@@ -210,7 +208,6 @@ const AdminManagement: React.FC = () => {
           View
         </Button>
       ),
-      width: '120px',
     },
     ...(canManageAdmins
       ? [{
@@ -231,7 +228,6 @@ const AdminManagement: React.FC = () => {
               )}
             </TableRowActions>
           ),
-          width: isSuperAdmin ? '340px' : '220px',
         }]
       : []),
   ];

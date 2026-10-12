@@ -129,21 +129,18 @@ const manifestParcelColumns = (parcels: ReturnManifestParcel[]) => [
   {
     header: 'S.N',
     accessor: (parcel: ReturnManifestParcel) => parcels.indexOf(parcel) + 1,
-    width: '55px',
   },
-  { header: 'ORDER ID', accessor: (p: ReturnManifestParcel) => `#${p.orderNumber}`, width: '80px' },
+  { header: 'ORDER ID', accessor: (p: ReturnManifestParcel) => `#${p.orderNumber}` },
   {
     header: 'AWB NO.',
     accessor: (p: ReturnManifestParcel) => (
       <Link to={`/orders/track/${p.trackingId}`} className="tracking-id-link">{p.trackingId}</Link>
     ),
-    width: '150px',
     className: 'return-manifest-tracking-cell',
   },
   {
     header: 'RECEIVER',
     accessor: (p: ReturnManifestParcel) => p.receiverName || '-',
-    width: '150px',
   },
   {
     // The printed sheet gives the contact its own column rather than tucking it
@@ -162,12 +159,11 @@ const manifestParcelColumns = (parcels: ReturnManifestParcel[]) => [
         )
         : <span className="return-muted">-</span>
     ),
-    width: '140px',
   },
-  { header: 'ADDRESS', accessor: (p: ReturnManifestParcel) => p.address || p.destination || '-', width: '220px' },
-  { header: 'PCS', accessor: (p: ReturnManifestParcel) => p.pieces, width: '60px' },
-  { header: 'WEIGHT', accessor: (p: ReturnManifestParcel) => (p.weightKg ? `${p.weightKg} Kg` : '-'), width: '90px' },
-  { header: 'COD', accessor: (p: ReturnManifestParcel) => formatMoney(p.codAmount), width: '100px' },
+  { header: 'ADDRESS', accessor: (p: ReturnManifestParcel) => p.address || p.destination || '-' },
+  { header: 'PCS', accessor: (p: ReturnManifestParcel) => p.pieces },
+  { header: 'WEIGHT', accessor: (p: ReturnManifestParcel) => (p.weightKg ? `${p.weightKg} Kg` : '-') },
+  { header: 'COD', accessor: (p: ReturnManifestParcel) => formatMoney(p.codAmount) },
   {
     header: 'STATUS',
     accessor: (p: ReturnManifestParcel) => (
@@ -175,7 +171,6 @@ const manifestParcelColumns = (parcels: ReturnManifestParcel[]) => [
         {STATUS_LABELS[p.status as ParcelStatus] || p.status}
       </StatusChip>
     ),
-    width: '160px',
   },
 ];
 
@@ -875,16 +870,14 @@ const ReturnOperations: React.FC = () => {
     {
       header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '70px',
       className: 'return-sn-cell',
     },
-    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-', width: '100px' },
+    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-' },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
         <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
       ),
-      width: '124px',
       className: 'return-tracking-cell',
     },
     {
@@ -894,7 +887,6 @@ const ReturnOperations: React.FC = () => {
           {order.orderType === 'return' ? 'Return order' : 'RTV'}
         </StatusChip>
       ),
-      width: '140px',
     },
     {
       // Manifests are keyed by vendor, so grouping a selection without seeing
@@ -902,7 +894,6 @@ const ReturnOperations: React.FC = () => {
       // not necessarily the account the parcel bills to.
       header: 'VENDOR',
       accessor: (order: Order) => order.vendorName || <span className="return-muted">No vendor</span>,
-      width: '170px',
     },
     {
       header: 'MANIFEST',
@@ -921,24 +912,18 @@ const ReturnOperations: React.FC = () => {
         }
         return <span className="return-muted">-</span>;
       },
-      // A manifest no is a fixed 23 characters (RTM-YYMMDD-<10>-<check>), and
-      // the chip can't wrap - at 170px it spilled out of the cell and over the
-      // sender beside it. 210px is what the Manifests tab gives the same string.
-      width: '210px',
     },
     {
       header: 'SENDER',
       accessor: (order: Order) => (
         <div className="return-party-cell"><span>{order.senderName}</span><small>{order.senderPhone}</small></div>
       ),
-      width: '200px',
     },
     {
       header: 'RECEIVER',
       accessor: (order: Order) => (
         <div className="return-party-cell"><span>{order.receiverName}</span><small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small></div>
       ),
-      width: '200px',
     },
     {
       header: 'LOCATION',
@@ -950,10 +935,9 @@ const ReturnOperations: React.FC = () => {
           {order.receiverAddress && <small title={order.receiverAddress}>{order.receiverAddress}</small>}
         </div>
       ),
-      width: '180px',
     },
-    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '80px' },
-    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '113px' },
+    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-') },
+    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount) },
     {
       header: 'STATUS',
       accessor: (order: Order) => (
@@ -961,7 +945,6 @@ const ReturnOperations: React.FC = () => {
           {STATUS_LABELS[order.status] || order.status}
         </StatusChip>
       ),
-      width: '170px',
     },
     {
       header: 'LAST UPDATED',
@@ -971,7 +954,6 @@ const ReturnOperations: React.FC = () => {
           <span>{toBsDateTime(order.lastUpdatedAt) || '-'}</span>
         </div>
       ),
-      width: '155px',
     },
     {
       header: 'REMARKS',
@@ -985,7 +967,6 @@ const ReturnOperations: React.FC = () => {
           {order.remarks || '-'}
         </button>
       ),
-      width: '160px',
       className: 'return-remarks-cell',
     },
   ];
@@ -994,16 +975,14 @@ const ReturnOperations: React.FC = () => {
     {
       header: 'MANIFEST NO',
       accessor: (manifest: ReturnManifest) => <span className="return-manifest-no">{manifest.manifestNo}</span>,
-      width: '210px',
     },
     {
       header: 'VENDOR',
       accessor: (manifest: ReturnManifest) => (
         <div className="return-party-cell"><span>{manifest.vendorName}</span><small>{manifest.vendorPhone}</small></div>
       ),
-      width: '200px',
     },
-    { header: 'PARCELS', accessor: (manifest: ReturnManifest) => manifest.parcelCount, width: '90px' },
+    { header: 'PARCELS', accessor: (manifest: ReturnManifest) => manifest.parcelCount },
     {
       header: 'STATUS',
       accessor: (manifest: ReturnManifest) => (
@@ -1011,7 +990,6 @@ const ReturnOperations: React.FC = () => {
           {RETURN_MANIFEST_STATUS_LABELS[manifest.status]}
         </StatusChip>
       ),
-      width: '150px',
     },
     {
       header: 'RIDER',
@@ -1021,11 +999,10 @@ const ReturnOperations: React.FC = () => {
         ) : (
           <span className="return-muted">-</span>
         ),
-      width: '170px',
     },
-    { header: 'CREATED', accessor: (manifest: ReturnManifest) => toBsDateTime(manifest.createdAt) || '-', width: '150px' },
-    { header: 'SENT', accessor: (manifest: ReturnManifest) => toBsDateTime(manifest.sentAt) || '-', width: '150px' },
-    { header: 'RECEIVED', accessor: (manifest: ReturnManifest) => toBsDateTime(manifest.receivedAt) || '-', width: '150px' },
+    { header: 'CREATED', accessor: (manifest: ReturnManifest) => toBsDateTime(manifest.createdAt) || '-' },
+    { header: 'SENT', accessor: (manifest: ReturnManifest) => toBsDateTime(manifest.sentAt) || '-' },
+    { header: 'RECEIVED', accessor: (manifest: ReturnManifest) => toBsDateTime(manifest.receivedAt) || '-' },
     {
       header: 'ACTION',
       accessor: (manifest: ReturnManifest) => (
@@ -1033,7 +1010,6 @@ const ReturnOperations: React.FC = () => {
           {expandedManifestId === manifest.id ? <><ChevronUp size={14} /> Details</> : <><ChevronDown size={14} /> Details</>}
         </Button>
       ),
-      width: '130px',
     },
   ];
 
@@ -1090,7 +1066,6 @@ const ReturnOperations: React.FC = () => {
           allSelected={allSelected}
           someSelected={someSelected}
           onToggleAll={() => toggleAllParcels(detail.parcels)}
-          minWidth="1280px"
           tableClassName="return-manifest-table"
           emptyMessage="No parcels on this manifest."
         />
@@ -1268,7 +1243,6 @@ const ReturnOperations: React.FC = () => {
             loading={manifestsLoading}
             loadingMessage="Loading return manifests..."
             emptyMessage="No return manifests yet. Build one from the Ready to return tab."
-            minWidth="1570px"
             tableClassName="return-table"
           />
 
@@ -1295,7 +1269,6 @@ const ReturnOperations: React.FC = () => {
             loading={loading}
             loadingMessage="Loading return orders..."
             emptyMessage="No return orders in this stage."
-            minWidth="2120px"
             tableClassName="return-table"
           />
 

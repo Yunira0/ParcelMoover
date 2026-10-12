@@ -87,7 +87,6 @@ const CodSettlementDetailPage: React.FC = () => {
       accessor: (r: CodDetailRow) => (
         <span className="cod-detail-bucket-amount">{formatCurrency(r.bucketAmount)}</span>
       ),
-      width: '130px',
       className: 'cod-detail-num',
     };
 
@@ -101,7 +100,6 @@ const CodSettlementDetailPage: React.FC = () => {
             {
               header: 'COLLECTED',
               accessor: (r: CodDetailRow) => formatCurrency(r.collectedAmount),
-              width: '120px',
               className: 'cod-detail-num',
             },
           ]),
@@ -109,7 +107,6 @@ const CodSettlementDetailPage: React.FC = () => {
         header: validBucket === 'pm-rider' ? 'REMITTED TO OFFICE' : 'REMITTED',
         accessor: (r: CodDetailRow) =>
           formatCurrency(validBucket === 'pm-rider' ? r.riderRemittedAmount : r.remittedAmount),
-        width: '150px',
         className: 'cod-detail-num',
       },
     ];
@@ -118,7 +115,6 @@ const CodSettlementDetailPage: React.FC = () => {
       {
         header: 'SN',
         accessor: (r: CodDetailRow) => (currentPage - 1) * pageSize + pagedRows.indexOf(r) + 1,
-        width: '50px',
       },
       {
         header: 'TRACKING ID',
@@ -127,15 +123,11 @@ const CodSettlementDetailPage: React.FC = () => {
             {r.trackingId}
           </Link>
         ),
-        // Matches VendorMetricDetail's tracking column. A full id wraps to two
-        // lines here exactly as it does on the other order tables, and still
-        // fits inside the table's standard row height.
-        width: '190px',
       },
-      { header: 'VENDOR', accessor: (r: CodDetailRow) => r.vendorName, width: '165px' },
-      { header: 'RECEIVER', accessor: (r: CodDetailRow) => r.receiverName, width: '130px' },
-      { header: 'RIDER', accessor: (r: CodDetailRow) => r.riderName ?? '-', width: '100px' },
-      { header: 'DELIVERED', accessor: (r: CodDetailRow) => formatDate(r.deliveredAt), width: '105px' },
+      { header: 'VENDOR', accessor: (r: CodDetailRow) => r.vendorName },
+      { header: 'RECEIVER', accessor: (r: CodDetailRow) => r.receiverName },
+      { header: 'RIDER', accessor: (r: CodDetailRow) => r.riderName ?? '-' },
+      { header: 'DELIVERED', accessor: (r: CodDetailRow) => formatDate(r.deliveredAt) },
       bucketColumn,
       ...context,
     ];
@@ -213,7 +205,6 @@ const CodSettlementDetailPage: React.FC = () => {
         loading={loading}
         loadingMessage="Loading COD detail..."
         emptyMessage="No orders in this bucket."
-        minWidth="1140px"
       />
 
       {/* Rendered unconditionally, like every other operations table in the

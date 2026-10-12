@@ -37,22 +37,20 @@ const STATUS_TONE: Record<TransitManifestStatus, StatusChipTone> = {
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const parcelColumns = (parcels: TransitManifestParcel[]) => [
-  { header: 'S.N', accessor: (p: TransitManifestParcel) => parcels.indexOf(p) + 1, width: '55px' },
-  { header: 'ORDER ID', accessor: (p: TransitManifestParcel) => `#${p.orderNumber}`, width: '80px' },
+  { header: 'S.N', accessor: (p: TransitManifestParcel) => parcels.indexOf(p) + 1 },
+  { header: 'ORDER ID', accessor: (p: TransitManifestParcel) => `#${p.orderNumber}` },
   {
     header: 'TRACKING ID',
     accessor: (p: TransitManifestParcel) => (
       <Link to={`/orders/track/${p.trackingId}`} className="tracking-id-link">{p.trackingId}</Link>
     ),
-    width: '150px',
   },
-  { header: 'RECEIVER', accessor: (p: TransitManifestParcel) => p.receiverName || '-', width: '160px' },
-  { header: 'DESTINATION', accessor: (p: TransitManifestParcel) => p.destination || '-', width: '180px' },
-  { header: 'COD', accessor: (p: TransitManifestParcel) => formatMoney(p.codAmount), width: '100px' },
+  { header: 'RECEIVER', accessor: (p: TransitManifestParcel) => p.receiverName || '-' },
+  { header: 'DESTINATION', accessor: (p: TransitManifestParcel) => p.destination || '-' },
+  { header: 'COD', accessor: (p: TransitManifestParcel) => formatMoney(p.codAmount) },
   {
     header: 'STATUS',
     accessor: (p: TransitManifestParcel) => <StatusChip tone="neutral">{p.status.replace(/_/g, ' ')}</StatusChip>,
-    width: '140px',
   },
 ];
 
@@ -305,18 +303,17 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
   };
 
   const columns = [
-    { header: 'MANIFEST NO', accessor: (m: TransitManifestModel) => m.manifestNo, width: '150px' },
+    { header: 'MANIFEST NO', accessor: (m: TransitManifestModel) => m.manifestNo },
     {
       header: 'STATUS',
       accessor: (m: TransitManifestModel) => (
         <StatusChip tone={STATUS_TONE[m.status]}>{TRANSIT_MANIFEST_STATUS_LABELS[m.status]}</StatusChip>
       ),
-      width: '130px',
     },
-    { header: 'ROUTE', accessor: (m: TransitManifestModel) => `${m.fromHub || '—'} → ${m.toHub || '—'}`, width: '220px' },
-    { header: 'PARCELS', accessor: (m: TransitManifestModel) => m.parcelCount, width: '90px' },
-    { header: 'CREATED', accessor: (m: TransitManifestModel) => toBsDateTime(m.createdAt) || '—', width: '150px' },
-    { header: 'UPDATED', accessor: (m: TransitManifestModel) => toBsDateTime(m.updatedAt) || '—', width: '150px' },
+    { header: 'ROUTE', accessor: (m: TransitManifestModel) => `${m.fromHub || '—'} → ${m.toHub || '—'}` },
+    { header: 'PARCELS', accessor: (m: TransitManifestModel) => m.parcelCount },
+    { header: 'CREATED', accessor: (m: TransitManifestModel) => toBsDateTime(m.createdAt) || '—' },
+    { header: 'UPDATED', accessor: (m: TransitManifestModel) => toBsDateTime(m.updatedAt) || '—' },
     {
       header: 'ACTION',
       accessor: (m: TransitManifestModel) => (
@@ -345,7 +342,6 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
           )}
         </div>
       ),
-      width: '260px',
     },
   ];
 
@@ -426,7 +422,6 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
           allSelected={allSelected}
           someSelected={someSelected}
           onToggleAll={() => toggleAllParcels(detail.parcels)}
-          minWidth="1000px"
           tableClassName="oov-table"
           emptyMessage="No parcels on this manifest."
         />
@@ -507,7 +502,6 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
         loading={loading}
         loadingMessage="Loading manifests…"
         emptyMessage="No transit manifests."
-        minWidth="1080px"
         tableClassName="oov-table"
         expandedRowId={expandedId}
         renderExpandedRow={renderParcels}

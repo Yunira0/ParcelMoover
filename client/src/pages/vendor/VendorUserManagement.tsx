@@ -161,7 +161,6 @@ const VendorUserManagement: React.FC = () => {
       {
         header: 'SN',
         accessor: (member: Staff) => visibleStaff.findIndex((s) => s.id === member.id) + 1,
-        width: '50px',
       },
       {
         header: 'STAFF NAME',
@@ -171,7 +170,6 @@ const VendorUserManagement: React.FC = () => {
             <span className="staff-name">{member.name}</span>
           </div>
         ),
-        width: '220px',
       },
       {
         header: 'EMAIL',
@@ -181,7 +179,6 @@ const VendorUserManagement: React.FC = () => {
             {member.email}
           </span>
         ),
-        width: '230px',
       },
       {
         header: 'PERMISSIONS',
@@ -223,7 +220,6 @@ const VendorUserManagement: React.FC = () => {
             </span>
           </div>
         ),
-        width: '150px',
       },
       {
         header: 'ACTIONS',
@@ -251,7 +247,6 @@ const VendorUserManagement: React.FC = () => {
             </button>
           </div>
         ),
-        width: '230px',
       },
     ],
     [visibleStaff, togglingId],
@@ -287,7 +282,6 @@ const VendorUserManagement: React.FC = () => {
         loading={loading}
         loadingMessage="Loading staff..."
         emptyMessage="No staff found."
-        minWidth="1080px"
       />
 
       {visibleStaff.length > 0 && (

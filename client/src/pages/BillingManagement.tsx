@@ -270,10 +270,10 @@ const BillingManagement: React.FC = () => {
   };
 
   const claimColumns = [
-    { header: 'DATE', accessor: (p: VendorPayment) => toBsDate(p.createdAt) || '—', width: '110px' },
-    { header: 'VENDOR', accessor: (p: VendorPayment) => p.vendorName, width: '180px' },
-    { header: 'AMOUNT', accessor: (p: VendorPayment) => formatCurrency(p.amount), width: '120px' },
-    { header: 'REFERENCE', accessor: (p: VendorPayment) => p.reference || '—', width: '160px' },
+    { header: 'DATE', accessor: (p: VendorPayment) => toBsDate(p.createdAt) || '—' },
+    { header: 'VENDOR', accessor: (p: VendorPayment) => p.vendorName },
+    { header: 'AMOUNT', accessor: (p: VendorPayment) => formatCurrency(p.amount) },
+    { header: 'REFERENCE', accessor: (p: VendorPayment) => p.reference || '—' },
     {
       header: 'PROOF',
       accessor: (p: VendorPayment) =>
@@ -294,9 +294,8 @@ const BillingManagement: React.FC = () => {
         ) : (
           '—'
         ),
-      width: '110px',
     },
-    { header: 'NOTE', accessor: (p: VendorPayment) => p.note || '—', width: '160px' },
+    { header: 'NOTE', accessor: (p: VendorPayment) => p.note || '—' },
   ];
 
   const decidedColumns = [
@@ -306,10 +305,9 @@ const BillingManagement: React.FC = () => {
       accessor: (p: VendorPayment) => (
         <span className={`billing-pill billing-pill-${p.status}`}>{CLAIM_STATUS_LABELS[p.status]}</span>
       ),
-      width: '110px',
     },
-    { header: 'REVIEWED', accessor: (p: VendorPayment) => (p.reviewedAt ? toBsDate(p.reviewedAt) : '—'), width: '110px' },
-    { header: 'REMARK', accessor: (p: VendorPayment) => p.reviewRemark || '—', width: '200px' },
+    { header: 'REVIEWED', accessor: (p: VendorPayment) => (p.reviewedAt ? toBsDate(p.reviewedAt) : '—') },
+    { header: 'REMARK', accessor: (p: VendorPayment) => p.reviewRemark || '—' },
   ];
 
   const pendingColumns = [
@@ -342,7 +340,6 @@ const BillingManagement: React.FC = () => {
           </div>
         </div>
       ),
-      width: '300px',
     },
   ];
 
@@ -354,18 +351,17 @@ const BillingManagement: React.FC = () => {
     .map((v) => ({ ...v, id: v.vendorId }));
 
   const balanceColumns = [
-    { header: 'VENDOR', accessor: (v: VendorBalanceRow) => v.vendorName, width: '200px' },
+    { header: 'VENDOR', accessor: (v: VendorBalanceRow) => v.vendorName },
     {
       header: 'BALANCE',
       accessor: (v: VendorBalanceRow) => (
         <span className={v.balance < 0 ? 'billing-debit' : ''}>{formatCurrency(v.balance)}</span>
       ),
-      width: '130px',
     },
-    { header: 'COD COLLECTED', accessor: (v: VendorBalanceRow) => formatCurrency(v.codCollected), width: '140px' },
-    { header: 'CHARGES', accessor: (v: VendorBalanceRow) => formatCurrency(v.deliveryCharges), width: '120px' },
-    { header: 'PAID OUT', accessor: (v: VendorBalanceRow) => formatCurrency(v.payouts), width: '120px' },
-    { header: 'RECEIVED', accessor: (v: VendorBalanceRow) => formatCurrency(v.paymentsReceived), width: '120px' },
+    { header: 'COD COLLECTED', accessor: (v: VendorBalanceRow) => formatCurrency(v.codCollected) },
+    { header: 'CHARGES', accessor: (v: VendorBalanceRow) => formatCurrency(v.deliveryCharges) },
+    { header: 'PAID OUT', accessor: (v: VendorBalanceRow) => formatCurrency(v.payouts) },
+    { header: 'RECEIVED', accessor: (v: VendorBalanceRow) => formatCurrency(v.paymentsReceived) },
     {
       header: 'CREDIT LIMIT',
       accessor: (v: VendorBalanceRow) => (
@@ -386,7 +382,6 @@ const BillingManagement: React.FC = () => {
           <CreditUsageBar balance={v.balance} creditLimit={v.creditLimit} state={v.state} />
         </span>
       ),
-      width: '190px',
     },
     {
       header: 'STATE',
@@ -395,7 +390,6 @@ const BillingManagement: React.FC = () => {
           {v.state}
         </span>
       ),
-      width: '110px',
     },
   ];
 
@@ -445,7 +439,6 @@ const BillingManagement: React.FC = () => {
                 ? 'No payments awaiting verification.'
                 : `No ${CLAIM_STATUS_LABELS[claimStatus].toLowerCase()} payments yet.`
             }
-            minWidth="1200px"
           />
           <Pagination
             ariaLabel="Payment verification pagination"
@@ -495,7 +488,6 @@ const BillingManagement: React.FC = () => {
             loading={balancesLoading}
             loadingMessage="Calculating vendor balances..."
             emptyMessage={balanceQuery ? `No vendor matching "${balanceSearch.trim()}".` : 'No vendors found.'}
-            minWidth="1040px"
           />
         </>
       )}

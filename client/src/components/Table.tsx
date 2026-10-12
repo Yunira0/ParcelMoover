@@ -20,6 +20,8 @@ interface TableProps<T> {
   someSelected?: boolean;
   onToggleAll?: () => void;
   onSelectionChange?: (selectedIds: Set<string | number>) => void;
+  /** Rows that can't be picked get a disabled checkbox. Defaults to every row. */
+  isRowSelectable?: (item: T) => boolean;
   getRowClassName?: (item: T) => string;
   /** Rows whose expansion panel is open - rendered right below the row, full width. */
   expandedIds?: Set<string | number>;
@@ -70,10 +72,12 @@ const SkeletonRows = ({ columnCount, selectable }: { columnCount: number; select
 const HeaderCheckbox = ({
   checked,
   indeterminate,
+  disabled,
   onChange,
 }: {
   checked: boolean;
   indeterminate: boolean;
+  disabled?: boolean;
   onChange?: () => void;
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +93,7 @@ const HeaderCheckbox = ({
       ref={inputRef}
       type="checkbox"
       checked={checked}
+      disabled={disabled}
       onChange={onChange}
       aria-label="Select visible rows"
     />
@@ -105,6 +110,7 @@ const Table = <T extends { id: string | number }>({
   someSelected = false,
   onToggleAll,
   onSelectionChange,
+  isRowSelectable,
   getRowClassName,
   expandedIds,
   renderExpandedRow,
@@ -131,6 +137,10 @@ const Table = <T extends { id: string | number }>({
     ? someSelected
     : visibleIds.some(id => activeSelectedIds.has(id));
   const colSpan = columns.length + (selectable ? 1 : 0);
+  // Unless a caller pins widths, every column is sized to its content and any
+  // spare width is shared evenly (each column is 1%, so each gets the same
+  // extra) - even gaps instead of one column soaking up the slack.
+  const fitsContent = !minWidth && columns.every((col) => !col.width);
 
   const updateInternalSelection = (next: Set<string | number>) => {
     setInternalSelectedIds(next);
@@ -170,7 +180,7 @@ const Table = <T extends { id: string | number }>({
   return (
     <div className="table-container">
       <table
-        className={`custom-table ${tableClassName}`.trim()}
+        className={`custom-table${fitsContent ? ' table-fit' : ''} ${tableClassName}`.trim()}
         style={{ minWidth, tableLayout: minWidth ? 'fixed' : 'auto' }}
       >
         <thead>
@@ -180,12 +190,13 @@ const Table = <T extends { id: string | number }>({
                 <HeaderCheckbox
                   checked={activeAllSelected}
                   indeterminate={activeSomeSelected && !activeAllSelected}
+                  disabled={isRowSelectable ? !data.some(isRowSelectable) : false}
                   onChange={toggleAll}
                 />
               </th>
             )}
             {columns.map((col, index) => (
-              <th key={index} className={col.className} style={{ width: col.width }}>
+              <th key={index} className={col.className} style={{ width: fitsContent ? '1%' : col.width }}>
                 {col.header}
               </th>
             ))}
@@ -220,6 +231,7 @@ const Table = <T extends { id: string | number }>({
                         type="checkbox"
                         checked={activeSelectedIds.has(item.id)}
                         onChange={() => toggleRow(item.id)}
+                        disabled={isRowSelectable ? !isRowSelectable(item) : false}
                         aria-label={`Select row ${item.id}`}
                       />
                     </td>
