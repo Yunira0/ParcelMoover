@@ -2398,3 +2398,83 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     items,
   };
 }
+
+// ── CIPS bulk bank transfer ─────────────────────────────────────────────────
+// The connectIPS charge (Rs 10 by default) is set on the Bank Transfer page
+// and taken off there; this only reports what each statement still owes.
+
+export interface BankTransferRow {
+  settlementId: string;
+  statementId: string;
+  status: settlement_status;
+  settlementDate: string | null;
+  createdAt: string;
+  vendorId: string;
+  vendorName: string;
+  /** What is still owed to the vendor on the statement. */
+  codAmount: number;
+  bankName: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+}
+
+/**
+ * Every vendor statement the office still owes money on (pending or part
+ * paid, payable above zero), with the vendor's bank details, for the CIPS
+ * bulk transfer sheet. Statements where the vendor owes the office are left
+ * out - there is nothing to send them. Head office only, like the vendor
+ * settlement ledger it is drawn from.
+ */
+export async function listVendorBankTransfers(actor: Actor): Promise<BankTransferRow[]> {
+  if (!isFinanceStaff(actor)) throw new AppError(403, "Not authorized to view bank transfers");
+  await assertHeadOfficeForVendorSettlement(actor);
+
+  const statements = await prisma.settlements.findMany({
+    where: { payee_type: "vendor", status: { in: ["pending", "partially_paid"] }, vendor_id: { not: null } },
+    orderBy: [{ created_at: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      statement_id: true,
+      status: true,
+      settlement_date: true,
+      created_at: true,
+      amount: true,
+      payable_amount: true,
+      paid_amount: true,
+      vendors: {
+        select: {
+          id: true,
+          client_name: true,
+          business_name: true,
+          bank_name: true,
+          bank_account_no: true,
+          bank_account_holder: true,
+        },
+      },
+    },
+  });
+
+  const rows: BankTransferRow[] = [];
+  for (const s of statements) {
+    const vendor = s.vendors;
+    if (!vendor) continue;
+    const payable = Number(s.payable_amount ?? s.amount);
+    if (payable <= 0) continue;
+    const codAmount = round2(payable - Number(s.paid_amount));
+    if (codAmount <= 0) continue;
+    rows.push({
+      settlementId: s.id,
+      statementId: s.statement_id,
+      status: s.status,
+      settlementDate: s.settlement_date ? s.settlement_date.toISOString().slice(0, 10) : null,
+      createdAt: s.created_at.toISOString(),
+      vendorId: vendor.id,
+      vendorName: vendor.business_name || vendor.client_name,
+      codAmount,
+      bankName: vendor.bank_name,
+      accountNumber: vendor.bank_account_no,
+      accountName: vendor.bank_account_holder,
+    });
+  }
+  return rows;
+}

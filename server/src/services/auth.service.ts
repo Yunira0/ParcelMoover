@@ -503,6 +503,10 @@ export async function updateManagedUserProfile(
       }
       if (joinedAt) u.joined_at = joinedAt;
       // The department decides the access: changing it changes the role.
+      // Sales -> `sales`, Accountant -> `accountant`, anything else
+      // (Operation, Customer Experience, ...) -> plain `admin`, whose web shell
+      // the department then narrows. A super_admin's roles are never
+      // re-derived from a department.
       if (data.department !== undefined) await alignRoleToDepartment(tx, actorUserId, userId, id, data.department);
       Object.assign(u, documentPaths);
       return tx.admins.update({ where: { id }, data: u });

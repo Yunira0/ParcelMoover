@@ -40,6 +40,7 @@ import {
   Gauge,
   Building2,
   TrendingUp,
+  Landmark,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -493,6 +494,11 @@ const FinanceNav: React.FC<{ canReadBooks: boolean; showOverview?: boolean }> = 
         <SubItem to="/billing" icon={Receipt} label="Billing & Credit" />
       </SidebarGroup>
 
+      {/* The connectIPS bulk sheet that pays the vendor statements out. Top
+          level beside the COD registers rather than a fourth Vendor COD
+          screen: it is a daily payout run, not part of the vendor ledger. */}
+      <SubItem to="/finance/bank-transfer" icon={Landmark} label="Bank Transfer" />
+
       {canReadBooks && (
         <>
           <SubItem to="/accounting/transactions/journal" icon={NotebookPen} label="Journal" />
@@ -551,6 +557,9 @@ const AccountantSidebar: React.FC = () => {
         <SidebarItem to="/orders" icon={Package} label="Orders" />
         <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
         <SidebarItem to="/branches" icon={Building2} label="Branch Overview" end />
+        {/* Read-only: the page shows no add, edit, status or password actions
+            to an accountant, and the server refuses those writes. */}
+        <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
         <FinanceNav canReadBooks />
       </div>
 

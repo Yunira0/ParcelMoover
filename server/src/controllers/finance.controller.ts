@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, attachSettlementDocuments, deleteSettlementDocument, updateSettlement, revertSettlement, cancelSettlement, getSettlementDetail, getSettlementBillingPayments, getSettlementDocumentPath } from "../services/finance.service";
+import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, attachSettlementDocuments, deleteSettlementDocument, updateSettlement, revertSettlement, cancelSettlement, getSettlementDetail, getSettlementBillingPayments, getSettlementDocumentPath, listVendorBankTransfers } from "../services/finance.service";
 import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput, UpdateSettlementInput, RevertSettlementInput, CancelSettlementInput } from "../types/finance.type";
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
 import { sendEncryptedFile } from "../lib/serveEncryptedDocument";
@@ -538,6 +538,23 @@ export async function getSettlementDetailController(req: Request, res: Response)
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to load settlement detail",
+    });
+  }
+}
+
+// GET /api/finance/bank-transfers — unpaid vendor statements with bank details,
+// for the CIPS bulk transfer sheet.
+export async function listVendorBankTransfersController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const rows = await listVendorBankTransfers({ id: req.user.id, roles: req.user.roles });
+    return res.json({ success: true, data: rows });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to load bank transfers",
     });
   }
 }

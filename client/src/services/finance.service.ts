@@ -1,4 +1,5 @@
 import api from '../utils/api';
+import { bankCodeFor } from '../constants/banks';
 
 export interface VendorBillingProfile {
   id: string;
@@ -447,4 +448,30 @@ export const cancelSettlement = async (
 ): Promise<{ success: boolean; message: string; data: CreateSettlementResponse }> => {
   const response = await api.post(`/finance/settlements/${id}/cancel`, { remark });
   return response.data;
+};
+
+// ── CIPS bulk bank transfer ─────────────────────────────────────────────────
+
+/** One vendor statement still owed, with the bank details the CIPS sheet needs. */
+export interface BankTransferRow {
+  settlementId: string;
+  statementId: string;
+  status: 'pending' | 'partially_paid';
+  settlementDate: string | null;
+  createdAt: string;
+  vendorId: string;
+  vendorName: string;
+  /** What is still owed to the vendor on the statement. */
+  codAmount: number;
+  bankName: string | null;
+  /** Looked up from bankName in constants/banks; null when the name isn't on that list. */
+  bankCode: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+}
+
+export const getVendorBankTransfers = async (): Promise<BankTransferRow[]> => {
+  const response = await api.get('/finance/bank-transfers');
+  const rows: Omit<BankTransferRow, 'bankCode'>[] = response.data.data;
+  return rows.map((row) => ({ ...row, bankCode: bankCodeFor(row.bankName ?? '') || null }));
 };
