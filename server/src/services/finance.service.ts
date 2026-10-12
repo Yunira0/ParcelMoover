@@ -2462,6 +2462,8 @@ export interface BankTransferRow {
   /** What is still owed to the vendor on the statement. */
   codAmount: number;
   bankName: string | null;
+  /** From the banks table, matched on the vendor's bank name; null when it isn't there. */
+  bankCode: string | null;
   accountNumber: string | null;
   accountName: string | null;
 }
@@ -2502,6 +2504,10 @@ export async function listVendorBankTransfers(actor: Actor): Promise<BankTransfe
     },
   });
 
+  // Vendors store the bank by name; the code lives in the banks table.
+  const banks = await prisma.banks.findMany({ select: { name: true, code: true } });
+  const codeByName = new Map(banks.map((b) => [b.name.trim().toLowerCase(), b.code]));
+
   const rows: BankTransferRow[] = [];
   for (const s of statements) {
     const vendor = s.vendors;
@@ -2520,6 +2526,7 @@ export async function listVendorBankTransfers(actor: Actor): Promise<BankTransfe
       vendorName: vendor.business_name || vendor.client_name,
       codAmount,
       bankName: vendor.bank_name,
+      bankCode: (vendor.bank_name && codeByName.get(vendor.bank_name.trim().toLowerCase())) || null,
       accountNumber: vendor.bank_account_no,
       accountName: vendor.bank_account_holder,
     });

@@ -1,0 +1,33 @@
+.banks-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.banks-add {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.banks-add .form-group {
+  flex: 1 1 220px;
+  margin-bottom: 0;
+}
+
+.banks-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.banks-error {
+  color: var(--color-danger, #b91c1c);
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .banks-add > .btn {
+    width: 100%;
+  }
+}

@@ -555,6 +555,8 @@ export interface CodDetailRow {
   orderNumber: number;
   vendorName: string;
   receiverName: string;
+  receiverPhone: string;
+  receiverAlternatePhone: string;
   riderName: string | null;
   collectedAmount: number;
   riderRemittedAmount: number;

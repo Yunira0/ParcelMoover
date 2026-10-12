@@ -105,6 +105,8 @@ export interface CodDetailRow {
   orderNumber: number;
   vendorName: string;
   receiverName: string;
+  receiverPhone: string;
+  receiverAlternatePhone: string;
   riderName: string | null;
   collectedAmount: number;
   riderRemittedAmount: number;
@@ -205,6 +207,8 @@ export async function getCodSettlementDetail(
       order_number: number;
       vendor_name: string | null;
       receiver_name: string;
+      receiver_phone: string | null;
+      receiver_alternate_phone: string | null;
       rider_name: string | null;
       collected_amount: string;
       rider_remitted_amount: string;
@@ -220,6 +224,8 @@ export async function getCodSettlementDetail(
       p.order_number,
       COALESCE(v.business_name, v.client_name) AS vendor_name,
       party.name AS receiver_name,
+      party.phone AS receiver_phone,
+      party.alternate_phone AS receiver_alternate_phone,
       r.name AS rider_name,
       c.collected_amount,
       c.rider_remitted_amount,
@@ -255,6 +261,8 @@ export async function getCodSettlementDetail(
       orderNumber: r.order_number,
       vendorName: r.vendor_name ?? "—",
       receiverName: r.receiver_name,
+      receiverPhone: r.receiver_phone ?? "",
+      receiverAlternatePhone: r.receiver_alternate_phone ?? "",
       riderName: r.rider_name,
       collectedAmount: Number(r.collected_amount),
       riderRemittedAmount: Number(r.rider_remitted_amount),

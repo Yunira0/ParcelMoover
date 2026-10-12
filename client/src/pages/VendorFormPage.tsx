@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, Building2, User, FileText, CreditCard, Lock, Tag, ExternalLink, Receipt } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
+import BankSelectField from '../components/BankSelectField';
 import {
   registerUser,
   getManagedUser,
@@ -19,7 +20,6 @@ import { getPricingSettings } from '../services/pricing.service';
 import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, hasLetter, isDigits, normalizePhone } from '../utils/serverValidation';
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { useHubLock } from '../hooks/useHubLock';
-import { BANKS, bankCodeFor } from '../constants/banks';
 import './VendorFormPage.css';
 
 // API validation-error field → form field, for errors returned by the server.
@@ -47,7 +47,7 @@ const DOCUMENT_LABELS: Partial<Record<keyof VendorFormInput, string>> = {
 
 const scrollToFirstFieldError = () => {
   window.setTimeout(() => {
-    document.querySelector('.vfp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.querySelector('.vfp-field-error, .form-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 0);
 };
 
@@ -295,18 +295,6 @@ const VendorFormPage: React.FC = () => {
   // server-side, so the vendor is still created correctly - we just tell the
   // creator the fields weren't pre-filled.
   const [pricingDefaultsFailed, setPricingDefaultsFailed] = useState(false);
-  // Vendors saved before the bank list existed may carry a free-typed bank name
-  // that isn't in it. Kept as an extra option so editing such a vendor doesn't
-  // blank the field and force a bank change they didn't ask for.
-  const [legacyBankName, setLegacyBankName] = useState('');
-  const bankOptions = React.useMemo(
-    () =>
-      [
-        ...(legacyBankName ? [{ id: legacyBankName, label: legacyBankName }] : []),
-        ...BANKS.map((b) => ({ id: b.name, label: b.name })),
-      ],
-    [legacyBankName],
-  );
 
   useEffect(() => {
     const fetchHubs = async () => {
@@ -449,8 +437,6 @@ const VendorFormPage: React.FC = () => {
         if (!res?.success || !res.data) return;
         const d = res.data;
         const s = (v: unknown) => (v == null ? '' : String(v));
-        const savedBank = s(d.bankName).trim();
-        if (savedBank && !bankCodeFor(savedBank)) setLegacyBankName(savedBank);
         setForm((prev) => ({
           ...prev,
           onlineBusinessName: s(d.businessName),
@@ -1135,26 +1121,11 @@ const VendorFormPage: React.FC = () => {
                 description="Where COD payouts are transferred. Required — the vendor cannot be settled without it."
               />
               <div className="vfp-fields">
-                <FormField
-                  label="Name of Bank"
-                  type="searchable-select"
+                <BankSelectField
                   required
                   value={form.bankName}
                   onChange={set('bankName')}
-                  placeholder="Select bank"
-                  searchPlaceholder="Search bank…"
-                  emptyMessage="No matching bank."
-                  searchableOptions={bankOptions}
-                />
-                {fieldErrors.bankName && (
-                  <span className="vfp-field-error">{fieldErrors.bankName}</span>
-                )}
-                <FormField
-                  label="Bank Code"
-                  value={bankCodeFor(form.bankName)}
-                  onChange={() => {}}
-                  placeholder="Filled in when a bank is selected"
-                  disabled
+                  error={fieldErrors.bankName}
                 />
                 <FormField
                   label="Account No."

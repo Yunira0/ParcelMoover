@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
+import BankSelectField from '../components/BankSelectField';
 import DocLink from '../components/DocLink';
 import { registerUser, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
 import { getLocations } from '../queries/lookups';
@@ -757,12 +758,7 @@ const AdminFormPage: React.FC = () => {
                 description="Payment account information"
               />
               <div className="afp-fields">
-                <FormField
-                  label="Name of Bank"
-                  value={form.bankName}
-                  onChange={set('bankName')}
-                  placeholder="e.g. Nabil Bank"
-                />
+                <BankSelectField value={form.bankName} onChange={set('bankName')} />
                 <FormField
                   label="Account No."
                   value={form.bankAccountNo}

@@ -5,6 +5,7 @@ import {
   getLocations as fetchLocations,
   searchVendors as fetchVendorSearch,
 } from '../services/users.service';
+import { getBanks as fetchBanks } from '../services/banks.service';
 import { listBranches as fetchBranches } from '../services/branchTracking.service';
 import { listAccounts as fetchAccounts, listPeriods as fetchPeriods } from '../services/accounting.service';
 import { queryClient, LOOKUP_STALE_MS } from './queryClient';
@@ -47,3 +48,6 @@ export const listAccounts = (scope?: 'cash_bank'): ReturnType<typeof fetchAccoun
 
 export const listPeriods = (): ReturnType<typeof fetchPeriods> =>
   cached(queryKeys.lookups.periods, fetchPeriods);
+
+export const getBanks = (): ReturnType<typeof fetchBanks> =>
+  cached(queryKeys.lookups.banks, fetchBanks);

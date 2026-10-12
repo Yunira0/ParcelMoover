@@ -5,6 +5,7 @@ import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import Table from '../components/Table';
+import ReceiverPhones from '../components/ReceiverPhones';
 import {
   COD_DETAIL_BUCKETS,
   getCodSettlementDetail,
@@ -14,7 +15,7 @@ import {
 import { ACCOUNTANT_HOME, isAccountantUser } from '../utils/auth';
 import { COD_BUCKET_META } from '../utils/codBuckets';
 import { downloadExcel } from '../utils/excel';
-import { formatCurrency, formatDate } from '../utils/format';
+import { formatCurrency, formatDate, formatReceiverPhones } from '../utils/format';
 import { toBsDateTimeCell } from '../utils/nepaliDate';
 import { useSessionState } from '../hooks/useSessionState';
 import './CodSettlementDetailPage.css';
@@ -126,6 +127,10 @@ const CodSettlementDetailPage: React.FC = () => {
       },
       { header: 'VENDOR', accessor: (r: CodDetailRow) => r.vendorName },
       { header: 'RECEIVER', accessor: (r: CodDetailRow) => r.receiverName },
+      {
+        header: 'NUMBER',
+        accessor: (r: CodDetailRow) => <ReceiverPhones phone={r.receiverPhone} alternate={r.receiverAlternatePhone} />,
+      },
       { header: 'RIDER', accessor: (r: CodDetailRow) => r.riderName ?? '-' },
       { header: 'DELIVERED', accessor: (r: CodDetailRow) => formatDate(r.deliveredAt) },
       bucketColumn,
@@ -140,6 +145,7 @@ const CodSettlementDetailPage: React.FC = () => {
       'Tracking ID',
       'Vendor',
       'Receiver',
+      'Receiver Number',
       'Rider',
       'Delivered',
       'Collected',
@@ -155,6 +161,7 @@ const CodSettlementDetailPage: React.FC = () => {
       r.trackingId,
       r.vendorName,
       r.receiverName,
+      formatReceiverPhones(r.receiverPhone, r.receiverAlternatePhone),
       r.riderName ?? '',
       toBsDateTimeCell(r.deliveredAt) || '',
       r.collectedAmount,

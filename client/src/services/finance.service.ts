@@ -1,5 +1,4 @@
 import api from '../utils/api';
-import { bankCodeFor } from '../constants/banks';
 
 export interface VendorBillingProfile {
   id: string;
@@ -477,7 +476,7 @@ export interface BankTransferRow {
   /** What is still owed to the vendor on the statement. */
   codAmount: number;
   bankName: string | null;
-  /** Looked up from bankName in constants/banks; null when the name isn't on that list. */
+  /** From the banks list (System Management), matched on bankName; null when it isn't there. */
   bankCode: string | null;
   accountNumber: string | null;
   accountName: string | null;
@@ -485,6 +484,5 @@ export interface BankTransferRow {
 
 export const getVendorBankTransfers = async (): Promise<BankTransferRow[]> => {
   const response = await api.get('/finance/bank-transfers');
-  const rows: Omit<BankTransferRow, 'bankCode'>[] = response.data.data;
-  return rows.map((row) => ({ ...row, bankCode: bankCodeFor(row.bankName ?? '') || null }));
+  return response.data.data;
 };
