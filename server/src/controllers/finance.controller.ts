@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, attachSettlementDocuments, deleteSettlementDocument, updateSettlement, revertSettlement, cancelSettlement, getSettlementDetail, getSettlementBillingPayments, getSettlementDocumentPath, listVendorBankTransfers } from "../services/finance.service";
+import { getPendingCodBill, listOrderCod, listSettlements, getUnsettledOrders, createSettlement, payForSettlement, attachSettlementDocuments, deleteSettlementDocument, updateSettlement, revertSettlement, cancelSettlement, getSettlementDetail, getSettlementBillingPayments, getSettlementDocumentPath, listVendorBankTransfers, setSettlementInvoiceNo } from "../services/finance.service";
 import { CodPaymentFilter, CreateSettlementInput, PaySettlementInput, UpdateSettlementInput, RevertSettlementInput, CancelSettlementInput } from "../types/finance.type";
 import { flattenMulterFiles, secureUploadedFiles } from "../lib/secureUploadedFiles";
 import { sendEncryptedFile } from "../lib/serveEncryptedDocument";
@@ -438,6 +438,31 @@ export async function revertSettlementController(req: Request, res: Response) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to revert settlement",
+    });
+  }
+}
+
+// PATCH /api/finance/settlements/:id/invoice-no — record or clear the
+// vendor's invoice number (body already validated by settlementInvoiceNoSchema).
+export async function setSettlementInvoiceNoController(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (typeof id !== "string" || !UUID_REGEX.test(id)) {
+      return res.status(400).json({ success: false, message: "Invalid settlement id" });
+    }
+
+    const { invoiceNo } = req.body as { invoiceNo: string | null };
+    const data = await setSettlementInvoiceNo({ id: req.user.id, roles: req.user.roles }, id, invoiceNo);
+
+    return res.status(200).json({ success: true, message: "Invoice number saved", data });
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to save invoice number",
     });
   }
 }

@@ -99,6 +99,18 @@ export const updateSettlementSchema = z.object({
   codCollectionIds: z.array(uuidSchema).min(1, "At least one order must be selected"),
 });
 
+// ── Settlement invoice number (body) ─────────────────────────────────────────
+// Blank clears it, so a mistyped number can be removed.
+
+export const settlementInvoiceNoSchema = z.object({
+  invoiceNo: z
+    .string()
+    .trim()
+    .max(64, "Invoice number must be 64 characters or fewer")
+    .nullable()
+    .transform((value) => (value ? value : null)),
+});
+
 // ── Revert settlement (body) — flips a settled statement back to pending ─────
 
 export const revertSettlementSchema = z.object({

@@ -109,6 +109,8 @@ export interface SettlementListItem {
    */
   paymentBreakdown: Array<{ method: string; amount: number }>;
   remark: string | null;
+  /** The vendor's invoice number for this payout. Null until staff record it. */
+  invoiceNo: string | null;
 }
 
 export interface SettlementsListResult {
@@ -327,6 +329,8 @@ export interface SettlementDetailResult {
   /** Every uploaded proof on this statement, including any not tied to an instalment. */
   documents: SettlementDocumentResult[];
   remark: string | null;
+  /** The vendor's invoice number for this payout. Null until staff record it. */
+  invoiceNo: string | null;
   /** Newest document of each kind, for callers that only want one. Null when none is attached. */
   paymentReceiptPath: string | null;
   taxInvoicePath: string | null;

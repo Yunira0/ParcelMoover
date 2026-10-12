@@ -94,6 +94,8 @@ export interface SettlementListItem {
    */
   paymentBreakdown: Array<{ method: string; amount: number }>;
   remark: string | null;
+  /** The vendor's invoice number for this payout. Null until recorded. */
+  invoiceNo: string | null;
 }
 
 export interface SettlementsListResponse {
@@ -306,6 +308,15 @@ export const attachSettlementDocuments = async (
   return response.data;
 };
 
+/** Records the vendor's invoice number on a paid statement. Blank clears it. */
+export const setSettlementInvoiceNo = async (
+  id: string,
+  invoiceNo: string,
+): Promise<{ success: boolean; message: string; data: { id: string; invoiceNo: string | null } }> => {
+  const response = await api.patch(`/finance/settlements/${id}/invoice-no`, { invoiceNo: invoiceNo.trim() || null });
+  return response.data;
+};
+
 export const deleteSettlementDocument = async (
   id: string,
   documentId: string,
@@ -415,6 +426,8 @@ export interface SettlementDetail {
   /** Every proof on this statement, including any not tied to an instalment. */
   documents: SettlementDocument[];
   remark: string | null;
+  /** The vendor's invoice number for this payout. Null until recorded. */
+  invoiceNo: string | null;
   /** Newest document of each kind. Null when none is attached. */
   paymentReceiptPath: string | null;
   taxInvoicePath: string | null;

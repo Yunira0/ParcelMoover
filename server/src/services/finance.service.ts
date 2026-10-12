@@ -636,6 +636,7 @@ export async function listSettlements(
       paidAmount: Number(s.paid_amount),
       paymentBreakdown: sumByMethod(s.payments),
       remark: s.remark,
+      invoiceNo: s.invoice_no,
     };
   });
 
@@ -1671,6 +1672,49 @@ export async function deleteSettlementDocument(
   return { id: settlementId, documents: documents.map(toDocumentResult) };
 }
 
+/**
+ * Records (or clears, with null) the vendor's invoice number on a statement.
+ * Same audience and state rule as attaching proof: head-office finance staff,
+ * vendor statements, and only once a payment is on record.
+ */
+export async function setSettlementInvoiceNo(
+  actor: Actor,
+  settlementId: string,
+  invoiceNo: string | null,
+): Promise<{ id: string; invoiceNo: string | null }> {
+  if (!isFinanceStaff(actor)) throw new AppError(403, "Not authorized to edit this statement");
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
+
+  return prisma.$transaction(async (tx) => {
+    await lockSettlement(tx, settlementId);
+
+    const settlement = await tx.settlements.findUnique({
+      where: { id: settlementId },
+      select: { payee_type: true, status: true, invoice_no: true },
+    });
+    if (!settlement) throw new AppError(404, "Settlement not found");
+    if (settlement.payee_type !== "vendor") {
+      throw new AppError(400, "Invoice numbers are recorded on vendor statements only");
+    }
+    if (settlement.status !== "settled" && settlement.status !== "partially_paid") {
+      throw new AppError(400, "An invoice number can only be recorded once a payment is recorded");
+    }
+
+    await tx.settlements.update({ where: { id: settlementId }, data: { invoice_no: invoiceNo } });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "settlement",
+        entity_id: settlementId,
+        action: "SET_SETTLEMENT_INVOICE_NO",
+        old_data: { invoiceNo: settlement.invoice_no },
+        new_data: { invoiceNo },
+      },
+    });
+    return { id: settlementId, invoiceNo };
+  });
+}
+
 // Admin-only, gated by the delegable EDIT_SETTLEMENTS permission: corrects an
 // unsettled statement's order list (add/remove cod_collections) after the
 // fact. Once any payment is recorded against a statement (via payForSettlement)
@@ -1926,6 +1970,8 @@ export async function revertSettlement(
         // reverted statement doesn't keep serving the old proof.
         payment_receipt_path: null,
         tax_invoice_path: null,
+        // The invoice belonged to the payout being undone.
+        invoice_no: null,
       },
     });
 
@@ -1977,6 +2023,7 @@ export async function revertSettlement(
             filePath: doc.file_path,
           })),
           remark: settlement.remark,
+          invoiceNo: settlement.invoice_no,
         },
         new_data: { status: "pending", remark: remark.trim() },
       },
@@ -2391,6 +2438,7 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     paymentRecords,
     documents,
     remark: settlement.remark,
+    invoiceNo: settlement.invoice_no,
     // Fall back to the legacy columns for statements the partial-payments
     // backfill couldn't reach.
     paymentReceiptPath: newestOfKind("receipt") ?? settlement.payment_receipt_path,

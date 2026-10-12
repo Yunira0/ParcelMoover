@@ -934,6 +934,8 @@ GET /api/v1/finance/settlements/{id}/documents/{kind}   — payment receipt / ta
 GET /api/v1/finance/unsettled-orders                    — orders with COD collected but not yet settled
 ```
 
+> **`invoiceNo`** on a settlement (list and detail) is your invoice number for that payout. Staff record it with the payment proof, so it is `null` until then, and it is cleared if the payment is reverted. Setting it is a staff action; there is no Partner API endpoint to write it.
+
 > **`/documents/{kind}` returns the file itself, not JSON.** It is the only way to fetch the `paymentReceiptPath` / `taxInvoicePath` values that appear on a settlement detail — those are internal paths you cannot request directly. Available once the statement has been paid with the document attached; `404` otherwise.
 >
 > ```bash

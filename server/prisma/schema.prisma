@@ -865,6 +865,9 @@ model settlements {
   settlement_date                      DateTime?                 @db.Date
   status                               settlement_status         @default(pending)
   remark                               String?
+  // The vendor's invoice number for this payout, entered with the payment
+  // proof. One per statement; null until staff record it.
+  invoice_no                           String?
   // Roll-up of every instalment: a "Cash, eSewa" style summary and the flat
   // list of {method, amount} lines across all of them. Kept for the statement
   // header; settlement_payments is where the per-instalment truth lives.

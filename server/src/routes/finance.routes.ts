@@ -18,6 +18,7 @@ import {
   updateSettlementSchema,
   revertSettlementSchema,
   cancelSettlementSchema,
+  settlementInvoiceNoSchema,
   createCarrierSettlementSchema,
   updateCarrierSettlementSchema,
 } from "../validators/finance.schema";
@@ -46,6 +47,7 @@ import {
   updateSettlementController,
   revertSettlementController,
   cancelSettlementController,
+  setSettlementInvoiceNoController,
   getSettlementDetailController,
   getSettlementBillingPaymentsController,
   getSettlementDocumentController,
@@ -200,6 +202,18 @@ financeRouter.patch(
   settlementCreateLimiter,
   settlementDocsUpload,
   attachSettlementDocumentsController,
+);
+
+// PATCH /api/finance/settlements/:id/invoice-no — record the vendor's invoice
+// number with the payment proof (same audience as attaching proof)
+financeRouter.patch(
+  "/settlements/:id/invoice-no",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "accountant", "admin"),
+  settlementCreateLimiter,
+  validate(settlementInvoiceNoSchema),
+  setSettlementInvoiceNoController,
 );
 
 // DELETE /api/finance/settlements/:id/documents/:documentId — remove one proof

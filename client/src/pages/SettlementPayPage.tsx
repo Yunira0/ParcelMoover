@@ -401,7 +401,8 @@ const SettlementPayPage: React.FC = () => {
             // Filed against the instalment just recorded, so a statement paid in
             // parts keeps each receipt with the payment it actually proves.
             {...(paidSummary?.paymentId ? { paymentId: paidSummary.paymentId } : {})}
-            caption="Add the receipt or tax invoice as evidence this transfer went through. You can attach more than one file, and add others later from the statement."
+            invoiceNo={detail.invoiceNo ?? ''}
+            caption="Add the vendor's invoice number and the receipt or tax invoice as evidence this transfer went through. All optional — you can add them later from the statement."
             submitLabel="Attach & finish"
             dismissLabel="Skip for now"
             onDone={goToStatement}

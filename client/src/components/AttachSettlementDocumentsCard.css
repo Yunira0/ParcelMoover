@@ -41,6 +41,10 @@
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.asd-invoice-no {
+  max-width: 360px;
+}
+
 .asd-files-single {
   grid-template-columns: minmax(0, 360px);
 }
