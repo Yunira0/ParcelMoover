@@ -158,7 +158,7 @@ orderRouter.post(
 orderRouter.get(
   "/dashboard-summary",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "vendor", "vendor_staff", "rider", "sales"),
+  authorizeRoles("super_admin", "admin", "accountant", "vendor", "vendor_staff", "rider", "sales"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   dashboardSummaryController,

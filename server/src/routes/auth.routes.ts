@@ -142,7 +142,7 @@ authRouter.get(
 authRouter.get(
   "/users/vendors/top",
   authMiddleware,
-  authorizeRoles("super_admin", "admin", "sales", "vendor", "vendor_staff"),
+  authorizeRoles("super_admin", "admin", "accountant", "sales", "vendor", "vendor_staff"),
   authReadLimiter,
   getTopVendorsController,
 );

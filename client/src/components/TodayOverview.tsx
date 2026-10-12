@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ClipboardList, Check, Truck, Package, RotateCcw, Undo2, MessageSquare, type LucideIcon } from 'lucide-react';
 import type { DashboardSummary } from '../services/orders.service';
+import { isAccountantUser } from '../utils/auth';
 import './TodayOverview.css';
 
 interface TodayOverviewProps {
@@ -44,7 +45,10 @@ const TodayOverview: React.FC<TodayOverviewProps> = ({ today, overview, loading 
     { icon: Package, label: 'Pending deliveries', value: overview.pendingDeliveries, to: '/orders?currentStatus=arrived_at_branch&currentStatus=ready_to_deliver&currentStatus=sent_for_delivery&currentStatus=failed_delivery', color: 'var(--color-background-warning-default)' },
     { icon: RotateCcw, label: 'Returned', value: today.returnedToVendor, to: `/orders?${updatedToday}&currentStatus=returned_to_vendor`, color: 'var(--color-danger-default)' },
     { icon: Undo2, label: 'Pending returns', value: overview.pendingReturns, to: '/orders?currentStatus=follow_up&currentStatus=ready_to_return&currentStatus=sent_to_vendor', color: 'var(--color-background-warning-default)' },
-    { icon: MessageSquare, label: 'Unclosed remarks', value: today.unclosedComments, to: '/unclosed-remarks', color: 'var(--color-primary)' },
+    // The accountant can't open the remarks pages, so the row would only bounce them.
+    ...(isAccountantUser()
+      ? []
+      : [{ icon: MessageSquare, label: 'Unclosed remarks', value: today.unclosedComments, to: '/unclosed-remarks', color: 'var(--color-primary)' }]),
   ];
 
   return (

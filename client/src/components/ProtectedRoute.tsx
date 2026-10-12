@@ -98,7 +98,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   // The accountant works the Finance section only; any other URL (including
-  // /dashboard, where every login lands) goes to the finance overview.
+  // the finance overview) goes to their dashboard.
   if (isAccountantUser() && !isAccountantPathAllowed(location.pathname)) {
     return <Navigate to={ACCOUNTANT_HOME} replace />;
   }

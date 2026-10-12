@@ -147,7 +147,7 @@ function App() {
           />
           <Route
             path="/overview/:metric"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><OverviewOrdersPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><OverviewOrdersPage /></RoleGuard>}
           />
           {/* Per-merchant read of the orders list: the ten roll-up figures plus
               the waybill table, scoped by a merchant picker and date range. */}

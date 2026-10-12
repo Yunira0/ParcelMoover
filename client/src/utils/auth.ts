@@ -123,18 +123,20 @@ export function isAccountantUser(): boolean {
 }
 
 /** Where an accountant lands, and where any non-finance URL sends them back to. */
-export const ACCOUNTANT_HOME = '/accounting';
+export const ACCOUNTANT_HOME = '/dashboard';
 
 /** Routes that belong to the accountant's finance-only workspace. */
 export function isAccountantPathAllowed(pathname: string): boolean {
   return (
     pathname === '/profile' ||
-    pathname === '/accounting' ||
+    pathname === '/dashboard' ||
+    // The order lists behind the dashboard's Realtime Overview cards.
+    pathname.startsWith('/overview/') ||
     pathname.startsWith('/accounting/') ||
     pathname === '/finance' ||
     pathname.startsWith('/finance/') ||
     pathname === '/billing' ||
-    // Drill-downs behind the COD Settlement card on the finance overview.
+    // Drill-downs behind the dashboard's COD Settlement card.
     pathname.startsWith('/cod/') ||
     pathname === '/cod-settlement-requests' ||
     pathname.startsWith('/cod-settlement-requests/') ||
