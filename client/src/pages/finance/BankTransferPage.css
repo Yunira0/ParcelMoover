@@ -1,76 +1,17 @@
-/* CIPS Bulk Transfer. The sheet, panel and title band come from tally.css and
-   tallyVoucher.css; this adds the tick column, the rows that can't go in the
-   bank file yet, and the figures that have to be read digit by digit. */
+/* COD Transfer Report. Page, toolbar and table come from Accounting.css and
+   Table.css; this only marks the rows that can't go in the bank file yet. */
 
-.bt-note {
-  margin: 0 var(--space-4) var(--space-3);
-}
-
-/* Bank codes, account numbers and money get checked against a bank portal
-   one digit at a time - tabular figures keep the columns aligned. */
-.bt-sheet td.tly-amt,
-.bt-num {
+.bt-charge input {
+  width: 7rem;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.bt-num {
-  white-space: nowrap;
-}
-
-.bt-check {
-  width: 2.5rem;
-  text-align: center;
-}
-
-.bt-check input {
-  width: 1rem;
-  height: 1rem;
-  margin: 0;
-  accent-color: var(--color-primary);
-  cursor: pointer;
-}
-
-.bt-check input:disabled {
-  cursor: not-allowed;
-}
-
-.bt-vendor {
-  font-weight: var(--font-weight-semibold);
-}
-
-.bt-sub {
-  font-size: var(--font-size-xs);
-}
-
-.bt-statement {
-  color: var(--color-text-primary);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.bt-statement:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-/* A ticked row is one that will be in the file. */
-.bt-row-chosen td {
-  background: var(--color-primary-subtle);
-}
-
-/* A row missing bank details reads as set aside, but its problem stays
-   legible: the fix line is the reason it's on screen. */
-.bt-row-blocked td {
+.custom-table tr.bt-row-blocked td {
   color: var(--color-text-caption);
 }
 
-.bt-row-blocked .bt-vendor {
-  color: var(--color-text-default);
-}
-
 .bt-problem {
-  margin-top: 2px;
-  font-size: var(--font-size-xs);
   color: var(--color-danger-text);
 }
 
@@ -81,74 +22,3 @@
   text-underline-offset: 2px;
 }
 
-.bt-missing {
-  color: var(--color-danger-text);
-}
-
-.bt-net {
-  font-weight: var(--font-weight-semibold);
-}
-
-/* The charge is a money figure the eye compares against the column below. */
-.bt-charge input {
-  width: 7rem;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.bt-charge input[aria-invalid='true'] {
-  border-color: var(--color-danger-default);
-}
-
-.bt-field-error {
-  align-self: center;
-  font-size: var(--font-size-xs);
-  color: var(--color-danger-text);
-}
-
-/* What goes in the bank's Remarks 1 column, exactly as it will be sent. */
-.bt-remark {
-  font-weight: var(--font-weight-semibold);
-  white-space: nowrap;
-}
-
-.bt-foot-count {
-  color: var(--color-text-caption);
-  font-size: var(--font-size-xs);
-}
-
-.bt-after {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  font-size: var(--font-size-xs);
-}
-
-.bt-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-text-primary);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.bt-check input:focus-visible,
-.bt-link:focus-visible,
-.bt-fix:focus-visible,
-.bt-statement:focus-visible {
-  outline: 2px solid var(--color-border-primary);
-  outline-offset: 2px;
-}
-
-@media print {
-  .bt-check,
-  .bt-after,
-  .bt-problem .bt-fix {
-    display: none;
-  }
-  .bt-row-chosen td {
-    background: none;
-  }
-}

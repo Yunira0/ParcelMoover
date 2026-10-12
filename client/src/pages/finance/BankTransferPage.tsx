@@ -1,24 +1,28 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import TallyPage, { type TallyAction } from '../../components/finance/TallyPage';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Download } from 'lucide-react';
+import PageHeader from '../../components/PageHeader';
+import Table from '../../components/Table';
+import StatusChip from '../../components/StatusChip';
+import Button from '../../components/Button';
+import FormField from '../../components/FormField';
+import { Banner } from '../accounting/ui';
+import { money } from '../accounting/format';
 import { getVendorBankTransfers, type BankTransferRow } from '../../services/finance.service';
-import { formatAmount } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
-import { useBackOr } from '../../hooks/useBackOr';
 import { hasAdminPermission } from '../../utils/auth';
-import { printAction, quitAction } from '../../components/finance/tallyKeys';
-import '../../components/finance/tally.css';
+import { settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
+import '../accounting/Accounting.css';
 import './BankTransferPage.css';
 
 /**
- * Bank Transfer — every vendor statement the office still owes, laid out as
- * the connectIPS (CIPS) bulk transfer sheet the bank accepts: COD amount, the
- * bank charge taken off it, the net payable that is actually sent, and the
- * creditor's bank code, account and remark.
+ * COD Transfer Report — every pending or part-paid vendor statement, with the
+ * vendor's bank details and what the connectIPS (CIPS) bulk transfer will send:
+ * the amount still owed, the bank charge taken off it, and the net payable.
  *
- * The page only prepares the file. Uploading it to connectIPS, and recording
- * each statement as paid afterwards (Vendor COD > COD & Settlements), stay
- * separate steps, so nothing here moves money or changes a statement.
+ * The page only prepares the bank file. Uploading it to connectIPS, and
+ * recording each statement as paid afterwards (Vendor COD > COD & Settlements),
+ * stay separate steps, so nothing here moves money or changes a statement.
  */
 
 /** connectIPS's usual flat fee per transfer; editable on the page. */
@@ -35,8 +39,9 @@ const remarkFor = (row: BankTransferRow) => `COD - ${row.vendorName}`.slice(0, C
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** A statement with the bank charge applied. */
+/** A statement with the bank charge applied, shaped for <Table>. */
 interface TransferLine extends BankTransferRow {
+  id: string;
   bankCharge: number;
   netPayable: number;
   remark: string;
@@ -47,7 +52,7 @@ interface TransferLine extends BankTransferRow {
 function problemsOf(row: BankTransferRow, netPayable: number): string[] {
   const problems: string[] = [];
   // The code comes from the bank list; a bank typed by hand before the list existed has none.
-  if (!row.bankCode) problems.push(row.bankName ? 'Bank not on the bank list - pick it again' : 'No bank');
+  if (!row.bankCode) problems.push(row.bankName ? 'Bank not on the bank list' : 'No bank');
   else if (!/^\d{1,4}$/.test(row.bankCode)) problems.push('Bank code must be up to 4 digits');
   if (!row.accountNumber) problems.push('No account number');
   else if (row.accountNumber.length > CIPS_ACCOUNT_MAX) problems.push(`Account number over ${CIPS_ACCOUNT_MAX} characters`);
@@ -59,20 +64,21 @@ function problemsOf(row: BankTransferRow, netPayable: number): string[] {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+function errorText(error: unknown): string {
+  const response = (error as { response?: { data?: { message?: string } } }).response;
+  return response?.data?.message ?? (error as Error).message ?? 'Could not load the report.';
+}
+
 /**
- * Writes the sheet in the bank's own layout - the three notice lines, the
- * header on row 4, transfers from row 5 - because connectIPS rejects a file
- * whose format was changed. Codes and account numbers are text cells so a
- * leading zero survives.
+ * Writes the connectIPS bulk transfer sheet: the bank's column header on row 1,
+ * transfers from row 2. Codes and account numbers are text cells so a leading
+ * zero survives.
  */
 async function downloadCipsSheet(lines: TransferLine[]): Promise<void> {
   try {
     const { default: ExcelJS } = await import('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('CIPS BULK TRANSFER');
-    ws.addRow(['*Allowed transaction count is 1000. Click here to check bank codes.']);
-    ws.addRow(['Note: Do not change the file format. (*) denotes required fields. ']);
-    ws.addRow(['CIPS BULK TRANSACTION (Supports only other bank)']);
     const header = ws.addRow([
       'Transaction Amount (*)',
       'Creditor Bank Code (Max 4 Digits*)',
@@ -105,15 +111,14 @@ async function downloadCipsSheet(lines: TransferLine[]): Promise<void> {
   }
 }
 
+const missing = (text = 'Missing') => <span className="bt-problem">{text}</span>;
+
 const BankTransferPage: React.FC = () => {
-  const navigate = useNavigate();
-  const goBack = useBackOr('/accounting');
   // An accountant can't open the vendor form, so they get the problem without the link.
   const canEditVendors = hasAdminPermission('MANAGE_USERS');
   const [rows, setRows] = useState<BankTransferRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
-  const [search, setSearch] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [chargeInput, setChargeInput] = useState(String(DEFAULT_BANK_CHARGE));
   // Rows the user has unticked. Tracking the exclusions (rather than the
   // inclusions) keeps a row ticked when a charge change makes it ready again.
@@ -123,286 +128,183 @@ const BankTransferPage: React.FC = () => {
   const chargeValid = chargeInput.trim() !== '' && Number.isFinite(charge) && charge >= 0;
   const bankCharge = chargeValid ? round2(charge) : DEFAULT_BANK_CHARGE;
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setRows(await getVendorBankTransfers());
-      setExcluded(new Set());
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    getVendorBankTransfers()
+      .then((data) => {
+        if (cancelled) return;
+        setRows(data);
+        setExcluded(new Set());
+      })
+      .catch((err) => { if (!cancelled) setError(errorText(err)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const lines = useMemo<TransferLine[]>(() => rows.map((row) => {
     const netPayable = round2(row.codAmount - bankCharge);
-    return { ...row, bankCharge, netPayable, remark: remarkFor(row), problems: problemsOf(row, netPayable) };
+    return {
+      ...row,
+      id: row.settlementId,
+      bankCharge,
+      netPayable,
+      remark: remarkFor(row),
+      problems: problemsOf(row, netPayable),
+    };
   }), [rows, bankCharge]);
 
-  const visible = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return lines;
-    return lines.filter((line) =>
-      line.vendorName.toLowerCase().includes(term) || line.statementId.toLowerCase().includes(term));
-  }, [lines, search]);
+  const isReady = (line: TransferLine) => line.problems.length === 0;
+  const ready = lines.filter(isReady);
+  const chosen = ready.filter((line) => !excluded.has(line.id));
+  const chosenIds = new Set<string | number>(chosen.map((line) => line.id));
+  const allChosen = ready.length > 0 && chosen.length === ready.length;
 
-  const ready = lines.filter((line) => line.problems.length === 0);
-  const blockedCount = lines.length - ready.length;
-  const chosen = ready.filter((line) => !excluded.has(line.settlementId));
-  const visibleReady = visible.filter((line) => line.problems.length === 0);
-  const allVisibleChosen = visibleReady.length > 0 && visibleReady.every((line) => !excluded.has(line.settlementId));
-
-  const totals = chosen.reduce(
-    (sum, line) => ({ cod: sum.cod + line.codAmount, charge: sum.charge + line.bankCharge, net: sum.net + line.netPayable }),
-    { cod: 0, charge: 0, net: 0 },
-  );
+  const owed = lines.reduce((sum, line) => sum + line.codAmount, 0);
   const overLimit = chosen.length > CIPS_MAX_ROWS;
 
-  const toggle = (id: string) => {
+  const toggle = (id: string | number) => {
     setExcluded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const key = String(id);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
 
-  const toggleAllVisible = () => {
+  const toggleAll = () => {
     setExcluded((prev) => {
       const next = new Set(prev);
-      visibleReady.forEach((line) => (allVisibleChosen ? next.add(line.settlementId) : next.delete(line.settlementId)));
+      ready.forEach((line) => (allChosen ? next.add(line.id) : next.delete(line.id)));
       return next;
     });
   };
 
-  const exportWorkingSheet = async () => {
+  const exportReport = async () => {
     await downloadExcel(
-      `vendor-bank-transfers-${today()}`,
-      'Bank Transfers',
+      `cod-transfer-report-${today()}`,
+      'COD Transfer Report',
       [
-        'COD Amount', 'Bank Charge', 'Net Payable', 'Creditor Bank Code', 'Creditor Account Number',
-        'Creditor Account Name', 'Remarks', 'Statement', 'Ready',
+        'COD Amount', 'Bank Charge', 'Net Payable', 'Vendor Bank Code', 'Vendor Account Name',
+        'Vendor Account Number', 'Remarks', 'Status',
       ],
       lines.map((line) => [
         line.codAmount,
         line.bankCharge,
         line.netPayable,
-        line.bankCode,
-        line.accountNumber,
-        line.accountName,
+        line.bankCode ?? '',
+        line.accountName ?? '',
+        line.accountNumber ?? '',
         line.remark,
-        line.statementId,
-        line.problems.length === 0 ? 'Yes' : line.problems.join('; '),
+        settlementStatusLabel(line.status),
       ]),
     );
   };
 
-  const actions: TallyAction[] = [
-    {
-      key: 'Alt+E',
-      label: `CIPS Sheet (${chosen.length})`,
-      onSelect: () => void downloadCipsSheet(chosen),
-      disabled: chosen.length === 0 || overLimit || !chargeValid,
-      primary: true,
-    },
-    { key: 'Alt+W', label: 'Working Sheet', onSelect: () => void exportWorkingSheet(), disabled: lines.length === 0 || !chargeValid },
-    { key: 'Alt+R', label: 'Refresh', onSelect: () => void load() },
-    printAction(),
-    quitAction(goBack),
-  ];
-
-  const filters = (
-    <>
-      <label className="bt-charge">
-        <span>Bank charge (Rs)</span>
-        <input
-          type="number"
-          inputMode="decimal"
-          min={0}
-          step="any"
-          value={chargeInput}
-          onChange={(event) => setChargeInput(event.target.value)}
-          aria-invalid={!chargeValid}
-          aria-describedby={chargeValid ? undefined : 'bt-charge-error'}
-        />
-      </label>
-      <label>
-        <span>Vendor or statement</span>
-        <input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search"
-        />
-      </label>
-      {!chargeValid && (
-        <span id="bt-charge-error" className="bt-field-error" role="alert">
-          Enter a bank charge of 0 or more.
-        </span>
-      )}
-    </>
-  );
-
   return (
-    <TallyPage
-      title="Bank Transfer"
-      period={`${lines.length} unpaid ${lines.length === 1 ? 'statement' : 'statements'}`}
-      periodLabel="Vendor COD"
-      actions={actions}
-      filters={filters}
-      error={error}
-      loading={loading}
-      menu
-    >
-      <div className="tly-voucher jv bt">
-        <div className="jv-meta">
-          <div className="jv-meta-field">
-            <span>Bank charge :</span>
-            <strong>Rs {formatAmount(bankCharge)} per transfer</strong>
-          </div>
-          <div className="jv-meta-field">
-            <span>In sheet :</span>
-            <strong>{chosen.length} of {ready.length}</strong>
-          </div>
-          <div className="jv-meta-field jv-meta-no">
-            <span>Sending :</span>
-            <strong className="bt-num">Rs {formatAmount(totals.net)}</strong>
-          </div>
-        </div>
+    <div className="acc-page">
+      <PageHeader
+        title="COD Transfer Report"
+        subtitle={loading
+          ? 'Pending vendor settlements'
+          : `${lines.length} pending ${lines.length === 1 ? 'settlement' : 'settlements'} · ${money(owed)} owed`}
+        actionLabel={`CIPS sheet (${chosen.length})`}
+        actionIcon={<Download size={16} />}
+        onAction={() => void downloadCipsSheet(chosen)}
+        actionDisabled={chosen.length === 0 || overLimit || !chargeValid}
+      >
+        <Button variant="outline" onClick={() => void exportReport()} disabled={lines.length === 0 || !chargeValid}>
+          <Download size={16} />
+          Export
+        </Button>
+      </PageHeader>
 
-        {blockedCount > 0 && (
-          <p className="tly-note tly-note-danger bt-note">
-            {blockedCount === 1 ? '1 statement is' : `${blockedCount} statements are`} left out of the bank sheet:
-            the reason is under its remark.{' '}
-            {canEditVendors
-              ? <>Use <strong>Fix</strong> to open the vendor and pick the bank from the list or add the account.</>
-              : 'Ask an admin to fix the bank details on the vendor.'}
-          </p>
-        )}
-        {overLimit && (
-          <p className="tly-note tly-note-danger bt-note">
-            connectIPS takes at most {CIPS_MAX_ROWS} transfers per sheet. Untick {chosen.length - CIPS_MAX_ROWS} and
-            send the rest in a second sheet.
-          </p>
-        )}
-
-        <div className="tly-scroll">
-          <table className="tly-sheet jv-sheet jv-report bt-sheet">
-            <thead>
-              <tr>
-                <th className="bt-check">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleChosen}
-                    disabled={visibleReady.length === 0}
-                    onChange={toggleAllVisible}
-                    aria-label="Include every ready statement shown"
-                  />
-                </th>
-                <th className="tly-amt">COD Amount</th>
-                <th className="tly-amt">Bank Charge</th>
-                <th className="tly-amt">Net Payable</th>
-                <th>Creditor Bank Code</th>
-                <th>Creditor Account Number</th>
-                <th>Creditor Account Name</th>
-                <th>Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((line) => {
-                const isReady = line.problems.length === 0;
-                const isChosen = isReady && !excluded.has(line.settlementId);
-                return (
-                  <tr
-                    key={line.settlementId}
-                    className={`bt-row${isReady ? '' : ' bt-row-blocked'}${isChosen ? ' bt-row-chosen' : ''}`}
-                  >
-                    <td className="bt-check">
-                      <input
-                        type="checkbox"
-                        checked={isChosen}
-                        disabled={!isReady}
-                        onChange={() => toggle(line.settlementId)}
-                        aria-label={`Include ${line.vendorName} ${line.statementId} in the bank sheet`}
-                      />
-                    </td>
-                    <td className="tly-amt">{formatAmount(line.codAmount)}</td>
-                    <td className="tly-amt tly-muted">− {formatAmount(line.bankCharge)}</td>
-                    <td className={`tly-amt bt-net${line.netPayable <= 0 ? ' tly-neg' : ''}`}>
-                      {formatAmount(line.netPayable)}
-                    </td>
-                    <td className="bt-num">
-                      {line.bankCode || <span className="bt-missing">—</span>}
-                      {line.bankName && <div className="tly-muted bt-sub">{line.bankName}</div>}
-                    </td>
-                    <td className="bt-num">{line.accountNumber || <span className="bt-missing">—</span>}</td>
-                    <td>{line.accountName || <span className="bt-missing">—</span>}</td>
-                    <td>
-                      <div className="bt-remark" title={`COD - ${line.vendorName}`}>{line.remark}</div>
-                      <Link to={`/finance/settlements/${line.settlementId}`} className="bt-statement bt-sub">
-                        {line.statementId}
-                      </Link>
-                      {line.status === 'partially_paid' && <span className="tly-muted bt-sub"> · part paid</span>}
-                      {!isReady && (
-                        <div className="bt-problem">
-                          {line.problems.join(' · ')}
-                          {canEditVendors && (
-                            <>
-                              {' '}
-                              <Link to={`/vendors/${line.vendorId}/edit`} className="bt-fix">Fix</Link>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!loading && lines.length === 0 && (
-                <tr className="jv-empty">
-                  <td colSpan={8}>
-                    No vendor is owed anything right now. Statements appear here once they're created under
-                    Vendor COD and stay until they're paid.
-                  </td>
-                </tr>
-              )}
-              {!loading && lines.length > 0 && visible.length === 0 && (
-                <tr className="jv-empty">
-                  <td colSpan={8}>No statement matches "{search}".</td>
-                </tr>
-              )}
-            </tbody>
-            {chosen.length > 0 && (
-              <tfoot>
-                <tr className="jv-foot-total jv-foot-closing">
-                  <td />
-                  <td className="tly-amt">{formatAmount(totals.cod)}</td>
-                  <td className="tly-amt">− {formatAmount(totals.charge)}</td>
-                  <td className="tly-amt">{formatAmount(totals.net)}</td>
-                  <td colSpan={4} className="bt-foot-count">
-                    Total · {chosen.length} {chosen.length === 1 ? 'transfer' : 'transfers'}
-                  </td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-
-        <p className="tly-muted bt-after">
-          After the bank confirms the transfers, record each statement as paid from{' '}
-          <button type="button" className="bt-link" onClick={() => navigate('/accounting/transactions/vendor-cod')}>
-            Vendor COD › COD &amp; Settlements
-          </button>
-          . This page doesn't mark anything paid.
-        </p>
+      <div className="acc-toolbar">
+        <label className="bt-charge">
+          <span>BANK CHARGE (RS)</span>
+          <FormField
+            label=""
+            type="decimal"
+            min={0}
+            step="any"
+            value={chargeInput}
+            onChange={setChargeInput}
+            error={chargeValid ? undefined : 'Enter 0 or more.'}
+          />
+        </label>
       </div>
-    </TallyPage>
+
+      {error && <Banner tone="danger">{error}</Banner>}
+      {overLimit && (
+        <Banner tone="danger">
+          connectIPS takes at most {CIPS_MAX_ROWS} transfers per sheet. Untick {chosen.length - CIPS_MAX_ROWS} and
+          send the rest in a second sheet.
+        </Banner>
+      )}
+
+      <Table
+        selectable
+        selectedIds={chosenIds}
+        onToggleRow={toggle}
+        allSelected={allChosen}
+        someSelected={chosen.length > 0 && !allChosen}
+        onToggleAll={toggleAll}
+        isRowSelectable={isReady}
+        getRowClassName={(line) => (isReady(line) ? '' : 'bt-row-blocked')}
+        loading={loading}
+        loadingMessage="Loading pending settlements…"
+        data={lines}
+        columns={[
+          { header: 'COD amount', className: 'acc-num', accessor: (line) => money(line.codAmount) },
+          { header: 'Bank charge', className: 'acc-num', accessor: (line) => money(line.bankCharge) },
+          {
+            header: 'Net payable',
+            className: 'acc-num',
+            accessor: (line) => (line.netPayable > 0 ? money(line.netPayable) : missing(money(line.netPayable))),
+          },
+          {
+            header: 'Vendor bank code',
+            accessor: (line) => {
+              if (line.bankCode && /^\d{1,4}$/.test(line.bankCode)) return line.bankCode;
+              return (
+                <>
+                  {missing(line.bankName ? 'Not on bank list' : 'Missing')}
+                  {line.bankName && <span className="acc-sub">{line.bankName}</span>}
+                </>
+              );
+            },
+          },
+          {
+            header: 'Vendor account name',
+            accessor: (line) => line.accountName || missing(),
+          },
+          {
+            header: 'Vendor account number',
+            accessor: (line) => line.accountNumber || missing(),
+          },
+          {
+            header: 'Remarks',
+            accessor: (line) => (
+              <>
+                {line.remark}
+                {!isReady(line) && canEditVendors && (
+                  <Link to={`/vendors/${line.vendorId}/edit`} className="acc-sub bt-fix">Fix vendor</Link>
+                )}
+              </>
+            ),
+          },
+          {
+            header: 'Status',
+            accessor: (line) => (
+              <StatusChip variant="solid" tone={settlementStatusTone(line.status)}>
+                {settlementStatusLabel(line.status)}
+              </StatusChip>
+            ),
+          },
+        ]}
+        emptyMessage="No pending vendor settlements."
+      />
+    </div>
   );
 };
 
