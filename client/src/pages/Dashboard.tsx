@@ -98,8 +98,7 @@ const Dashboard: React.FC = () => {
   // panel (it tracks COD in Branch COD / Rider COD instead). The top-vendors
   // panel is branch-scoped server-side, so it stays.
   const isBranch = isBranchWorkspaceUser();
-  // The accountant can't create orders or work pickup/dispatch, so their
-  // dashboard swaps the shortcuts and the ops alerts for their money queues.
+  // The accountant gets their money queues in place of the shortcuts.
   const isAccountant = isAccountantUser();
   const [trendPeriod, setTrendPeriod] = useState<7 | 30>(7);
 
@@ -208,20 +207,14 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          {isAccountant ? (
+          <div className="dashboard-row dashboard-row-split">
             <div className="dashboard-panel">
               <TopVendors />
             </div>
-          ) : (
-            <div className="dashboard-row dashboard-row-split">
-              <div className="dashboard-panel">
-                <TopVendors />
-              </div>
-              <div className="dashboard-panel">
-                <NeedsAttention sla={summary.sla} loading={initialLoading} />
-              </div>
+            <div className="dashboard-panel">
+              <NeedsAttention sla={summary.sla} loading={initialLoading} />
             </div>
-          )}
+          </div>
         </>
       )}
     </div>

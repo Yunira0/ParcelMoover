@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { MessageSquare, RotateCcw, ClipboardList, Send, Route, ArrowRight, CheckCircle2, Building2 } from 'lucide-react';
 import type { DashboardSummary, SlaStatusBreach, SlaValleySplit } from '../services/orders.service';
 import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
+import { canOpenPath } from '../utils/auth';
 import './NeedsAttention.css';
 
 interface NeedsAttentionProps {
@@ -127,7 +128,7 @@ const NeedsAttention: React.FC<NeedsAttentionProps> = ({ sla, loading = false })
       details: sla.returnBreaches,
     },
   ];
-  const items = allItems.filter((item) => item.count > 0);
+  const items = allItems.filter((item) => item.count > 0 && canOpenPath(item.to));
 
   return (
     <section className="needs-attention" aria-label="Needs attention">
