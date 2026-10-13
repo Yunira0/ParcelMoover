@@ -3,6 +3,7 @@ import ConfirmDialog from './ConfirmDialog';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Download, Plus, Search, Trash2, Truck, X } from 'lucide-react';
 import Table from './Table';
+import ReceiverPhones from './ReceiverPhones';
 import Pagination from './Pagination';
 import Button from './Button';
 import StatusChip, { type StatusChipTone } from './StatusChip';
@@ -47,6 +48,11 @@ const parcelColumns = (parcels: TransitManifestParcel[]) => [
     width: '150px',
   },
   { header: 'RECEIVER', accessor: (p: TransitManifestParcel) => p.receiverName || '-', width: '160px' },
+  {
+    header: 'NUMBER',
+    accessor: (p: TransitManifestParcel) => <ReceiverPhones phone={p.receiverPhone} alternate={p.receiverAlternatePhone} />,
+    width: '130px',
+  },
   { header: 'DESTINATION', accessor: (p: TransitManifestParcel) => p.destination || '-', width: '180px' },
   { header: 'COD', accessor: (p: TransitManifestParcel) => formatMoney(p.codAmount), width: '100px' },
   {

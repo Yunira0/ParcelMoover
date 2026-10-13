@@ -71,6 +71,7 @@ const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const BranchDestinations = lazy(() => import('./pages/branch/BranchDestinations'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
+const BankManagement = lazy(() => import('./pages/BankManagement'))
 const PickupTimeSlots = lazy(() => import('./pages/PickupTimeSlots'))
 const PickupOperations = lazy(() => import('./pages/PickupOperations'))
 const DispatchOperations = lazy(() => import('./pages/DispatchOperations'))
@@ -342,6 +343,10 @@ function App() {
           <Route
             path="/sla"
             element={<RoleGuard allowedRoles={['super_admin']}><SlaSettings /></RoleGuard>}
+          />
+          <Route
+            path="/banks"
+            element={<RoleGuard allowedRoles={['super_admin']}><BankManagement /></RoleGuard>}
           />
           <Route
             path="/pickup-time-slots"

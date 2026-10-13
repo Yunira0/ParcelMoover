@@ -2086,3 +2086,14 @@ model user_daily_activity {
   @@id([day, user_id])
   @@index([last_seen_at(sort: Desc)], map: "idx_user_daily_activity_last_seen")
 }
+
+/// Banks a vendor's payouts can go to. Vendors store the bank's name, so a
+/// bank is disabled rather than renamed or deleted once it is in use.
+model banks {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @unique
+  code       String
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}

@@ -35,6 +35,7 @@ const CarrierEditSettlementModal: React.FC<{
       id: order.codCollectionId,
       trackingId: order.trackingId,
       receiverName: order.receiverName,
+      receiverPhone: order.receiverPhone,
       amount: order.collectedAmount,
     })),
   }), [detail.carrier]);
@@ -45,6 +46,8 @@ const CarrierEditSettlementModal: React.FC<{
         id: item.codCollectionId,
         trackingId: item.trackingId,
         receiverName: item.receiverName,
+        receiverPhone: item.receiverPhone,
+        receiverAlternatePhone: item.receiverAlternatePhone,
         amount: item.collectedAmount,
       }))}
       loadAddable={loadAddable}

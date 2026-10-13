@@ -40,6 +40,7 @@ import {
   Gauge,
   Building2,
   TrendingUp,
+  Landmark,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -688,13 +689,14 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           <SidebarGroup
             label="System Management"
             icon={Wrench}
-            match={['/pickup-time-slots', '/system-logs', '/sla', '/banners', '/announcements', '/vouchers']}
+            match={['/pickup-time-slots', '/system-logs', '/sla', '/banks', '/banners', '/announcements', '/vouchers']}
           >
             {isSuperAdmin && <SubItem to="/pickup-time-slots" icon={Clock} label="Pickup Time Slots" />}
             {(isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS')) && (
               <SubItem to="/system-logs" icon={ScrollText} label="System Logs" />
             )}
             {isSuperAdmin && <SubItem to="/sla" icon={Timer} label="SLA" />}
+            {isSuperAdmin && <SubItem to="/banks" icon={Landmark} label="Banks" />}
             {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
               <SubItem to="/banners" icon={Image} label="Banner" />
             )}
