@@ -179,9 +179,7 @@ const Dashboard: React.FC = () => {
             <div className="dashboard-panel">
               <TopVendors />
             </div>
-            <div className="dashboard-panel">
-              <NeedsAttention sla={summary.sla} loading={initialLoading} />
-            </div>
+            <NeedsAttention sla={summary.sla} loading={initialLoading} />
           </div>
         </>
       ) : (
@@ -211,9 +209,7 @@ const Dashboard: React.FC = () => {
             <div className="dashboard-panel">
               <TopVendors />
             </div>
-            <div className="dashboard-panel">
-              <NeedsAttention sla={summary.sla} loading={initialLoading} />
-            </div>
+            <NeedsAttention sla={summary.sla} loading={initialLoading} />
           </div>
         </>
       )}
