@@ -1,0 +1,24 @@
+/* COD Transfer Report. Page, toolbar and table come from Accounting.css and
+   Table.css; this only marks the rows that can't go in the bank file yet. */
+
+.bt-charge input {
+  width: 7rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.custom-table tr.bt-row-blocked td {
+  color: var(--color-text-caption);
+}
+
+.bt-problem {
+  color: var(--color-danger-text);
+}
+
+.bt-fix {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-danger-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+

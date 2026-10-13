@@ -114,10 +114,10 @@ const RiderManagement: React.FC = () => {
   };
 
   const columns = [
-    { header: 'SN', accessor: 'sn' as keyof RiderUser, width: '34px' },
+    { header: 'SN', accessor: 'sn' as keyof RiderUser },
     // A carrier placeholder (NCM/Upaya) isn't a real employee, so it never
     // shows one even though the row itself still gets a DB-assigned number.
-    { header: 'EMPLOYEE ID', accessor: (r: RiderUser) => (r.carrierCode ? '—' : r.employeeId || '—'), width: '110px' },
+    { header: 'EMPLOYEE ID', accessor: (r: RiderUser) => (r.carrierCode ? '—' : r.employeeId || '—') },
     {
       header: 'NAME',
       accessor: (item: RiderUser) => (
@@ -130,10 +130,9 @@ const RiderManagement: React.FC = () => {
           )}
         </div>
       ),
-      width: '100px',
     },
-    { header: 'EMAIL', accessor: 'email' as keyof RiderUser, width: '160px' },
-    { header: 'PHONE', accessor: 'phone' as keyof RiderUser, width: '124px' },
+    { header: 'EMAIL', accessor: 'email' as keyof RiderUser },
+    { header: 'PHONE', accessor: 'phone' as keyof RiderUser },
     { header: 'LOCATION', accessor: 'location' as keyof RiderUser },
     {
       header: 'PARCELS',
@@ -143,10 +142,8 @@ const RiderManagement: React.FC = () => {
           Delivered: {item.orders.delivered}<br />
           Returned: {item.orders.returned}
         </div>
-      ),
-      width: '150px'
-    },
-    { header: 'PAYMENT', accessor: 'payment' as keyof RiderUser, width: '80px' },
+      ) },
+    { header: 'PAYMENT', accessor: 'payment' as keyof RiderUser },
     {
       header: 'STATUS',
       accessor: (item: RiderUser) => (
@@ -161,10 +158,8 @@ const RiderManagement: React.FC = () => {
             {item.status}
           </StatusChip>
         </div>
-      ),
-      width: '150px'
-    },
-    { header: 'JOINED', accessor: (r: RiderUser) => toBsDate(r.joined) || '—', width: '113px' },
+      ) },
+    { header: 'JOINED', accessor: (r: RiderUser) => toBsDate(r.joined) || '—' },
     // Registration documents, in the same slot vendor management puts them:
     // last read-only column before the row actions.
     {
@@ -175,7 +170,6 @@ const RiderManagement: React.FC = () => {
           View
         </Button>
       ),
-      width: '120px',
     },
     {
       header: 'ACTION',
@@ -187,9 +181,7 @@ const RiderManagement: React.FC = () => {
             setActionMode('password');
           }}
         />
-      ),
-      width: '220px'
-    }
+      ) }
   ];
 
   return (

@@ -1,4 +1,5 @@
 import React from 'react';
+import FilterClearButton from './FilterClearButton';
 import MultiSearchableSelect from './MultiSearchableSelect';
 import type { SearchableSelectOption } from './SearchableSelect';
 import type { FilterDropdownOption } from './FilterDropdown';
@@ -32,13 +33,15 @@ const MultiFilterDropdown: React.FC<MultiFilterDropdownProps> = ({
   return (
     <label aria-label={ariaLabel} className={className}>
       <span>{label}</span>
-      <MultiSearchableSelect
-        options={searchableOptions}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder || `Select ${label.toLowerCase()}`}
-        searchPlaceholder={searchPlaceholder}
-      />
+      <FilterClearButton active={value.length > 0} onClear={() => onChange([])} label={label}>
+        <MultiSearchableSelect
+          options={searchableOptions}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder || `Select ${label.toLowerCase()}`}
+          searchPlaceholder={searchPlaceholder}
+        />
+      </FilterClearButton>
     </label>
   );
 };

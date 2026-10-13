@@ -222,16 +222,14 @@ const HoldOperations: React.FC = () => {
     {
       header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '70px',
       className: 'hold-sn-cell',
     },
-    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-', width: '100px' },
+    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-' },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
         <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
       ),
-      width: '124px',
       className: 'hold-tracking-cell',
     },
     {
@@ -242,7 +240,6 @@ const HoldOperations: React.FC = () => {
           <small>{order.senderPhone}</small>
         </div>
       ),
-      width: '173px',
     },
     {
       header: 'RECEIVER',
@@ -252,22 +249,19 @@ const HoldOperations: React.FC = () => {
           <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
-      width: '172px',
     },
-    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '80px' },
-    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '113px' },
-    { header: 'AGE', accessor: (order: Order) => ageInDays(order.createdAt), width: '113px' },
+    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-') },
+    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount) },
+    { header: 'AGE', accessor: (order: Order) => ageInDays(order.createdAt) },
     {
       header: 'PREVIOUS STATUS',
       accessor: () => <StatusChip tone="info">{REVERT_STATUS_LABEL}</StatusChip>,
-      width: '160px',
     },
     {
       header: 'LAST UPDATED BY',
       accessor: (order: Order) => order.lastUpdatedBy || '-',
-      width: '155px',
     },
-    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDateTime(order.lastUpdatedAt) || '-', width: '170px' },
+    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDateTime(order.lastUpdatedAt) || '-' },
     {
       header: 'LAST REMARKS',
       accessor: (order: Order) => (
@@ -280,7 +274,6 @@ const HoldOperations: React.FC = () => {
           {order.remarks || '-'}
         </button>
       ),
-      width: '155px',
       className: 'hold-remarks-cell',
     },
   ], [pager.request, visibleOrders]);
@@ -342,7 +335,6 @@ const HoldOperations: React.FC = () => {
         loading={loading}
         loadingMessage="Loading held orders..."
         emptyMessage="No held orders found."
-        minWidth="1590px"
         tableClassName="hold-table"
       />
 

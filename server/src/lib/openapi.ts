@@ -747,6 +747,7 @@ export function buildOpenApiDocument(baseUrl: string) {
                   amount: { type: "number" },
                   status: { type: "string", enum: ["pending", "settled", "cancelled"] },
                   remark: { type: ["string", "null"] },
+                  invoiceNo: { type: ["string", "null"], description: "Your invoice number for this payout, recorded by staff with the payment proof. Null until recorded; cleared if the payment is reverted." },
                 },
               },
             },
@@ -789,6 +790,7 @@ export function buildOpenApiDocument(baseUrl: string) {
                   },
                 },
                 remark: { type: ["string", "null"] },
+                invoiceNo: { type: ["string", "null"], description: "Your invoice number for this payout, recorded by staff with the payment proof. Null until recorded; cleared if the payment is reverted." },
                 paymentReceiptPath: {
                   type: ["string", "null"],
                   description: "Internal path; fetch the file via GET /finance/settlements/{id}/documents/receipt.",

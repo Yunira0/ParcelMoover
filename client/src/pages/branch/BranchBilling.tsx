@@ -288,46 +288,44 @@ const BranchBilling: React.FC = () => {
   )) : '—';
 
   const officePaymentColumns = [
-    { header: 'DATE', accessor: (payment: BranchPayment) => toBsDate(payment.createdAt) || '—', width: '110px' },
-    { header: 'BRANCH', accessor: (payment: BranchPayment) => payment.branchName, width: '190px' },
-    { header: 'AMOUNT', accessor: (payment: BranchPayment) => formatCurrency(payment.amount), width: '130px' },
+    { header: 'DATE', accessor: (payment: BranchPayment) => toBsDate(payment.createdAt) || '—' },
+    { header: 'BRANCH', accessor: (payment: BranchPayment) => payment.branchName },
+    { header: 'AMOUNT', accessor: (payment: BranchPayment) => formatCurrency(payment.amount) },
     // Which statement the receipt pays, or a general deposit that verification
     // spreads over the open statements oldest first.
-    { header: 'SETTLEMENT', accessor: (payment: BranchPayment) => payment.statementNo || 'General deposit', width: '180px' },
-    { header: 'REFERENCE', accessor: (payment: BranchPayment) => payment.reference || '—', width: '180px' },
-    { header: 'PROOF', accessor: proofCell, width: '110px' },
-    { header: 'NOTE', accessor: (payment: BranchPayment) => payment.note || '—', width: '180px' },
-    { header: 'DECISION', width: '300px', accessor: (payment: BranchPayment) => <div className="billing-review-cell"><input placeholder="Remark (required to reject)" value={remarks[payment.id] ?? ''} onChange={(event) => setRemarks((old) => ({ ...old, [payment.id]: event.target.value }))} disabled={reviewing === payment.id} /><div className="billing-review-actions"><Button variant="primary" onClick={() => void review(payment, 'verified')} disabled={reviewing === payment.id}>Verify</Button><Button variant="secondary" onClick={() => void review(payment, 'rejected')} disabled={reviewing === payment.id}>Reject</Button></div></div> },
+    { header: 'SETTLEMENT', accessor: (payment: BranchPayment) => payment.statementNo || 'General deposit' },
+    { header: 'REFERENCE', accessor: (payment: BranchPayment) => payment.reference || '—' },
+    { header: 'PROOF', accessor: proofCell },
+    { header: 'NOTE', accessor: (payment: BranchPayment) => payment.note || '—' },
+    { header: 'DECISION', accessor: (payment: BranchPayment) => <div className="billing-review-cell"><input placeholder="Remark (required to reject)" value={remarks[payment.id] ?? ''} onChange={(event) => setRemarks((old) => ({ ...old, [payment.id]: event.target.value }))} disabled={reviewing === payment.id} /><div className="billing-review-actions"><Button variant="primary" onClick={() => void review(payment, 'verified')} disabled={reviewing === payment.id}>Verify</Button><Button variant="secondary" onClick={() => void review(payment, 'rejected')} disabled={reviewing === payment.id}>Reject</Button></div></div> },
   ];
   const historyColumns = [
-    { header: 'DATE', accessor: (payment: BranchPayment) => toBsDate(payment.createdAt) || '—', width: '110px' },
-    { header: 'AMOUNT', accessor: (payment: BranchPayment) => formatCurrency(payment.amount), width: '130px' },
-    { header: 'SETTLEMENT', accessor: (payment: BranchPayment) => payment.statementNo || 'General deposit', width: '180px' },
-    { header: 'REFERENCE', accessor: (payment: BranchPayment) => payment.reference || '—', width: '180px' },
-    { header: 'PROOF', accessor: proofCell, width: '110px' },
-    { header: 'STATUS', accessor: (payment: BranchPayment) => <span className={`billing-pill billing-pill-${payment.status}`}>{payment.status === 'verified' && <CheckCircle2 size={12} />}{payment.status === 'pending' && <Clock size={12} />}{PAYMENT_STATUS_LABEL[payment.status]}</span>, width: '180px' },
-    { header: 'REMARK', accessor: (payment: BranchPayment) => payment.reviewRemark || '—', width: '190px' },
+    { header: 'DATE', accessor: (payment: BranchPayment) => toBsDate(payment.createdAt) || '—' },
+    { header: 'AMOUNT', accessor: (payment: BranchPayment) => formatCurrency(payment.amount) },
+    { header: 'SETTLEMENT', accessor: (payment: BranchPayment) => payment.statementNo || 'General deposit' },
+    { header: 'REFERENCE', accessor: (payment: BranchPayment) => payment.reference || '—' },
+    { header: 'PROOF', accessor: proofCell },
+    { header: 'STATUS', accessor: (payment: BranchPayment) => <span className={`billing-pill billing-pill-${payment.status}`}>{payment.status === 'verified' && <CheckCircle2 size={12} />}{payment.status === 'pending' && <Clock size={12} />}{PAYMENT_STATUS_LABEL[payment.status]}</span> },
+    { header: 'REMARK', accessor: (payment: BranchPayment) => payment.reviewRemark || '—' },
   ];
   // Same shape as the vendor balances table: the name, the balance everything
   // turns on, the figures behind it, the limit with its usage bar, then state.
   const balanceColumns = [
-    { header: 'BRANCH', accessor: (branch: BranchBillingStatus) => branch.branchName, width: '200px' },
+    { header: 'BRANCH', accessor: (branch: BranchBillingStatus) => branch.branchName },
     {
       header: 'BALANCE',
       accessor: (branch: BranchBillingStatus) => (
         <span className={branch.balance < 0 ? 'billing-debit' : ''}>{formatCurrency(branch.balance)}</span>
       ),
-      width: '130px',
     },
-    { header: 'UNSETTLED COD', accessor: (branch: BranchBillingStatus) => formatCurrency(branch.unsettledCod), width: '150px' },
+    { header: 'UNSETTLED COD', accessor: (branch: BranchBillingStatus) => formatCurrency(branch.unsettledCod) },
     {
       header: 'OVERDUE COD',
       accessor: (branch: BranchBillingStatus) => (
         <span className={branch.overdueCod > 0 ? 'billing-debit' : ''}>{formatCurrency(branch.overdueCod)}</span>
       ),
-      width: '140px',
     },
-    { header: 'VERIFIED CREDIT', accessor: (branch: BranchBillingStatus) => formatCurrency(branch.paymentsReceived), width: '150px' },
+    { header: 'VERIFIED CREDIT', accessor: (branch: BranchBillingStatus) => formatCurrency(branch.paymentsReceived) },
     {
       header: 'CREDIT LIMIT',
       accessor: (branch: BranchBillingStatus) => (
@@ -348,7 +346,6 @@ const BranchBilling: React.FC = () => {
           <CreditUsageBar balance={branch.balance} creditLimit={-branch.blockThreshold} state={branch.state} />
         </span>
       ),
-      width: '190px',
     },
     {
       header: 'STATE',
@@ -357,17 +354,16 @@ const BranchBilling: React.FC = () => {
           {branch.state}
         </span>
       ),
-      width: '110px',
     },
   ];
   const balanceRows = balances.map((branch) => ({ ...branch, id: branch.branchId }));
   const pendingRows = pendingSettlements.map((settlement) => ({ ...settlement, id: settlement.id }));
   const pendingColumns = [
-    { header: 'STATEMENT', accessor: (settlement: BranchSettlement) => settlement.statementNo, width: '190px' },
-    { header: 'MASTER BRANCH', accessor: (settlement: BranchSettlement) => settlement.toBranch, width: '200px' },
-    { header: 'ORDERS', accessor: (settlement: BranchSettlement) => settlement.orderCount, width: '90px' },
-    { header: 'OUTSTANDING', accessor: (settlement: BranchSettlement) => formatCurrency(settlement.remainingAmount), width: '150px' },
-    { header: 'ACTION', accessor: (settlement: BranchSettlement) => <Button variant="primary" onClick={() => { setSelectedSettlement(settlement); setReceiptAmount(String(settlement.remainingAmount)); setReceiptMessage(''); }}>Add payment</Button>, width: '160px' },
+    { header: 'STATEMENT', accessor: (settlement: BranchSettlement) => settlement.statementNo },
+    { header: 'MASTER BRANCH', accessor: (settlement: BranchSettlement) => settlement.toBranch },
+    { header: 'ORDERS', accessor: (settlement: BranchSettlement) => settlement.orderCount },
+    { header: 'OUTSTANDING', accessor: (settlement: BranchSettlement) => formatCurrency(settlement.remainingAmount) },
+    { header: 'ACTION', accessor: (settlement: BranchSettlement) => <Button variant="primary" onClick={() => { setSelectedSettlement(settlement); setReceiptAmount(String(settlement.remainingAmount)); setReceiptMessage(''); }}>Add payment</Button> },
   ];
   const owed = branchStatus ? Math.max(0, -branchStatus.balance) : 0;
   const suggestedAmount = branchStatus && branchStatus.state !== 'ok'
@@ -399,15 +395,15 @@ const BranchBilling: React.FC = () => {
       </div>
     </>}
 
-    {activeTab === 'queue' && <><Table selectable={false} columns={isMasterWorkspace ? officePaymentColumns : historyColumns} data={payments} loading={paymentsLoading} loadingMessage="Loading branch payments…" emptyMessage={isMasterWorkspace ? 'No payments awaiting verification.' : 'No branch payments added yet.'} minWidth={isMasterWorkspace ? '1470px' : '1080px'} /><Pagination ariaLabel={isMasterWorkspace ? 'Branch payment verification pagination' : 'Branch payment history pagination'} page={paymentsPage} totalPages={paymentsTotalPages} onPageChange={setPaymentsPage} pageSize={paymentsPageSize} pageSizeLabel="payments" onPageSizeChange={(size) => { setPaymentsPageSize(size); setPaymentsPage(1); }} summary={`${paymentsTotal} payment${paymentsTotal === 1 ? '' : 's'}`} /></>}
+    {activeTab === 'queue' && <><Table selectable={false} columns={isMasterWorkspace ? officePaymentColumns : historyColumns} data={payments} loading={paymentsLoading} loadingMessage="Loading branch payments…" emptyMessage={isMasterWorkspace ? 'No payments awaiting verification.' : 'No branch payments added yet.'} /><Pagination ariaLabel={isMasterWorkspace ? 'Branch payment verification pagination' : 'Branch payment history pagination'} page={paymentsPage} totalPages={paymentsTotalPages} onPageChange={setPaymentsPage} pageSize={paymentsPageSize} pageSizeLabel="payments" onPageSizeChange={(size) => { setPaymentsPageSize(size); setPaymentsPage(1); }} summary={`${paymentsTotal} payment${paymentsTotal === 1 ? '' : 's'}`} /></>}
 
     {activeTab === 'statements' && !isMasterWorkspace && <>
-      <section className="billing-card"><h3>COD due to the master branch</h3><p className="billing-hint">Pay a statement and attach the receipt or screenshot. It becomes settled after the master branch verifies it.</p><Table selectable={false} columns={pendingColumns} data={pendingRows} emptyMessage="No COD statements are awaiting payment." minWidth="900px" /></section>
+      <section className="billing-card"><h3>COD due to the master branch</h3><p className="billing-hint">Pay a statement and attach the receipt or screenshot. It becomes settled after the master branch verifies it.</p><Table selectable={false} columns={pendingColumns} data={pendingRows} emptyMessage="No COD statements are awaiting payment." /></section>
       {selectedSettlement && <section className="billing-card"><h3>Add payment · {selectedSettlement.statementNo}</h3><form className="billing-form" onSubmit={submitReceipt}><label>Amount paid<div className="billing-amount-field"><span className="billing-amount-prefix">Rs.</span><input type="number" min="0" max={selectedSettlement.remainingAmount} step="0.01" value={receiptAmount} onChange={(event) => setReceiptAmount(event.target.value)} disabled={receiptSaving} /></div></label><label>Transaction reference<input type="text" value={receiptReference} onChange={(event) => setReceiptReference(event.target.value)} disabled={receiptSaving} /></label><label>Note (optional)<input type="text" value={receiptNote} onChange={(event) => setReceiptNote(event.target.value)} disabled={receiptSaving} /></label><FileField label="Paid receipt / screenshot (required)" hint="JPG, PNG, WebP or PDF · max 5 MB" file={receiptProof} onChange={setReceiptProof} /><div className="billing-review-actions"><Button type="button" variant="secondary" onClick={() => setSelectedSettlement(null)} disabled={receiptSaving}>Cancel</Button><Button type="submit" variant="primary" disabled={receiptSaving}>{receiptSaving ? 'Submitting…' : 'Submit payment'}</Button></div></form></section>}
       {receiptMessage && <p className="billing-success"><CheckCircle2 size={14} /> {receiptMessage}</p>}
     </>}
 
-    {activeTab === 'branches' && isSuperAdmin && <><p className="billing-hint">A branch at its block threshold cannot receive new transit until verified credit clears the hold. Overdue COD is COD past the branch SLA in the SLA settings page{balances[0]?.codSlaHours ? ` (currently ${balances[0].codSlaHours} hours after delivery)` : ''}.</p><Table selectable={false} columns={balanceColumns} data={balanceRows} loading={balancesLoading} loadingMessage="Calculating branch balances…" emptyMessage="No active branches found." minWidth="1100px" /></>}
+    {activeTab === 'branches' && isSuperAdmin && <><p className="billing-hint">A branch at its block threshold cannot receive new transit until verified credit clears the hold. Overdue COD is COD past the branch SLA in the SLA settings page{balances[0]?.codSlaHours ? ` (currently ${balances[0].codSlaHours} hours after delivery)` : ''}.</p><Table selectable={false} columns={balanceColumns} data={balanceRows} loading={balancesLoading} loadingMessage="Calculating branch balances…" emptyMessage="No active branches found." /></>}
 
     {activeTab === 'settings' && isSuperAdmin && <div className="billing-grid"><section className="billing-card"><h3>Branch transit thresholds</h3><p className="billing-hint">Both values are negative balances. A branch is warned at the first threshold and cannot receive transit at the block threshold.</p><form className="billing-form" onSubmit={saveThresholds}><label>Warn threshold<input type="number" step="0.01" value={branchWarn} onChange={(event) => setBranchWarn(event.target.value)} disabled={savingSettings} /></label><label>Transit block threshold<input type="number" step="0.01" value={branchBlock} onChange={(event) => setBranchBlock(event.target.value)} disabled={savingSettings} /></label>{settingsError && <p className="vendor-finance-error">{settingsError}</p>}{settingsMessage && <p className="billing-success"><CheckCircle2 size={14} /> {settingsMessage}</p>}<Button type="submit" variant="primary" disabled={savingSettings}>{savingSettings ? 'Saving…' : 'Save thresholds'}</Button></form></section><section className="billing-card"><h3>Branch payment QR</h3><p className="billing-hint">Shown to branch staff before they add money.</p>{settings?.paymentQrPath ? <img className="billing-qr" src={paymentQrUrl(settings.paymentQrPath)} alt="Current payment QR" /> : <p className="billing-hint">No QR uploaded yet.</p>}<FileField label={settings?.paymentQrPath ? 'Replace with a new QR' : 'Upload a QR'} hint="JPG, PNG, or WebP · max 5 MB" file={qrFile} onChange={(file) => { setQrFile(file); setQrError(''); setQrMessage(''); }} />{qrError && <p className="vendor-finance-error">{qrError}</p>}{qrMessage && <p className="billing-success"><CheckCircle2 size={14} /> {qrMessage}</p>}{qrFile && <div className="billing-review-actions"><Button variant="secondary" onClick={() => setQrFile(null)} disabled={qrUploading}>Cancel</Button><Button variant="primary" onClick={() => void replaceQr()} disabled={qrUploading}>{qrUploading ? 'Uploading…' : 'Replace QR'}</Button></div>}</section></div>}
 

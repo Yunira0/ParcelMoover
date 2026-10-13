@@ -9,7 +9,8 @@ import RecentOrders from '../components/RecentOrders';
 import TopVendors from '../components/TopVendors';
 import NeedsAttention from '../components/NeedsAttention';
 import { EMPTY_VALLEY_SPLIT, type DashboardSummary } from '../services/orders.service';
-import { getCurrentUser, isBranchWorkspaceUser } from '../utils/auth';
+import { getCurrentUser, isAccountantUser, isBranchWorkspaceUser } from '../utils/auth';
+import AccountantQueue from './accounting/AccountantQueue';
 import { useDashboardSummary } from '../queries/dashboard';
 import './Dashboard.css';
 
@@ -97,6 +98,9 @@ const Dashboard: React.FC = () => {
   // panel (it tracks COD in Branch COD / Rider COD instead). The top-vendors
   // panel is branch-scoped server-side, so it stays.
   const isBranch = isBranchWorkspaceUser();
+  // The accountant can't create orders or work pickup/dispatch, so their
+  // dashboard swaps the shortcuts and the ops alerts for their money queues.
+  const isAccountant = isAccountantUser();
   const [trendPeriod, setTrendPeriod] = useState<7 | 30>(7);
 
   // Switching the trend period keeps the previous summary on screen, so only
@@ -152,7 +156,7 @@ const Dashboard: React.FC = () => {
         />
       </div>
 
-      <QuickActions />
+      {isAccountant ? <AccountantQueue /> : <QuickActions />}
 
       {isBranch ? (
         <>
@@ -204,14 +208,20 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="dashboard-row dashboard-row-split">
+          {isAccountant ? (
             <div className="dashboard-panel">
               <TopVendors />
             </div>
-            <div className="dashboard-panel">
-              <NeedsAttention sla={summary.sla} loading={initialLoading} />
+          ) : (
+            <div className="dashboard-row dashboard-row-split">
+              <div className="dashboard-panel">
+                <TopVendors />
+              </div>
+              <div className="dashboard-panel">
+                <NeedsAttention sla={summary.sla} loading={initialLoading} />
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </div>

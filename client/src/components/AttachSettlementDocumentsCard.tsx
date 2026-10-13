@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Paperclip } from 'lucide-react';
 import Button from './Button';
 import FileField from './FileField';
-import { attachSettlementDocuments } from '../services/finance.service';
+import FormField from './FormField';
+import { attachSettlementDocuments, setSettlementInvoiceNo } from '../services/finance.service';
 import './AttachSettlementDocumentsCard.css';
 
 interface AttachSettlementDocumentsCardProps {
@@ -18,6 +19,8 @@ interface AttachSettlementDocumentsCardProps {
   paymentId?: string;
   /** Swap the file behind an existing document instead of adding another one. */
   replaceDocumentId?: string;
+  /** Shows an "Invoice no." field starting from this value. Omit to hide it. */
+  invoiceNo?: string;
   onDone: () => void;
   onDismiss?: () => void;
 }
@@ -40,9 +43,11 @@ const AttachSettlementDocumentsCard: React.FC<AttachSettlementDocumentsCardProps
   only,
   paymentId,
   replaceDocumentId,
+  invoiceNo,
   onDone,
   onDismiss,
 }) => {
+  const [invoiceInput, setInvoiceInput] = useState(invoiceNo ?? '');
   const [paymentReceipts, setPaymentReceipts] = useState<File[]>([]);
   const [taxInvoices, setTaxInvoices] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
@@ -57,20 +62,25 @@ const AttachSettlementDocumentsCard: React.FC<AttachSettlementDocumentsCardProps
   const invoices = showInvoice ? taxInvoices : [];
   const totalFiles = receipts.length + invoices.length;
   const tooManyForReplace = Boolean(replaceDocumentId) && totalFiles > 1;
+  const invoiceChanged = invoiceNo !== undefined && invoiceInput.trim() !== invoiceNo.trim();
+  const canSubmit = (totalFiles > 0 || invoiceChanged) && !tooManyForReplace;
 
   const handleSubmit = async () => {
-    if (totalFiles === 0 || tooManyForReplace) return;
+    if (!canSubmit) return;
     setSaving(true);
     setError('');
     try {
-      await attachSettlementDocuments(
-        settlementId,
-        { paymentReceipt: receipts, taxInvoice: invoices },
-        {
-          ...(paymentId ? { paymentId } : {}),
-          ...(replaceDocumentId ? { replaceDocumentId } : {}),
-        },
-      );
+      if (invoiceChanged) await setSettlementInvoiceNo(settlementId, invoiceInput);
+      if (totalFiles > 0) {
+        await attachSettlementDocuments(
+          settlementId,
+          { paymentReceipt: receipts, taxInvoice: invoices },
+          {
+            ...(paymentId ? { paymentId } : {}),
+            ...(replaceDocumentId ? { replaceDocumentId } : {}),
+          },
+        );
+      }
       onDone();
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to attach documents');
@@ -93,6 +103,18 @@ const AttachSettlementDocumentsCard: React.FC<AttachSettlementDocumentsCardProps
           <p>{caption}</p>
         </div>
       </div>
+
+      {invoiceNo !== undefined && (
+        <div className="asd-invoice-no">
+          <FormField
+            label="Invoice no."
+            value={invoiceInput}
+            onChange={setInvoiceInput}
+            maxLength={64}
+            placeholder="e.g. INV-2083-0142"
+          />
+        </div>
+      )}
 
       <div className={`asd-files${only ? ' asd-files-single' : ''}`}>
         {showReceipt &&
@@ -153,7 +175,7 @@ const AttachSettlementDocumentsCard: React.FC<AttachSettlementDocumentsCardProps
           type="button"
           variant="primary"
           onClick={handleSubmit}
-          disabled={totalFiles === 0 || tooManyForReplace || saving}
+          disabled={!canSubmit || saving}
         >
           {saving ? 'Saving...' : submitLabel}
         </Button>

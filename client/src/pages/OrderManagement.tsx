@@ -28,6 +28,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
 import FilterDropdown from '../components/FilterDropdown';
+import FilterClearButton from '../components/FilterClearButton';
 import MultiFilterDropdown from '../components/MultiFilterDropdown';
 import MultiFilterDropdownAsync from '../components/MultiFilterDropdownAsync';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
@@ -56,7 +57,7 @@ import {
 import { getAllAdmins, searchVendors } from '../queries/lookups';
 import { queryKeys } from '../queries/keys';
 import { printLabels } from '../utils/printLabels';
-import { getCurrentUserRoles, hasAdminPermission, isAccountantUser } from '../utils/auth';
+import { getCurrentUserRoles, getDepartmentWorkspace, hasAdminPermission, isAccountantUser } from '../utils/auth';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { FAILED_RECOVERY_LABEL, isRecoverableFailure, recoveryTargetFor } from '../utils/failedRecovery';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
@@ -653,8 +654,9 @@ const OrderManagement: React.FC = () => {
   );
 
   // Trash is admin-only, matching the server routes. A vendor/sales/rider never
-  // sees the button, the row action, or a trashed order in any list.
-  const canUseTrash = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r));
+  // sees the button, the row action, or a trashed order in any list. Nor do the
+  // Operation / Customer Experience workspaces, which have no Trash page.
+  const canUseTrash = getCurrentUserRoles().some((r) => ['super_admin', 'admin'].includes(r)) && !getDepartmentWorkspace();
 
   // Putting a failed order back into the workflow is a status change, so it is
   // gated like the other ones on this page rather than like the trash actions.
@@ -872,14 +874,12 @@ const OrderManagement: React.FC = () => {
     {
       header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '70px',
     },
     {
       header: sortableHeader('TRACKING ID', 'trackingId'),
       accessor: (order: Order) => (
         <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
       ),
-      width: '180px',
       className: 'tracking-cell',
     },
     {
@@ -887,14 +887,12 @@ const OrderManagement: React.FC = () => {
       // date the "Order Created Date" filter and the Excel export show.
       header: sortableHeader('CREATED DATE', 'createdAt'),
       accessor: (order: Order) => toBsDate(order.createdAt) || '-',
-      width: '120px',
       className: 'created-cell',
     },
-    { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-'), width: '100px' },
+    { header: 'ORIGIN', accessor: (order: Order) => (order.origin ? hubNameOnly(order.origin) : '-') },
     {
       header: 'DESTINATION',
       accessor: (order: Order) => <span title={order.destination || '-'}>{order.destination || '-'}</span>,
-      width: '130px',
       className: 'destination-cell',
     },
     {
@@ -905,7 +903,6 @@ const OrderManagement: React.FC = () => {
           <small>{order.senderPhone}</small>
         </div>
       ),
-      width: '180px',
     },
     {
       header: 'RECEIVER',
@@ -915,7 +912,6 @@ const OrderManagement: React.FC = () => {
           <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
-      width: '140px',
     },
     {
       header: sortableHeader('FINANCE', 'codAmount'),
@@ -926,9 +922,8 @@ const OrderManagement: React.FC = () => {
           <span>Collected: {formatMoney(order.collectedAmount)}</span>
         </div>
       ),
-      width: '130px',
     },
-    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '120px' },
+    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-') },
     {
       header: sortableHeader('STATUS', 'status'),
       accessor: (order: Order) => (
@@ -939,9 +934,8 @@ const OrderManagement: React.FC = () => {
           {order.carrierCode && <span className="om-carrier-chip">{CARRIER_LABELS[order.carrierCode]}</span>}
         </span>
       ),
-      width: '160px',
     },
-    { header: 'RIDER', accessor: (order: Order) => order.riderName || '-', width: '140px' },
+    { header: 'RIDER', accessor: (order: Order) => order.riderName || '-' },
     { header: 'REMARKS', accessor: (order: Order) => readOnlyRemarks ? (
       <span title={order.remarks || undefined}>{order.remarks || '-'}</span>
     ) : (
@@ -953,7 +947,7 @@ const OrderManagement: React.FC = () => {
       >
         {order.remarks || 'Add remark'}
       </button>
-    ), width: '160px', className: 'remarks-cell' },
+    ), className: 'remarks-cell' },
     {
       header: 'LAST UPDATED BY',
       accessor: (order: Order) => (
@@ -962,7 +956,6 @@ const OrderManagement: React.FC = () => {
           <span>{toBsDateTime(order.lastUpdatedAt) || 'date'}</span>
         </div>
       ),
-      width: '160px',
     },
     {
       header: 'ACTION',
@@ -1048,7 +1041,6 @@ const OrderManagement: React.FC = () => {
           )}
         </div>
       ),
-      width: '124px',
       className: 'actions-column',
     },
   ];
@@ -1103,13 +1095,15 @@ const OrderManagement: React.FC = () => {
             />
             <label aria-label="Keyword filter">
               <span>KEYWORD</span>
-              <input
-                type="text"
-                className="order-keyword-input"
-                value={keyword}
-                onChange={e => setKeyword(e.target.value)}
-                placeholder="Name or number"
-              />
+              <FilterClearButton active={Boolean(keyword)} onClear={() => setKeyword('')} label="Keyword" inset="plain">
+                <input
+                  type="text"
+                  className="order-keyword-input"
+                  value={keyword}
+                  onChange={e => setKeyword(e.target.value)}
+                  placeholder="Name or number"
+                />
+              </FilterClearButton>
             </label>
             <FilterDropdown
               label="DESTINATION HUB"
@@ -1141,21 +1135,25 @@ const OrderManagement: React.FC = () => {
             />
             <label aria-label="From date">
               <span>FROM DATE</span>
-              <NepaliDatePicker
-                value={dateFrom}
-                max={dateTo || undefined}
-                onChange={setDateFrom}
-                aria-label="From date"
-              />
+              <FilterClearButton active={Boolean(dateFrom)} onClear={() => setDateFrom('')} label="From date">
+                <NepaliDatePicker
+                  value={dateFrom}
+                  max={dateTo || undefined}
+                  onChange={setDateFrom}
+                  aria-label="From date"
+                />
+              </FilterClearButton>
             </label>
             <label aria-label="To date">
               <span>TO DATE</span>
-              <NepaliDatePicker
-                value={dateTo}
-                min={dateFrom || undefined}
-                onChange={setDateTo}
-                aria-label="To date"
-              />
+              <FilterClearButton active={Boolean(dateTo)} onClear={() => setDateTo('')} label="To date">
+                <NepaliDatePicker
+                  value={dateTo}
+                  min={dateFrom || undefined}
+                  onChange={setDateTo}
+                  aria-label="To date"
+                />
+              </FilterClearButton>
             </label>
             <MultiFilterDropdownAsync
               label="VENDOR"
@@ -1267,7 +1265,6 @@ const OrderManagement: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
-        minWidth="2115px"
         tableClassName="orders-table"
       />
 

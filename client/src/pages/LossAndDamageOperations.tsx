@@ -179,16 +179,14 @@ const LossAndDamageOperations: React.FC = () => {
     {
       header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '70px',
       className: 'lossdamage-sn-cell',
     },
-    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-', width: '100px' },
+    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-' },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
         <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
       ),
-      width: '124px',
       className: 'lossdamage-tracking-cell',
     },
     {
@@ -199,7 +197,6 @@ const LossAndDamageOperations: React.FC = () => {
           <small>{order.senderPhone}</small>
         </div>
       ),
-      width: '173px',
     },
     {
       header: 'RECEIVER',
@@ -209,22 +206,19 @@ const LossAndDamageOperations: React.FC = () => {
           <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
-      width: '172px',
     },
-    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '80px' },
-    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '113px' },
-    { header: 'PACKAGE', accessor: (order: Order) => `${order.pieces} pcs`, width: '113px' },
+    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-') },
+    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount) },
+    { header: 'PACKAGE', accessor: (order: Order) => `${order.pieces} pcs` },
     {
       header: 'PREVIOUS STATUS',
       accessor: () => <StatusChip tone="info">{REVERT_STATUS_LABEL}</StatusChip>,
-      width: '160px',
     },
     {
       header: 'LAST UPDATED BY',
       accessor: (order: Order) => order.lastUpdatedBy || '-',
-      width: '155px',
     },
-    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDateTime(order.lastUpdatedAt) || '-', width: '170px' },
+    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDateTime(order.lastUpdatedAt) || '-' },
   ], [pager.request, visibleOrders]);
 
   return (
@@ -276,7 +270,6 @@ const LossAndDamageOperations: React.FC = () => {
         loading={loading}
         loadingMessage="Loading loss & damage orders..."
         emptyMessage="No loss or damage orders found."
-        minWidth="1430px"
         tableClassName="lossdamage-table"
       />
 

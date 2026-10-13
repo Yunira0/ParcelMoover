@@ -135,7 +135,7 @@ const RiderOverview: React.FC = () => {
 
   const columns = useMemo(
     () => [
-      { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}`, width: '70px' },
+      { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}` },
       {
         header: 'TRACKING ID',
         accessor: (o: Order) => (
@@ -143,19 +143,17 @@ const RiderOverview: React.FC = () => {
             {o.trackingId}
           </Link>
         ),
-        width: '170px',
         className: 'tracking-cell',
       },
-      { header: 'CREATED', accessor: (o: Order) => toBsDate(o.createdAt) || '-', width: '110px' },
-      { header: 'RIDER', accessor: (o: Order) => o.riderName || '-', width: '130px' },
-      { header: 'ORIGIN', accessor: (o: Order) => (o.origin ? hubName(o.origin) : '-'), width: '110px' },
-      { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-', width: '130px' },
+      { header: 'CREATED', accessor: (o: Order) => toBsDate(o.createdAt) || '-' },
+      { header: 'RIDER', accessor: (o: Order) => o.riderName || '-' },
+      { header: 'ORIGIN', accessor: (o: Order) => (o.origin ? hubName(o.origin) : '-') },
+      { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-' },
       {
         header: 'RECEIVER',
         accessor: (o: Order) => (
           <div className="party-cell"><span>{o.receiverName}</span><small>{o.receiverPhone}</small></div>
         ),
-        width: '160px',
       },
       {
         header: 'FINANCE',
@@ -165,15 +163,13 @@ const RiderOverview: React.FC = () => {
             <span>Collected: {formatMoney(o.collectedAmount)}</span>
           </div>
         ),
-        width: '140px',
       },
-      { header: 'WEIGHT', accessor: (o: Order) => (o.weightKg ? `${o.weightKg} Kg` : '-'), width: '90px' },
+      { header: 'WEIGHT', accessor: (o: Order) => (o.weightKg ? `${o.weightKg} Kg` : '-') },
       {
         header: 'STATUS',
         accessor: (o: Order) => (
           <StatusChip tone={getStatusTone(o.status)}>{ORDER_STATUS_LABELS[o.status]}</StatusChip>
         ),
-        width: '150px',
       },
     ],
     [],
@@ -268,7 +264,6 @@ const RiderOverview: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found for this rider and range."
-        minWidth="1450px"
         tableClassName="orders-table merchant-overview-table"
       />
 

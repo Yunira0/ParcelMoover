@@ -233,18 +233,22 @@ async function setBaseRole(
     throw new AppError(500, `The "${wantedCode}" role is not set up. Apply the database migrations, then create this account again.`);
   }
 
+  let changed = false;
   for (const role of roles) {
     const held = await tx.user_roles.findUnique({
       where: { user_id_role_id: { user_id: userId, role_id: role.id } },
     });
     if (role.id === wanted.id && !held) {
       await tx.user_roles.create({ data: { user_id: userId, role_id: role.id } });
+      changed = true;
     } else if (role.id !== wanted.id && held) {
       await tx.user_roles.delete({
         where: { user_id_role_id: { user_id: userId, role_id: role.id } },
       });
+      changed = true;
     }
   }
+  return changed;
 }
 
 async function assertCanManageUsers(userId: string, targetType?: ManagedUserType) {
@@ -499,10 +503,13 @@ export async function updateManagedUserProfile(
       }
       if (joinedAt) u.joined_at = joinedAt;
       // The department decides the access: changing it changes the role.
+      // Sales -> `sales`, Accountant -> `accountant`, anything else
+      // (Operation, Customer Experience, ...) -> plain `admin`, whose web shell
+      // the department then narrows. A super_admin's roles are never
+      // re-derived from a department.
       if (data.department !== undefined) await alignRoleToDepartment(tx, actorUserId, userId, id, data.department);
       Object.assign(u, documentPaths);
-      const updatedAdmin = await tx.admins.update({ where: { id }, data: u });
-      return updatedAdmin;
+      return tx.admins.update({ where: { id }, data: u });
     }
 
     if (data.type === "vendor") {
@@ -1310,6 +1317,8 @@ export async function loginUser(data: IuserLoginData) {
     let locationId: string | null | undefined;
     let locationName: string | null | undefined;
     let branchScoped: boolean | undefined;
+    // Picks the Operation / Customer Experience workspace on the web.
+    let department: string | null | undefined;
     if (roles.includes("vendor_staff")) {
       const staffRecord = await prisma.vendor_staff.findFirst({
         where: { user_id: user.id, deleted_at: null, enabled: true },
@@ -1323,6 +1332,7 @@ export async function loginUser(data: IuserLoginData) {
           permissions: true,
           location_id: true,
           branch_scoped: true,
+          department: true,
           locations: { select: { name: true } },
         },
       });
@@ -1330,6 +1340,7 @@ export async function loginUser(data: IuserLoginData) {
       locationId = adminRecord?.location_id ?? null;
       locationName = adminRecord?.locations?.name ?? null;
       branchScoped = adminRecord?.branch_scoped ?? false;
+      department = adminRecord?.department ?? null;
     }
 
     const mustChangePassword = user.must_change_password;
@@ -1365,6 +1376,7 @@ export async function loginUser(data: IuserLoginData) {
         ...(locationId !== undefined && { locationId }),
         ...(locationName !== undefined && { locationName }),
         ...(branchScoped !== undefined && { branchScoped }),
+        ...(department !== undefined && { department }),
       }
     }
 

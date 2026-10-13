@@ -865,6 +865,9 @@ model settlements {
   settlement_date                      DateTime?                 @db.Date
   status                               settlement_status         @default(pending)
   remark                               String?
+  // The vendor's invoice number for this payout, entered with the payment
+  // proof. One per statement; null until staff record it.
+  invoice_no                           String?
   // Roll-up of every instalment: a "Cash, eSewa" style summary and the flat
   // list of {method, amount} lines across all of them. Kept for the statement
   // header; settlement_payments is where the per-instalment truth lives.
@@ -2085,6 +2088,17 @@ model user_daily_activity {
 
   @@id([day, user_id])
   @@index([last_seen_at(sort: Desc)], map: "idx_user_daily_activity_last_seen")
+}
+
+/// Banks a vendor's payouts can go to. Vendors store the bank's name, so a
+/// bank is disabled rather than renamed or deleted once it is in use.
+model banks {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @unique
+  code       String
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
 // Lasting copy of pm-stats request counts kept in Redis (one row per Redis

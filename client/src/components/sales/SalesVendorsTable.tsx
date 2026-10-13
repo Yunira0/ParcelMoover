@@ -78,7 +78,6 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
           <span>{salesVendorName(v)}</span>
         </button>
       ),
-      width: '220px',
     },
     {
       header: 'EMAIL',
@@ -88,7 +87,7 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
       // No width: on a wide screen this column takes the spare room, so the
       // figure columns stay snug instead of drifting apart.
     },
-    { header: 'PHONE', accessor: (v: SalesVendor) => v.phone || '—', width: '130px', className: 'sales-vendors-figure' },
+    { header: 'PHONE', accessor: (v: SalesVendor) => v.phone || '—', className: 'sales-vendors-figure' },
     {
       header: 'ORDERS',
       accessor: (v: SalesVendor) => (
@@ -101,7 +100,6 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
           <dd>{v.orders.returned.toLocaleString()}</dd>
         </dl>
       ),
-      width: '140px',
       className: 'sales-vendors-centered',
     },
     {
@@ -111,16 +109,14 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
           Rs. {Math.round(v.codDue).toLocaleString()}
         </span>
       ),
-      width: '120px',
       className: 'sales-vendors-figure sales-vendors-numeric',
     },
     // The API sends these as AD "YYYY-MM-DD"; every date shown in this app is BS.
-    { header: 'JOINED', accessor: (v: SalesVendor) => toBsDate(v.joined) || '—', width: '120px', className: 'sales-vendors-figure' },
+    { header: 'JOINED', accessor: (v: SalesVendor) => toBsDate(v.joined) || '—', className: 'sales-vendors-figure' },
     {
       header: 'LAST ORDER DATE',
       accessor: (v: SalesVendor) =>
         toBsDate(v.lastOrderedDate) || (v.orders.total === 0 ? <span className="sales-vendor-nil">No orders yet</span> : '—'),
-      width: '150px',
       className: 'sales-vendors-figure',
     },
   ];
@@ -160,7 +156,6 @@ const SalesVendorsTable: React.FC<SalesVendorsTableProps> = ({ salesUserId, sele
         loading={loading && vendors.length === 0}
         loadingMessage="Loading vendors..."
         emptyMessage="This sales rep has no vendors yet."
-        minWidth="1120px"
         tableClassName="sales-vendors-table"
         onRowClick={(v) => onSelectVendor(v)}
         getRowClassName={(v) => (isSelected(v) ? 'selected-row' : '')}

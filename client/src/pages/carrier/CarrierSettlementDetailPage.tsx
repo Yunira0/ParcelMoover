@@ -6,6 +6,7 @@ import StatusChip from '../../components/StatusChip';
 import ConfirmBanner from '../../components/ConfirmBanner';
 import RevertSettlementModal from '../../components/RevertSettlementModal';
 import SegmentedTabs from '../../components/SegmentedTabs';
+import ReceiverPhones from '../../components/ReceiverPhones';
 import CarrierSettlementFiles from './CarrierSettlementFiles';
 import CarrierEditSettlementModal from './CarrierEditSettlementModal';
 import { hasAdminPermission, hasAnyRole } from '../../utils/auth';
@@ -191,6 +192,7 @@ const CarrierSettlementDetailPage: React.FC = () => {
                       <th>Transaction ID</th>
                       <th>Vendor</th>
                       <th>Receiver</th>
+                      <th>Receiver Phone</th>
                       <th>Destination</th>
                       <th className="sdp-num">Collected COD</th>
                       <th className="sdp-num">{label} Charge</th>
@@ -205,6 +207,7 @@ const CarrierSettlementDetailPage: React.FC = () => {
                         <td className="sdp-mono">{item.trackingId}</td>
                         <td>{item.vendorName || '-'}</td>
                         <td>{item.receiverName}</td>
+                        <td><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></td>
                         <td>{item.destination || '-'}</td>
                         <td className="sdp-num">{money(item.collectedAmount)}</td>
                         <td className="sdp-num">{money(item.carrierCharge)}</td>

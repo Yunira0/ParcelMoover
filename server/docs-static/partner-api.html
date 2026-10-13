@@ -2085,12 +2085,13 @@
         }
 
         container.innerHTML = `<div class="table-container"><table>
-          <thead><tr><th>ID</th><th>Date</th><th>Amount</th></tr></thead>
+          <thead><tr><th>ID</th><th>Date</th><th>Amount</th><th>Invoice no.</th></tr></thead>
           <tbody>${res.data.map(s => `
             <tr style="cursor:pointer;" onclick="viewSettlement('${s.id}')">
               <td><code style="font-size:12px;">${s.id || '—'}</code></td>
               <td>${s.date || s.createdAt || '—'}</td>
               <td>${s.amount?.toLocaleString() || s.total?.toLocaleString() || 0} NPR</td>
+              <td>${s.invoiceNo ? s.invoiceNo.replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';') : '—'}</td>
             </tr>
           `).join('')}</tbody>
         </table></div>`;

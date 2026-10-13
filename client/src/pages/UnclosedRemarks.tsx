@@ -133,13 +133,11 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
       {
         header: 'SN',
         accessor: (r: Remark) => (page - 1) * pageSize + visible.findIndex((row) => row.id === r.id) + 1,
-        width: '50px',
         className: 'ucr-sn-cell',
       },
       {
         header: 'REMARK ID',
         accessor: (r: Remark) => r.remarkId,
-        width: '110px',
         className: 'ucr-id-cell',
       },
       {
@@ -149,7 +147,6 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
             {r.trackingId}
           </Link>
         ),
-        width: '130px',
       },
       {
         header: 'CUSTOMER',
@@ -159,18 +156,16 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
             <small>{r.customerPhone}</small>
           </div>
         ),
-        width: '160px',
       },
-      { header: 'SUBJECT', accessor: (r: Remark) => r.subject, width: '220px', className: 'ucr-subject-cell' },
+      { header: 'SUBJECT', accessor: (r: Remark) => r.subject, className: 'ucr-subject-cell' },
       {
         header: 'STATUS',
         accessor: (r: Remark) => (
           <StatusChip tone={STATUS_TONE[r.status]}>{REMARK_STATUS_LABELS[r.status]}</StatusChip>
         ),
-        width: '120px',
       },
-      { header: 'ADDED BY', accessor: (r: Remark) => r.addedBy, width: '140px' },
-      { header: 'CREATED AT', accessor: (r: Remark) => toBsDate(r.createdAt), width: '110px' },
+      { header: 'ADDED BY', accessor: (r: Remark) => r.addedBy },
+      { header: 'CREATED AT', accessor: (r: Remark) => toBsDate(r.createdAt) },
       {
         header: 'ACTION',
         accessor: (r: Remark) => (
@@ -190,7 +185,6 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
             )}
           </div>
         ),
-        width: '240px',
       },
     ],
     [page, pageSize, visible, navigate, markAsDone, markingDoneId],
@@ -232,7 +226,6 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
         loading={loading}
         loadingMessage="Loading remarks..."
         emptyMessage="No unclosed remarks found."
-        minWidth="1340px"
         tableClassName="ucr-table"
       />
 

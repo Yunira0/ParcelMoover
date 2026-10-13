@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, Building2, User, FileText, CreditCard, Lock, Tag, ExternalLink, Receipt } from 'lucide-react';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
+import BankSelectField from '../components/BankSelectField';
 import {
   registerUser,
   getManagedUser,
@@ -46,7 +47,7 @@ const DOCUMENT_LABELS: Partial<Record<keyof VendorFormInput, string>> = {
 
 const scrollToFirstFieldError = () => {
   window.setTimeout(() => {
-    document.querySelector('.vfp-field-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.querySelector('.vfp-field-error, .form-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 0);
 };
 
@@ -1120,16 +1121,12 @@ const VendorFormPage: React.FC = () => {
                 description="Where COD payouts are transferred. Required — the vendor cannot be settled without it."
               />
               <div className="vfp-fields">
-                <FormField
-                  label="Name of Bank"
+                <BankSelectField
                   required
                   value={form.bankName}
                   onChange={set('bankName')}
-                  placeholder="e.g. Nabil Bank"
+                  error={fieldErrors.bankName}
                 />
-                {fieldErrors.bankName && (
-                  <span className="vfp-field-error">{fieldErrors.bankName}</span>
-                )}
                 <FormField
                   label="Account No."
                   required

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Files, Landmark, Receipt, Store, User } from 'lucide-react';
 import FormField from './FormField';
+import BankSelectField from './BankSelectField';
 import FileField from './FileField';
 import Banner from './Banner';
 import Button from './Button';
@@ -134,7 +135,7 @@ const KycVerificationForm: React.FC<KycVerificationFormProps> = ({
           <p>Where COD settlements are paid — optional until payout.</p>
         </div>
         <div className="kyc-grid">
-          <FormField label="Bank name" value={values.bankName} onChange={set('bankName')} />
+          <BankSelectField label="Bank name" value={values.bankName} onChange={set('bankName')} />
           <FormField label="Account holder" value={values.bankAccountHolder} onChange={set('bankAccountHolder')} />
           <FormField label="Account no." value={values.bankAccountNo} onChange={set('bankAccountNo')} gridColumn="1 / -1" />
         </div>

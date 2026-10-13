@@ -318,7 +318,6 @@ export default function Vouchers() {
           </Button>
         </div>
       ),
-      width: '200px',
     },
   ];
 

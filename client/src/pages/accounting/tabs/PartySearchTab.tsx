@@ -102,7 +102,6 @@ const PartySearchTab: React.FC = () => {
             columns={[
               {
                 header: '',
-                width: '52px',
                 accessor: (result) => {
                   const Icon = PARTY_ICON[result.partyType];
                   return <Icon size={16} className="acc-muted" />;
@@ -119,7 +118,6 @@ const PartySearchTab: React.FC = () => {
               },
               {
                 header: 'Type',
-                width: '120px',
                 accessor: (result) => <PartyChip>{PARTY_LABEL[result.partyType]}</PartyChip>,
               },
             ]}

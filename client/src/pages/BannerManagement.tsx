@@ -109,7 +109,6 @@ const BannerManagement: React.FC = () => {
           className="banner-mgmt-thumb"
         />
       ),
-      width: '96px',
     },
     { header: 'NAME', accessor: 'name' as keyof Banner },
     {
@@ -140,7 +139,7 @@ const BannerManagement: React.FC = () => {
       ),
     },
     { header: 'WINDOW', accessor: (banner: Banner) => dateWindow(banner) },
-    { header: 'PRIORITY', accessor: (banner: Banner) => banner.sortOrder, width: '70px' },
+    { header: 'PRIORITY', accessor: (banner: Banner) => banner.sortOrder },
     {
       header: 'ACTION',
       accessor: (banner: Banner) => (
@@ -156,7 +155,6 @@ const BannerManagement: React.FC = () => {
           </Button>
         </TableRowActions>
       ),
-      width: '220px',
     },
   ];
 

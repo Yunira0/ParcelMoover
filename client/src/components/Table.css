@@ -55,6 +55,40 @@
   min-width: 80px;
 }
 
+/* Content-sized tables (the default, see Table.tsx): each column is as wide
+   as its content on one line, and spare width is shared evenly so the gaps
+   between columns match. Long text stops at 320px with an ellipsis; cells
+   holding controls keep overflow visible so their popovers aren't clipped.
+   A narrow screen scrolls the table rather than squashing it. */
+.custom-table.table-fit {
+  min-width: 0;
+}
+
+.custom-table.table-fit th,
+.custom-table.table-fit td {
+  min-width: 0;
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+  white-space: nowrap;
+  word-break: normal;
+}
+
+/* The select column is the table's own, not a caller column, so it needs
+   the same 1% share or it would be the one column soaking up the slack. */
+.custom-table.table-fit .checkbox-column {
+  width: 1%;
+}
+
+.custom-table.table-fit td {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.custom-table.table-fit td:has(button, select, input, textarea, [aria-haspopup]) {
+  overflow: visible;
+}
+
 .custom-table tbody tr:last-child td {
   border-bottom: none;
 }

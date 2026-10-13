@@ -154,7 +154,7 @@ const SalesOverview: React.FC = () => {
 
   const columns = useMemo(
     () => [
-      { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}`, width: '70px' },
+      { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}` },
       {
         header: 'TRACKING ID',
         accessor: (o: Order) => (
@@ -162,19 +162,17 @@ const SalesOverview: React.FC = () => {
             {o.trackingId}
           </Link>
         ),
-        width: '170px',
         className: 'tracking-cell',
       },
-      { header: 'CREATED', accessor: (o: Order) => toBsDate(o.createdAt) || '-', width: '110px' },
-      { header: 'VENDOR', accessor: (o: Order) => o.vendorName || '-', width: '150px' },
+      { header: 'CREATED', accessor: (o: Order) => toBsDate(o.createdAt) || '-' },
+      { header: 'VENDOR', accessor: (o: Order) => o.vendorName || '-' },
       {
         header: 'RECEIVER',
         accessor: (o: Order) => (
           <div className="party-cell"><span>{o.receiverName}</span><small>{o.receiverPhone}</small></div>
         ),
-        width: '160px',
       },
-      { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-', width: '130px' },
+      { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-' },
       {
         header: 'FINANCE',
         accessor: (o: Order) => (
@@ -184,15 +182,13 @@ const SalesOverview: React.FC = () => {
             <span>Collected: {formatMoney(o.collectedAmount)}</span>
           </div>
         ),
-        width: '140px',
       },
-      { header: 'WEIGHT', accessor: (o: Order) => (o.weightKg ? `${o.weightKg} Kg` : '-'), width: '90px' },
+      { header: 'WEIGHT', accessor: (o: Order) => (o.weightKg ? `${o.weightKg} Kg` : '-') },
       {
         header: 'STATUS',
         accessor: (o: Order) => (
           <StatusChip tone={getStatusTone(o.status)}>{ORDER_STATUS_LABELS[o.status]}</StatusChip>
         ),
-        width: '150px',
       },
     ],
     [],
@@ -297,7 +293,6 @@ const SalesOverview: React.FC = () => {
             loading={loading && orders.length === 0}
             loadingMessage="Loading orders..."
             emptyMessage={selectedVendor ? 'No orders found for this vendor and range.' : 'No orders found for this sales rep and range.'}
-            minWidth="1500px"
             tableClassName="orders-table merchant-overview-table"
           />
 

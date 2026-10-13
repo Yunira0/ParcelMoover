@@ -243,10 +243,9 @@ const Tickets: React.FC = () => {
     {
       header: 'SN',
       accessor: (ticket: Ticket) => ((page - 1) * pageSizeChoice) + visibleTickets.findIndex((row) => row.id === ticket.id) + 1,
-      width: '50px',
       className: 'tickets-sn-cell',
     },
-    { header: 'TICKET ID', accessor: (ticket: Ticket) => ticket.ticketId, width: '110px', className: 'tickets-id-cell' },
+    { header: 'TICKET ID', accessor: (ticket: Ticket) => ticket.ticketId, className: 'tickets-id-cell' },
     // Vendors are the vendor themselves, so the Vendor column is only useful on
     // the admin/sales side.
     ...(vendorSide
@@ -259,25 +258,22 @@ const Tickets: React.FC = () => {
               <small>{ticket.vendorPhone || ticket.customerPhone}</small>
             </div>
           ),
-          width: '160px',
         }]),
-    { header: 'REMARKS', accessor: (ticket: Ticket) => ticket.subject, width: '220px', className: 'tickets-subject-cell' },
-    { header: 'CATEGORY', accessor: (ticket: Ticket) => TICKET_CATEGORY_LABELS[ticket.category], width: '110px' },
+    { header: 'REMARKS', accessor: (ticket: Ticket) => ticket.subject, className: 'tickets-subject-cell' },
+    { header: 'CATEGORY', accessor: (ticket: Ticket) => TICKET_CATEGORY_LABELS[ticket.category] },
     {
       header: 'PRIORITY',
       accessor: (ticket: Ticket) => (
         <StatusChip tone={PRIORITY_TONE[ticket.priority]}>{TICKET_PRIORITY_LABELS[ticket.priority]}</StatusChip>
       ),
-      width: '110px',
     },
     {
       header: 'STATUS',
       accessor: (ticket: Ticket) => (
         <StatusChip tone={STATUS_TONE[ticket.status]}>{TICKET_STATUS_LABELS[ticket.status]}</StatusChip>
       ),
-      width: '120px',
     },
-    { header: 'CREATED AT', accessor: (ticket: Ticket) => toBsDate(ticket.createdAt), width: '110px' },
+    { header: 'CREATED AT', accessor: (ticket: Ticket) => toBsDate(ticket.createdAt) },
     {
       header: 'ACTION',
       accessor: (ticket: Ticket) => (
@@ -285,7 +281,6 @@ const Tickets: React.FC = () => {
           <Eye size={14} /> View
         </Button>
       ),
-      width: '110px',
     },
   ], [page, pageSizeChoice, visibleTickets, navigate, vendorSide]);
 
@@ -366,7 +361,6 @@ const Tickets: React.FC = () => {
         loading={loading}
         loadingMessage="Loading tickets..."
         emptyMessage="No tickets found."
-        minWidth={vendorSide ? '940px' : '1100px'}
         tableClassName="tickets-table"
       />
 

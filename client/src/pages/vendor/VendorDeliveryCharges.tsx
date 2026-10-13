@@ -92,7 +92,6 @@ const VendorDeliveryCharges: React.FC = () => {
       {
         header: 'SN',
         accessor: (rate: Row) => visibleRates.findIndex((r) => r.destinationId === rate.destinationId) + 1,
-        width: '50px',
       },
       {
         header: 'DESTINATION',
@@ -115,7 +114,6 @@ const VendorDeliveryCharges: React.FC = () => {
           ) : (
             <span className="vendor-delivery-unset">—</span>
           ),
-        width: '240px',
       },
       // Zone is only meaningful for zone-rate vendors.
       ...(data?.rateType === 'zone'
@@ -123,7 +121,6 @@ const VendorDeliveryCharges: React.FC = () => {
             {
               header: 'ZONE',
               accessor: (rate: Row) => (rate.zone ? ZONE_LABELS[rate.zone] || rate.zone : '—'),
-              width: '150px',
             },
           ]
         : []),
@@ -131,19 +128,16 @@ const VendorDeliveryCharges: React.FC = () => {
         header: 'DELIVERY RATE',
         accessor: (rate: Row) =>
           rate.homeRate !== null ? formatMoney(rate.homeRate) : <span className="vendor-delivery-unset">Not set</span>,
-        width: '150px',
       },
       {
         header: 'BRANCH RATE',
         accessor: (rate: Row) =>
           rate.branchRate !== null ? formatMoney(rate.branchRate) : <span className="vendor-delivery-unset">—</span>,
-        width: '150px',
       },
-      { header: 'FREE WEIGHT', accessor: () => `${data?.freeWeightKg ?? 0} Kg`, width: '130px' },
+      { header: 'FREE WEIGHT', accessor: () => `${data?.freeWeightKg ?? 0} Kg` },
       {
         header: 'EXTRA WEIGHT',
         accessor: () => `${data?.extraWeightPercent ?? 0}% / Kg`,
-        width: '140px',
       },
     ],
     [visibleRates, data],
@@ -203,7 +197,6 @@ const VendorDeliveryCharges: React.FC = () => {
         loading={loading}
         loadingMessage="Loading delivery charges..."
         emptyMessage="No delivery charges available."
-        minWidth="1000px"
       />
 
       {visibleRates.length > 0 && (

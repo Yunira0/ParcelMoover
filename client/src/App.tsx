@@ -66,11 +66,13 @@ const CashBankPage = lazy(() => import('./pages/finance/CashBankPage'))
 const CashBankVoucherPage = lazy(() => import('./pages/finance/CashBankVoucherPage'))
 const JournalEntryPage = lazy(() => import('./pages/finance/JournalEntryPage'))
 const MastersPage = lazy(() => import('./pages/finance/MastersPage'))
+const BankTransferPage = lazy(() => import('./pages/finance/BankTransferPage'))
 const SettlementPayPage = lazy(() => import('./pages/SettlementPayPage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const BranchDestinations = lazy(() => import('./pages/branch/BranchDestinations'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
+const BankManagement = lazy(() => import('./pages/BankManagement'))
 const PickupTimeSlots = lazy(() => import('./pages/PickupTimeSlots'))
 const PickupOperations = lazy(() => import('./pages/PickupOperations'))
 const DispatchOperations = lazy(() => import('./pages/DispatchOperations'))
@@ -146,7 +148,7 @@ function App() {
           />
           <Route
             path="/overview/:metric"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><OverviewOrdersPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><OverviewOrdersPage /></RoleGuard>}
           />
           {/* Per-merchant read of the orders list: the ten roll-up figures plus
               the waybill table, scoped by a merchant picker and date range. */}
@@ -247,7 +249,7 @@ function App() {
           />
           <Route
             path="/vendors"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorManagement /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant', 'sales']}><VendorManagement /></RoleGuard>}
           />
           <Route
             path="/vendors/new"
@@ -342,6 +344,10 @@ function App() {
           <Route
             path="/sla"
             element={<RoleGuard allowedRoles={['super_admin']}><SlaSettings /></RoleGuard>}
+          />
+          <Route
+            path="/banks"
+            element={<RoleGuard allowedRoles={['super_admin']}><BankManagement /></RoleGuard>}
           />
           <Route
             path="/pickup-time-slots"
@@ -448,6 +454,12 @@ function App() {
           <Route
             path="/finance/carrier-cod/:id/pay"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementPayPage /></RoleGuard>}
+          />
+          {/* CIPS bulk transfer sheet for the vendor statements still owed. Same
+              staff as Vendor COD; the API refuses branch admins. */}
+          <Route
+            path="/finance/bank-transfer"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><BankTransferPage /></RoleGuard>}
           />
           <Route
             path="/finance/pending-cod"

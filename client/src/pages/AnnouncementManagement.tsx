@@ -120,7 +120,7 @@ const AnnouncementManagement: React.FC = () => {
       ),
     },
     { header: 'WINDOW', accessor: (a: Announcement) => dateWindow(a) },
-    { header: 'PRIORITY', accessor: (a: Announcement) => a.sortOrder, width: '70px' },
+    { header: 'PRIORITY', accessor: (a: Announcement) => a.sortOrder },
     {
       header: 'ACTION',
       accessor: (a: Announcement) => (
@@ -136,7 +136,6 @@ const AnnouncementManagement: React.FC = () => {
           </Button>
         </TableRowActions>
       ),
-      width: '220px',
     },
   ];
 

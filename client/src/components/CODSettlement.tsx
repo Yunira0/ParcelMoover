@@ -88,7 +88,9 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
         <RowLink
           bucket="pending"
           dot="pending"
-          amount={data.pendingCod}
+          // Net of the delivery charge still to be deducted, as on the vendor card.
+          // A rider's cash in hand is gross.
+          amount={data.scopedToRider ? data.pendingCod : data.pendingCod - (data.pendingDeliveryCharge ?? 0)}
           loading={loading}
           amountClassName="cod-pending"
         />

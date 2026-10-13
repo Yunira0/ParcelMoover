@@ -93,6 +93,8 @@ export interface SettlementListItem {
    */
   paymentBreakdown: Array<{ method: string; amount: number }>;
   remark: string | null;
+  /** The vendor's invoice number for this payout. Null until recorded. */
+  invoiceNo: string | null;
 }
 
 export interface SettlementsListResponse {
@@ -305,6 +307,15 @@ export const attachSettlementDocuments = async (
   return response.data;
 };
 
+/** Records the vendor's invoice number on a paid statement. Blank clears it. */
+export const setSettlementInvoiceNo = async (
+  id: string,
+  invoiceNo: string,
+): Promise<{ success: boolean; message: string; data: { id: string; invoiceNo: string | null } }> => {
+  const response = await api.patch(`/finance/settlements/${id}/invoice-no`, { invoiceNo: invoiceNo.trim() || null });
+  return response.data;
+};
+
 export const deleteSettlementDocument = async (
   id: string,
   documentId: string,
@@ -414,6 +425,8 @@ export interface SettlementDetail {
   /** Every proof on this statement, including any not tied to an instalment. */
   documents: SettlementDocument[];
   remark: string | null;
+  /** The vendor's invoice number for this payout. Null until recorded. */
+  invoiceNo: string | null;
   /** Newest document of each kind. Null when none is attached. */
   paymentReceiptPath: string | null;
   taxInvoicePath: string | null;
@@ -447,4 +460,29 @@ export const cancelSettlement = async (
 ): Promise<{ success: boolean; message: string; data: CreateSettlementResponse }> => {
   const response = await api.post(`/finance/settlements/${id}/cancel`, { remark });
   return response.data;
+};
+
+// ── CIPS bulk bank transfer ─────────────────────────────────────────────────
+
+/** One vendor statement still owed, with the bank details the CIPS sheet needs. */
+export interface BankTransferRow {
+  settlementId: string;
+  statementId: string;
+  status: 'pending' | 'partially_paid';
+  settlementDate: string | null;
+  createdAt: string;
+  vendorId: string;
+  vendorName: string;
+  /** What is still owed to the vendor on the statement. */
+  codAmount: number;
+  bankName: string | null;
+  /** From the banks list (System Management), matched on bankName; null when it isn't there. */
+  bankCode: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+}
+
+export const getVendorBankTransfers = async (): Promise<BankTransferRow[]> => {
+  const response = await api.get('/finance/bank-transfers');
+  return response.data.data;
 };

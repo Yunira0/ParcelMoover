@@ -405,7 +405,6 @@ const VendorOrders: React.FC = () => {
     {
       header: 'Order ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '80px',
     },
     {
       header: 'Tracking ID',
@@ -415,7 +414,6 @@ const VendorOrders: React.FC = () => {
           <span className="vo-id-date">{toBsDate(order.createdAt)}</span>
         </div>
       ),
-      width: '200px',
     },
     {
       header: 'Status',
@@ -425,7 +423,6 @@ const VendorOrders: React.FC = () => {
           <span className="vo-status-date">{toBsDateTime(order.lastUpdatedAt || order.createdAt)}</span>
         </div>
       ),
-      width: '160px',
     },
     {
       header: 'Customers',
@@ -436,12 +433,10 @@ const VendorOrders: React.FC = () => {
           <span className="vo-customer-address">{order.receiverAddress || order.destination}</span>
         </div>
       ),
-      width: '260px',
     },
     {
       header: 'Product Description',
       accessor: (order: Order) => order.packageType?.trim() ? order.packageType : '-',
-      width: '180px',
       className: 'vo-muted-cell',
     },
     {
@@ -451,13 +446,11 @@ const VendorOrders: React.FC = () => {
           {order.orderType === 'return' ? <ChevronsLeft size={16} /> : <ChevronsRight size={16} />}
         </span>
       ),
-      width: '120px',
       className: 'vo-center-cell',
     },
     {
       header: 'Destination Branch',
       accessor: (order: Order) => order.destination || '-',
-      width: '160px',
     },
     {
       header: 'Amount',
@@ -468,7 +461,6 @@ const VendorOrders: React.FC = () => {
           <span>Service Charge: NPR. {formatMoney(order.deliveryCharge)}</span>
         </div>
       ),
-      width: '200px',
     },
     {
       header: 'Last Comment',
@@ -483,7 +475,6 @@ const VendorOrders: React.FC = () => {
           {order.remarks?.trim() ? order.remarks : 'Add remark'}
         </button>
       ),
-      width: '180px',
     },
     {
       header: 'Action',
@@ -512,7 +503,6 @@ const VendorOrders: React.FC = () => {
           )}
         </div>
       ),
-      width: '90px',
       className: 'vo-actions-cell',
     },
   ];
@@ -635,7 +625,6 @@ const VendorOrders: React.FC = () => {
           loading={loading}
           loadingMessage="Loading orders..."
           emptyMessage="No orders found."
-          minWidth="1640px"
           tableClassName="vo-table"
         />
 

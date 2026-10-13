@@ -35,11 +35,11 @@ export const COD_BUCKET_META: Record<CodDetailBucket, CodBucketMeta> = {
     description: 'Collected cash that has already been remitted onward.',
   },
   pending: {
-    label: 'Pending (gross)',
-    title: 'Pending COD (gross)',
-    amountHeader: 'OUTSTANDING',
+    label: 'Pending (net)',
+    title: 'Pending COD (net)',
+    amountHeader: 'NET OUTSTANDING',
     description:
-      'Collected cash not yet remitted onward, before delivery charges and including orders already on an unpaid statement.',
+      'Collected cash not yet remitted onward, after delivery charges, including orders already on an unpaid statement.',
   },
   'pm-rider': {
     label: 'PM-Rider',

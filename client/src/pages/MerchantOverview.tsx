@@ -152,7 +152,6 @@ const MerchantOverview: React.FC = () => {
       {
         header: 'ORDER ID',
         accessor: (o: Order) => <span className="merchant-order-id" title={`#${o.orderNumber}`}>#{o.orderNumber}</span>,
-        width: '70px',
         className: 'merchant-order-id-cell',
       },
       {
@@ -162,13 +161,11 @@ const MerchantOverview: React.FC = () => {
             {o.trackingId}
           </Link>
         ),
-        width: '180px',
         className: 'tracking-cell',
       },
       {
         header: 'CREATED DATE',
         accessor: (o: Order) => <span className="created-cell" title={toBsDate(o.createdAt) || '-'}>{toBsDate(o.createdAt) || '-'}</span>,
-        width: '120px',
         className: 'merchant-created-cell',
       },
       {
@@ -178,13 +175,11 @@ const MerchantOverview: React.FC = () => {
             {o.origin ? hubNameOnly(o.origin) : '-'}
           </span>
         ),
-        width: '100px',
         className: 'merchant-origin-cell',
       },
       {
         header: 'DESTINATION',
         accessor: (o: Order) => <span className="merchant-destination-text" title={o.destination || '-'}>{o.destination || '-'}</span>,
-        width: '130px',
         className: 'destination-cell',
       },
       {
@@ -195,7 +190,6 @@ const MerchantOverview: React.FC = () => {
             <small title={o.senderPhone}>{o.senderPhone}</small>
           </div>
         ),
-        width: '180px',
         className: 'merchant-party-cell',
       },
       {
@@ -206,7 +200,6 @@ const MerchantOverview: React.FC = () => {
             <small title={formatReceiverPhones(o.receiverPhone, o.receiverAlternatePhone)}><ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} /></small>
           </div>
         ),
-        width: '140px',
         className: 'merchant-party-cell',
       },
       {
@@ -218,7 +211,6 @@ const MerchantOverview: React.FC = () => {
             <span title={`Collected ${o.collectedAmount}`}>Collected: {formatMoney(o.collectedAmount)}</span>
           </div>
         ),
-        width: '130px',
         className: 'merchant-finance-cell',
       },
       {
@@ -228,7 +220,6 @@ const MerchantOverview: React.FC = () => {
             {o.weightKg ? `${o.weightKg} Kg` : '-'}
           </span>
         ),
-        width: '120px',
         className: 'merchant-weight-cell',
       },
       {
@@ -238,7 +229,6 @@ const MerchantOverview: React.FC = () => {
             {ORDER_STATUS_LABELS[o.status]}
           </StatusChip>
         ),
-        width: '160px',
         className: 'merchant-status-cell',
       },
     ],
@@ -336,7 +326,6 @@ const MerchantOverview: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found for this vendor and range."
-        minWidth="1550px"
         tableClassName="orders-table merchant-overview-table"
       />
 

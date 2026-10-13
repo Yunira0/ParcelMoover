@@ -227,3 +227,41 @@
   justify-content: center;
   padding: var(--space-2);
 }
+
+.filter-clearable {
+  position: relative;
+}
+
+.filter-clearable-btn {
+  align-items: center;
+  background: none;
+  border: 0;
+  color: var(--color-text-caption);
+  cursor: pointer;
+  display: inline-flex;
+  height: 100%;
+  padding: 0 var(--space-1);
+  position: absolute;
+  right: 32px;
+  top: 0;
+  z-index: 1;
+}
+
+.filter-clearable-btn:hover {
+  color: var(--color-text-primary);
+}
+
+/* Room for the (x) while it shows, so a long value (a vendor's full business
+   name) ellipsises before the button instead of running underneath it. */
+.filter-clearable--active .searchable-select .searchable-select-value {
+  margin-right: 24px;
+}
+
+/* Plain text inputs have no chevron: the (x) sits at the right edge. */
+.filter-clearable--plain .filter-clearable-btn {
+  right: 4px;
+}
+
+.filter-clearable--active.filter-clearable--plain input {
+  padding-right: 28px;
+}

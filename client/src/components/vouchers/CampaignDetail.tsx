@@ -235,7 +235,6 @@ export default function CampaignDetail({ campaignId, onBack, onChanged, onPrevie
                   {r.isActive ? 'Pause' : 'Resume'}
                 </Button>
               ),
-              width: '110px',
             },
           ]}
           data={codes}

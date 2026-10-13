@@ -7,6 +7,7 @@ import SegmentedTabs from '../components/SegmentedTabs';
 import EditSettlementModal from '../components/EditSettlementModal';
 import RevertSettlementModal from '../components/RevertSettlementModal';
 import AttachSettlementDocumentsCard from '../components/AttachSettlementDocumentsCard';
+import SettlementInvoiceNo from '../components/SettlementInvoiceNo';
 import ConfirmBanner from '../components/ConfirmBanner';
 import {
   getSettlementDetail,
@@ -53,6 +54,9 @@ type DetailTab = 'billing' | 'receipt' | 'invoice';
 const API_ROOT = import.meta.env.VITE_API_URL || '/api';
 const documentUrl = (settlementId: string, documentId: string) =>
   `${API_ROOT}/finance/settlements/${settlementId}/documents/${documentId}`;
+
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]!);
 
 // What a single uploaded file looks like, plus the actions that only make sense
 // on a statement holding several: swap this one out, or drop it entirely.
@@ -317,6 +321,7 @@ function buildStatementHtml(detail: SettlementDetail): string {
         <div><span class="muted">Still outstanding</span><span>${money(detail.remainingAmount)}</span></div>`
             : ''
         }
+        ${detail.invoiceNo ? `<div><span class="muted">Invoice no.</span><span>${escapeHtml(detail.invoiceNo)}</span></div>` : ''}
         ${detail.remark ? `<div><span class="muted">Remark</span><span>${detail.remark}</span></div>` : ''}
       </div>
     </div>
@@ -659,6 +664,15 @@ const SettlementDetailPage: React.FC = () => {
                         .join(', ')}
                     </span>
                   </div>
+                )}
+                {detail.payeeType === 'vendor' && hasSettlementPayments(detail.status) && (
+                  <SettlementInvoiceNo
+                    key={detail.invoiceNo ?? ''}
+                    settlementId={detail.id}
+                    invoiceNo={detail.invoiceNo}
+                    canEdit={canPay}
+                    onSaved={() => setReloadKey((k) => k + 1)}
+                  />
                 )}
                 {/* Only worth stating while the two figures differ — on a
                     settled statement "paid" is just the payable again. */}

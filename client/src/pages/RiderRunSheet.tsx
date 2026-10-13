@@ -94,7 +94,6 @@ const parcelColumns = [
   {
     header: 'ID',
     accessor: (parcel: RunSheetParcel) => `#${parcel.orderNumber}`,
-    width: '70px',
   },
   {
     header: 'TRACKING ID',
@@ -103,7 +102,6 @@ const parcelColumns = [
         {parcel.trackingId}
       </Link>
     ),
-    width: '160px',
     className: 'runsheet-tracking-cell',
   },
   {
@@ -114,7 +112,6 @@ const parcelColumns = [
         <small><ReceiverPhones phone={parcel.receiverPhone} alternate={parcel.receiverAlternatePhone} /></small>
       </div>
     ),
-    width: '200px',
   },
   {
     header: 'DELIVERY ADDRESS',
@@ -123,18 +120,15 @@ const parcelColumns = [
   {
     header: 'PIECES',
     accessor: (parcel: RunSheetParcel) => parcel.pieces,
-    width: '80px',
   },
   {
     header: 'COD',
     accessor: (parcel: RunSheetParcel) =>
       parcel.codAmount > 0 ? formatCurrency(parcel.codAmount, 0) : '-',
-    width: '110px',
   },
   {
     header: 'VENDOR',
     accessor: (parcel: RunSheetParcel) => parcel.vendorName || '-',
-    width: '160px',
   },
   {
     header: 'STATUS',
@@ -143,7 +137,6 @@ const parcelColumns = [
         {STATUS_LABELS[parcel.status] ?? parcel.status}
       </StatusChip>
     ),
-    width: '160px',
   },
 ];
 
@@ -201,7 +194,6 @@ const RunSheetDetailCard: React.FC<{ sheet: RunSheet }> = ({ sheet }) => {
       columns={parcelColumns}
       data={sheet.parcels}
       selectable={false}
-      minWidth="1010px"
       tableClassName="runsheet-table"
       emptyMessage="This run sheet has no parcels."
     />
@@ -297,7 +289,6 @@ const RiderRunSheet: React.FC = () => {
     {
       header: 'S.N.',
       accessor: (row: RunSheetRow) => row.sn,
-      width: '60px',
     },
     {
       header: 'RUNSHEET ID',
@@ -310,23 +301,19 @@ const RiderRunSheet: React.FC = () => {
           {row.sheetNo}
         </button>
       ),
-      width: '210px',
       className: 'runsheet-tracking-cell',
     },
     {
       header: 'CREATED',
       accessor: (row: RunSheetRow) => <DateTimeCell iso={row.createdAt} />,
-      width: '120px',
     },
     {
       header: 'UPDATED',
       accessor: (row: RunSheetRow) => <DateTimeCell iso={row.updatedAt} />,
-      width: '120px',
     },
     {
       header: 'VEHICLE',
       accessor: (row: RunSheetRow) => row.rider.vehicleNo || 'N/A',
-      width: '110px',
     },
     {
       header: 'DRIVER',
@@ -336,17 +323,14 @@ const RiderRunSheet: React.FC = () => {
           <small>{row.rider.phone}</small>
         </div>
       ),
-      width: '180px',
     },
     {
       header: 'HUB',
       accessor: (row: RunSheetRow) => row.rider.hub || '-',
-      width: '130px',
     },
     {
       header: 'TOTAL ITEMS',
       accessor: (row: RunSheetRow) => <strong>{row.totalItems}</strong>,
-      width: '100px',
     },
     {
       header: 'DELIVERED ITEMS',
@@ -356,13 +340,11 @@ const RiderRunSheet: React.FC = () => {
         ) : (
           <strong>{row.deliveredItems}</strong>
         ),
-      width: '130px',
     },
     {
       header: 'COD',
       accessor: (row: RunSheetRow) =>
         row.totalCod > 0 ? formatCurrency(row.totalCod, 0) : '-',
-      width: '110px',
     },
     {
       header: 'PARCELS',
@@ -381,7 +363,6 @@ const RiderRunSheet: React.FC = () => {
           )}
         </Button>
       ),
-      width: '110px',
     },
   ];
 
@@ -435,7 +416,6 @@ const RiderRunSheet: React.FC = () => {
         loading={loading && rows.length === 0}
         loadingMessage="Loading run sheets..."
         emptyMessage={`No run sheets on ${date}.`}
-        minWidth="1420px"
         tableClassName="runsheet-table"
       />
 

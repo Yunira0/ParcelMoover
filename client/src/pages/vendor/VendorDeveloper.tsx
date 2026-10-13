@@ -166,15 +166,13 @@ const VendorDeveloper: React.FC = () => {
             {key.name}
           </span>
         ),
-        width: '220px',
       },
       {
         header: 'KEY',
         accessor: (key: ApiKey) => <code className="api-key-prefix">{key.key_prefix}…</code>,
-        width: '190px',
       },
-      { header: 'CREATED', accessor: (key: ApiKey) => formatDate(key.created_at), width: '130px' },
-      { header: 'LAST USED', accessor: (key: ApiKey) => formatDate(key.last_used_at), width: '130px' },
+      { header: 'CREATED', accessor: (key: ApiKey) => formatDate(key.created_at) },
+      { header: 'LAST USED', accessor: (key: ApiKey) => formatDate(key.last_used_at) },
       {
         header: 'STATUS',
         accessor: (key: ApiKey) => (
@@ -182,7 +180,6 @@ const VendorDeveloper: React.FC = () => {
             {key.revoked_at ? 'Revoked' : 'Active'}
           </span>
         ),
-        width: '110px',
       },
       {
         header: '',
@@ -197,7 +194,6 @@ const VendorDeveloper: React.FC = () => {
               {revokingId === key.id ? 'Revoking…' : 'Revoke'}
             </button>
           ),
-        width: '110px',
       },
     ],
     [revokingId],
@@ -389,20 +385,17 @@ const VendorDeveloper: React.FC = () => {
             {e.name}
           </span>
         ),
-        width: '200px',
       },
       {
         header: 'URL',
         accessor: (e: WebhookEndpoint) => <code className="webhook-url-cell">{e.url}</code>,
-        width: '320px',
       },
-      { header: 'CREATED', accessor: (e: WebhookEndpoint) => formatDate(e.created_at), width: '130px' },
+      { header: 'CREATED', accessor: (e: WebhookEndpoint) => formatDate(e.created_at) },
       {
         header: 'STATUS',
         accessor: (e: WebhookEndpoint) => (
           <span className={`webhook-status ${webhookStatusClass(e)}`}>{webhookStatusLabel(e)}</span>
         ),
-        width: '140px',
       },
       {
         header: '',
@@ -425,7 +418,6 @@ const VendorDeveloper: React.FC = () => {
             </button>
           </div>
         ),
-        width: '360px',
       },
     ],
     [hookBusyId],
@@ -487,7 +479,6 @@ const VendorDeveloper: React.FC = () => {
             loading={keysLoading}
             loadingMessage="Loading API keys..."
             emptyMessage="No API keys yet. Generate one to start integrating."
-            minWidth="880px"
           />
 
           {keys.length > 0 && (
@@ -558,7 +549,6 @@ const VendorDeveloper: React.FC = () => {
             loading={endpointsLoading}
             loadingMessage="Loading webhook endpoints..."
             emptyMessage="No webhook endpoints yet. Add one to start receiving order.status_changed events."
-            minWidth="1150px"
           />
 
           {endpoints.length > 0 && (

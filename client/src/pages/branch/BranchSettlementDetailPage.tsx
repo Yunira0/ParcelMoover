@@ -107,22 +107,22 @@ const BranchSettlementDetailPage: React.FC = () => {
   const payable = detail.status === 'pending' || detail.status === 'partially_paid';
   const hasVerifiedPayment = detail.status === 'partially_paid' || detail.status === 'settled';
   const paymentColumns = [
-    { header: 'Paid at', accessor: (payment: BranchSettlementDetail['payments'][number]) => toBsDate(payment.paidAt) || '—', width: '130px' },
-    { header: 'Method', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.method, width: '180px' },
-    { header: 'Amount', accessor: (payment: BranchSettlementDetail['payments'][number]) => money(payment.amount), width: '140px', className: 'branch-money-cell' },
-    { header: 'Breakdown', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.breakdown.map((line) => `${line.method} · ${money(line.amount)}`).join(' · '), width: '250px' },
-    { header: 'Recorded by', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.recordedBy || '—', width: '160px' },
-    { header: 'Remark', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.remark || '—', width: '200px' },
+    { header: 'Paid at', accessor: (payment: BranchSettlementDetail['payments'][number]) => toBsDate(payment.paidAt) || '—' },
+    { header: 'Method', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.method },
+    { header: 'Amount', accessor: (payment: BranchSettlementDetail['payments'][number]) => money(payment.amount), className: 'branch-money-cell' },
+    { header: 'Breakdown', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.breakdown.map((line) => `${line.method} · ${money(line.amount)}`).join(' · ') },
+    { header: 'Recorded by', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.recordedBy || '—' },
+    { header: 'Remark', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.remark || '—' },
   ];
   const orderColumns = [
-    { header: 'Order', accessor: (item: BranchSettlementDetail['items'][number]) => `#${item.orderNumber}`, width: '85px' },
-    { header: 'Tracking ID', accessor: (item: BranchSettlementDetail['items'][number]) => item.trackingId, width: '170px' },
-    { header: 'Receiver', accessor: (item: BranchSettlementDetail['items'][number]) => <div className="party-cell"><span>{item.receiverName}</span><small><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></small></div>, width: '185px' },
-    { header: 'Route', accessor: (item: BranchSettlementDetail['items'][number]) => `${item.origin || '—'} → ${item.destination || '—'}`, width: '220px' },
-    { header: 'Collected', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.collectedAmount), width: '125px', className: 'branch-money-cell' },
-    { header: 'Commission credit', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.commissionAmount), width: '145px', className: 'branch-money-cell' },
-    { header: 'Net payable', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.netPayable), width: '130px', className: 'branch-money-cell' },
-    { header: 'Order status', accessor: (item: BranchSettlementDetail['items'][number]) => <StatusChip tone={getOrderStatusTone(item.status as ParcelStatus)}>{ORDER_STATUS_LABELS[item.status as keyof typeof ORDER_STATUS_LABELS] || item.status}</StatusChip>, width: '150px' },
+    { header: 'Order', accessor: (item: BranchSettlementDetail['items'][number]) => `#${item.orderNumber}` },
+    { header: 'Tracking ID', accessor: (item: BranchSettlementDetail['items'][number]) => item.trackingId },
+    { header: 'Receiver', accessor: (item: BranchSettlementDetail['items'][number]) => <div className="party-cell"><span>{item.receiverName}</span><small><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></small></div> },
+    { header: 'Route', accessor: (item: BranchSettlementDetail['items'][number]) => `${item.origin || '—'} → ${item.destination || '—'}` },
+    { header: 'Collected', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.collectedAmount), className: 'branch-money-cell' },
+    { header: 'Commission credit', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.commissionAmount), className: 'branch-money-cell' },
+    { header: 'Net payable', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.netPayable), className: 'branch-money-cell' },
+    { header: 'Order status', accessor: (item: BranchSettlementDetail['items'][number]) => <StatusChip tone={getOrderStatusTone(item.status as ParcelStatus)}>{ORDER_STATUS_LABELS[item.status as keyof typeof ORDER_STATUS_LABELS] || item.status}</StatusChip> },
   ];
 
   return (
@@ -202,8 +202,8 @@ const BranchSettlementDetailPage: React.FC = () => {
           )}
           {payable && !canRecordOfficePayment && <Banner tone="info">Submit the paid receipt from Branch Billing & Credit. The office will verify it before this statement is cleared.</Banner>}
 
-          <section className="scp-section"><div className="scp-section-header"><div><h3>Payment history</h3><p>Every transfer remains visible here, including split or partial payments.</p></div></div><Table selectable={false} data={detail.payments} columns={paymentColumns} minWidth="1060px" emptyMessage="No payment has been recorded yet." /></section>
-          <section className="scp-section"><div className="scp-section-header"><div><h3>Statement orders ({detail.items.length})</h3><p>These orders are earmarked for this statement and cannot be added to another one.</p></div></div><Table selectable={false} data={detail.items.map((item) => ({ ...item, id: item.parcelId }))} columns={orderColumns} minWidth="1210px" emptyMessage="No orders on this statement." /></section>
+          <section className="scp-section"><div className="scp-section-header"><div><h3>Payment history</h3><p>Every transfer remains visible here, including split or partial payments.</p></div></div><Table selectable={false} data={detail.payments} columns={paymentColumns} emptyMessage="No payment has been recorded yet." /></section>
+          <section className="scp-section"><div className="scp-section-header"><div><h3>Statement orders ({detail.items.length})</h3><p>These orders are earmarked for this statement and cannot be added to another one.</p></div></div><Table selectable={false} data={detail.items.map((item) => ({ ...item, id: item.parcelId }))} columns={orderColumns} emptyMessage="No orders on this statement." /></section>
         </>
       )}
 

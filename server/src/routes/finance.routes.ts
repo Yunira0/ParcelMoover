@@ -18,6 +18,7 @@ import {
   updateSettlementSchema,
   revertSettlementSchema,
   cancelSettlementSchema,
+  settlementInvoiceNoSchema,
   createCarrierSettlementSchema,
   updateCarrierSettlementSchema,
 } from "../validators/finance.schema";
@@ -46,9 +47,11 @@ import {
   updateSettlementController,
   revertSettlementController,
   cancelSettlementController,
+  setSettlementInvoiceNoController,
   getSettlementDetailController,
   getSettlementBillingPaymentsController,
   getSettlementDocumentController,
+  listVendorBankTransfersController,
 } from "../controllers/finance.controller";
 
 const financeRouter: Router = Router();
@@ -100,6 +103,17 @@ financeRouter.get(
   financeReadLimiter,
   validate(orderCodQuerySchema, "query"),
   listOrderCodController,
+);
+
+// GET /api/finance/bank-transfers — vendor statements still owed, with each
+// vendor's bank and account, for the CIPS bulk transfer sheet. Same
+// staff who can pay a statement; branch admins are refused in the service.
+financeRouter.get(
+  "/bank-transfers",
+  authMiddleware,
+  authorizeRoles("super_admin", "accountant", "admin"),
+  financeReadLimiter,
+  listVendorBankTransfersController,
 );
 
 // GET /api/finance/settlements — historical settlement statements (rider or vendor)
@@ -188,6 +202,18 @@ financeRouter.patch(
   settlementCreateLimiter,
   settlementDocsUpload,
   attachSettlementDocumentsController,
+);
+
+// PATCH /api/finance/settlements/:id/invoice-no — record the vendor's invoice
+// number with the payment proof (same audience as attaching proof)
+financeRouter.patch(
+  "/settlements/:id/invoice-no",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "accountant", "admin"),
+  settlementCreateLimiter,
+  validate(settlementInvoiceNoSchema),
+  setSettlementInvoiceNoController,
 );
 
 // DELETE /api/finance/settlements/:id/documents/:documentId — remove one proof

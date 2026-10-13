@@ -128,7 +128,7 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
   };
 
   const columns = [
-    { header: 'ID', accessor: (a: KycApplication) => a.sn, width: '48px' },
+    { header: 'ID', accessor: (a: KycApplication) => a.sn },
     { header: 'Business', accessor: (a: KycApplication) => (
       <div>
         <div className="kyc-cell-primary">{a.onlineBusinessName}</div>
@@ -146,18 +146,18 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
       <StatusChip tone={a.applicationType === 'verification' ? 'info' : 'neutral'}>
         {a.applicationType === 'verification' ? 'Verification' : 'Onboarding'}
       </StatusChip>
-    ), width: '120px' },
+    ) },
     { header: 'Status', accessor: (a: KycApplication) => (
       <StatusChip tone={a.status === 'approved' ? 'success' : a.status === 'rejected' ? 'danger' : 'warning'}>
         {a.status.charAt(0).toUpperCase() + a.status.slice(1)}
       </StatusChip>
-    ), width: '100px' },
-    { header: 'Submitted', accessor: (a: KycApplication) => toBsDate(a.createdAt), width: '110px' },
+    ) },
+    { header: 'Submitted', accessor: (a: KycApplication) => toBsDate(a.createdAt) },
     { header: '', accessor: (a: KycApplication) => (
       <button className="kyc-view-btn" onClick={() => openDetail(a)} title="View details">
         <Eye size={15} />
       </button>
-    ), width: '48px' },
+    ) },
   ];
 
   return (
@@ -183,7 +183,6 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
         loading={loading}
         loadingMessage="Loading applications…"
         emptyMessage="No applications found."
-        minWidth="700px"
       />
 
       <Pagination
