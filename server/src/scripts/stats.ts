@@ -18,9 +18,12 @@ import { helpText } from "./stats/help";
 import { configureColor } from "./stats/render";
 
 // Our own quiet connection: the server's shared client logs to stdout, which
-// would corrupt --json output. Fails fast instead of retrying forever.
+// would corrupt --json output. One-shot commands fail fast instead of
+// retrying forever. `live` reconnects in the background so a Redis restart
+// clears on a later refresh, and drops commands while disconnected so a
+// refresh reports "down" at once instead of waiting out the retries.
 let redis: Redis | null = null;
-function getRedis(): Redis {
+function getRedis({ reconnect = false } = {}): Redis {
   if (!redis) {
     redis = new Redis({
       host: process.env.REDIS_HOST || "localhost",
@@ -29,7 +32,8 @@ function getRedis(): Redis {
       lazyConnect: true,
       connectTimeout: 3000,
       maxRetriesPerRequest: 1,
-      retryStrategy: () => null,
+      enableOfflineQueue: !reconnect,
+      retryStrategy: reconnect ? (times) => Math.min(times * 1000, 5000) : () => null,
     });
     redis.on("error", () => {});
   }
@@ -66,7 +70,7 @@ async function main(): Promise<number> {
   }
 
   if (!(values.last in API_WINDOWS)) {
-    console.error("--last must be one of 1h, 24h, 7d");
+    console.error("--last must be one of 1h, 24h, 7d, 30d");
     return 1;
   }
   const window = values.last as ApiWindow;
@@ -94,7 +98,13 @@ async function main(): Promise<number> {
         console.error("live has no --json; use the other commands for scripts");
         return 1;
       }
-      await liveCommand(getRedis());
+      {
+        // Without the offline queue nothing connects on demand; a failed
+        // first attempt is fine, the retry strategy keeps trying.
+        const client = getRedis({ reconnect: true });
+        await client.connect().catch(() => {});
+        await liveCommand(client);
+      }
       return 0;
     default:
       console.error(`Unknown command "${command}". Run pm-stats --help to see the commands.`);

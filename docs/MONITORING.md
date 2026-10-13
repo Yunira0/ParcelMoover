@@ -13,7 +13,7 @@ pm-stats users              # who is using the system
 pm-stats riders             # Android APK vs browser, app versions
 pm-stats riders --outdated  # riders to remind about the app update
 pm-stats api                # traffic, speed, errors, server health (last hour)
-pm-stats api --last 24h     # or --last 7d
+pm-stats api --last 24h     # or --last 7d, --last 30d
 pm-stats vendors            # Partner API calls and webhook health
 pm-stats vendors --all      # every vendor, not just the top 15
 pm-stats business           # orders, deliveries, returns, COD today
@@ -92,7 +92,8 @@ compared with the **same time last week** (fair for a day still in progress);
 yesterday is the full day. COD collected is the cash collected on parcels
 delivered in the window; cancelled orders never count. Branch means where the
 order was picked up; `--branch <name>` narrows every number to branches whose
-name contains it.
+name contains it. When last week's number is under 20, the change is shown as
+a plain difference ("▲ +13") instead of a percentage that would exaggerate it.
 
 ### live
 
@@ -100,6 +101,10 @@ One screen of boxed panels: users, traffic, server, rider app, business,
 alerts and the latest server errors. Traffic and server update every 5
 seconds; the database numbers every 30 seconds. Keys: `r` update now, `p`
 pause, `q` quit. On a terminal narrower than 110 columns the panels stack.
+"COD collected" is cash collected today. Until a week (or a month) has been
+counted, the Users panel says how far back counting goes instead of showing
+7- and 30-day numbers that would just repeat today's. If Redis restarts, the
+Cache panel shows "down" and recovers on its own.
 
 ## How it works
 
@@ -111,6 +116,10 @@ pause, `q` quit. On a terminal narrower than 110 columns the panels stack.
   request in memory (`services/analytics/traffic.ts`) and saves the counts to
   Redis every 10 seconds, per minute (kept 2 days), per hour (kept 8 days) and,
   for Partner API keys, per day (kept 40 days).
+- **History:** every 5 minutes the server copies the hourly and Partner API
+  counts from Redis into Postgres (`analytics_counters`,
+  `services/analytics/persist.ts`), kept 90 days. When Redis no longer has an
+  hour, `pm-stats` reads the copy.
 - Neither ever blocks or fails a request.
 - `pm-stats` reads them (`server/src/services/analytics/queries/`) and prints
   them (`server/src/scripts/stats/`).
@@ -120,8 +129,10 @@ Limits to know:
 - People counts start from the day this shipped; the 7- and 30-day numbers
   fill in over the following month, and `pm-stats users` says so until they
   have.
-- Our Redis does not save to disk, so traffic and Partner API counts start over
-  if Redis restarts. People counts are in Postgres and are not affected.
+- Our Redis does not save to disk. If it restarts, traffic and Partner API
+  history is still there from the Postgres copy; only the last few minutes
+  before the restart can be missing. Speed per request type is not copied, so
+  "Slowest requests" covers the last 7 days.
 - Rider versions appear once riders install rider app 1.4.3 or later; older
   apps show as "Android app, very old".
 - There are no downtime alerts yet. `pm-stats` runs on the server, so it cannot

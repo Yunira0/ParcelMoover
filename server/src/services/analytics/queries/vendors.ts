@@ -5,6 +5,7 @@ import type Redis from "ioredis";
 import { Prisma } from "../../../generated/prisma/client";
 import prisma from "../../../lib/prisma";
 import { API_KEY_LAST_CALL_KEY, apiKeyDayKey, nepalDay } from "../trafficKeys";
+import { readBuckets } from "./counters";
 
 const nepalMidnight = Prisma.sql`((now() AT TIME ZONE 'Asia/Kathmandu')::date)::timestamp AT TIME ZONE 'Asia/Kathmandu'`;
 
@@ -95,22 +96,15 @@ export type VendorsReport = {
 
 export async function getVendorsReport(redis: Redis): Promise<VendorsReport> {
   const now = new Date();
-  let today = new Map<string, KeyCalls>();
-  let yesterday = new Map<string, KeyCalls>();
-  let lastCalls: Record<string, string> = {};
-  let redisError: string | null = null;
-  try {
-    const results = (await redis.pipeline()
-      .hgetall(apiKeyDayKey(nepalDay(now)))
-      .hgetall(apiKeyDayKey(nepalDay(new Date(now.getTime() - 86_400_000))))
-      .hgetall(API_KEY_LAST_CALL_KEY)
-      .exec()) ?? [];
-    today = parseKeyDay((results[0]?.[1] as Record<string, string>) ?? {});
-    yesterday = parseKeyDay((results[1]?.[1] as Record<string, string>) ?? {});
-    lastCalls = (results[2]?.[1] as Record<string, string>) ?? {};
-  } catch (error) {
-    redisError = error instanceof Error ? error.message : String(error);
-  }
+  // Redis first; after a Redis restart, the copy saved in Postgres.
+  const { hashes, redisError } = await readBuckets(redis, [
+    apiKeyDayKey(nepalDay(now)),
+    apiKeyDayKey(nepalDay(new Date(now.getTime() - 86_400_000))),
+    API_KEY_LAST_CALL_KEY,
+  ]);
+  const today = parseKeyDay(hashes[0]!);
+  const yesterday = parseKeyDay(hashes[1]!);
+  const lastCalls = hashes[2]!;
 
   // Keys active today, plus keys busy yesterday that have gone quiet.
   const keyIds = [...new Set([...today.keys(), ...yesterday.keys()])].filter(isUuid);

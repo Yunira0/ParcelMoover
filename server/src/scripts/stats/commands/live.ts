@@ -3,13 +3,13 @@ import type Redis from "ioredis";
 import { type ApiReport, getApiReport, percentileMs } from "../../../services/analytics/queries/api";
 import { type BusinessReport, getBusinessReport } from "../../../services/analytics/queries/business";
 import { getRidersReport, type RidersReport } from "../../../services/analytics/queries/riders";
-import { getUsersReport, type UsersReport } from "../../../services/analytics/queries/users";
+import { getUsersReport, lastDays, type UsersReport } from "../../../services/analytics/queries/users";
 import { getVendorsReport, type VendorsReport } from "../../../services/analytics/queries/vendors";
 import { formatMs } from "./api";
 import { change } from "./business";
 import { vendorAttention } from "./vendors";
 import {
-  bar, type Cell, fitVisible, nepalDate, nepalTime, npr, num, paint, sparkline, type Style, visibleLength,
+  bar, type Cell, fitVisible, nepalDate, nepalTime, npr, num, paint, shortDay, sparkline, type Style, visibleLength,
 } from "../render";
 
 // Traffic and server health are cheap Redis/OS reads; the rest queries
@@ -63,6 +63,21 @@ const icon = (level: Style) => paint(level, level === "bad" ? "✕" : level === 
 
 type Panel = { title: string; lines: string[] };
 
+// Counting starts the day pm-stats ships, so until it has a week (or a month)
+// of history the 7- and 30-day numbers equal today's. Say how far back the
+// count goes instead of showing three identical numbers.
+export function usedOverTime(users: UsersReport): string {
+  const since = users.trackingSince;
+  const [monthStart] = lastDays(users.today, 30);
+  const [weekStart] = lastDays(users.today, 7);
+  const day = (d: string) => shortDay(d).replace(/ \d{4}$/, "");
+  const all = users.groups.all;
+  if (!since || since >= users.today) return paint("dim", "Counting began today.");
+  if (since > weekStart!) return `Since ${day(since)}: ${num(all.last30Days)}` + paint("dim", "  (counting began then)");
+  if (since > monthStart!) return `Last 7 days ${num(all.last7Days)}${dot}since ${day(since)} ${num(all.last30Days)}`;
+  return `Last 7 days ${num(all.last7Days)}${dot}last 30 days ${num(all.last30Days)}`;
+}
+
 // Each panel's lines, shared by the grid and the stacked layout. `width` is
 // the space inside the panel, for bars and the traffic trend.
 function panels(state: LiveState, width: number): Record<string, Panel> {
@@ -77,8 +92,11 @@ function panels(state: LiveState, width: number): Record<string, Panel> {
   const apps = state.riders.apps;
   const latest = state.riders.newest?.version ?? null;
   const count = (keep: (a: (typeof apps)[number]) => boolean) => apps.filter(keep).reduce((s, a) => s + a.riders, 0);
-  const onLatest = count((a) => a.platform === "android" && a.version === latest);
-  const older = count((a) => a.platform === "android" && a.version !== latest);
+  // An app that sent no version is never "latest", even before any rider has
+  // an app that reports one.
+  const isLatest = (a: (typeof apps)[number]) => latest !== null && a.version === latest;
+  const onLatest = count((a) => a.platform === "android" && isLatest(a));
+  const older = count((a) => a.platform === "android" && !isLatest(a));
   const browser = Math.max(0, state.riders.activeToday - onLatest - older);
   const riderBar = (name: string, n: number) =>
     `${name.padEnd(14)}${bar(state.riders.activeToday ? n / state.riders.activeToday : 0, 16)}  ${num(n).padStart(4)}`;
@@ -92,7 +110,8 @@ function panels(state: LiveState, width: number): Record<string, Panel> {
       lines: [
         `${paint("accent", paint("bold", num(u.all.online)))} online now`,
         `Staff ${num(u.staff.online)}${dot}Vendors ${num(u.vendor.online)}${dot}Riders ${num(u.rider.online)}`,
-        paint("dim", `Today ${num(u.all.today)}  ·  7 days ${num(u.all.last7Days)}  ·  30 days ${num(u.all.last30Days)}`),
+        `Used it today ${num(u.all.today)}`,
+        usedOverTime(state.users),
       ],
     },
     traffic: {
@@ -128,10 +147,10 @@ function panels(state: LiveState, width: number): Record<string, Panel> {
     business: {
       title: "BUSINESS TODAY",
       lines: [
-        `Orders     ${num(b.created.today).padStart(13)}  ${cellText(change(b.created, true))}`,
-        `Delivered  ${num(b.delivered.today).padStart(13)}  ${cellText(change(b.delivered, true))}`,
-        `Returned   ${num(b.returned.today).padStart(13)}  ${cellText(change(b.returned, false))}`,
-        `COD        ${npr(b.codCollected.today).padStart(13)}  ${cellText(change(b.codCollected, true))}`,
+        `${"Orders".padEnd(14)}${num(b.created.today).padStart(13)}  ${cellText(change(b.created, true))}`,
+        `${"Delivered".padEnd(14)}${num(b.delivered.today).padStart(13)}  ${cellText(change(b.delivered, true))}`,
+        `${"Returned".padEnd(14)}${num(b.returned.today).padStart(13)}  ${cellText(change(b.returned, false))}`,
+        `${"COD collected".padEnd(14)}${npr(b.codCollected.today).padStart(13)}  ${cellText(change(b.codCollected, true, npr))}`,
         paint("dim", `${num(b.outForDelivery)} out for delivery  ·  ▲▼ vs last week`),
       ],
     },

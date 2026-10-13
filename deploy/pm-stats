@@ -8,4 +8,8 @@ APP_DIR=${APP_DIR:-/var/www/express-app}
 container=$(bash "$APP_DIR/deploy/deploy-app.sh" active-container)
 # Keep colours when a person is watching; plain text when piped (e.g. | jq).
 if [[ -t 1 ]]; then tty=(-it); else tty=(-i); fi
-exec docker exec "${tty[@]}" "$container" node dist/scripts/stats.js "$@"
+# Small pool of its own: without this, each pm-stats run could open up to the
+# app's 60 connections and crowd the live app out of Postgres. Its parallel
+# queries queue for a slot, so allow a longer wait than the app's 5 s.
+exec docker exec "${tty[@]}" -e DB_POOL_MAX=5 -e DB_POOL_CONNECTION_TIMEOUT_MS=30000 \
+  "$container" node dist/scripts/stats.js "$@"

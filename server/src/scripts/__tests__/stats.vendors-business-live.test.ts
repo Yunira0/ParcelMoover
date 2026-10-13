@@ -3,7 +3,7 @@ import { summarize } from "../../services/analytics/queries/api";
 import type { BusinessReport } from "../../services/analytics/queries/business";
 import { parseKeyDay, type VendorsReport } from "../../services/analytics/queries/vendors";
 import { change, renderBusiness } from "../stats/commands/business";
-import { frame, type LiveState, liveAlerts, renderLive } from "../stats/commands/live";
+import { frame, type LiveState, liveAlerts, renderLive, usedOverTime } from "../stats/commands/live";
 import { renderVendors, vendorAttention } from "../stats/commands/vendors";
 import { configureColor, npr } from "../stats/render";
 
@@ -90,8 +90,15 @@ describe("pm-stats business", () => {
   it("compares with the same time last week", () => {
     expect(change(business.created, true)).toEqual({ text: "▲ 8%", style: "good" });
     expect(change(business.returned, false)).toEqual({ text: "▼ 13%", style: "good" });
-    expect(change(business.cancelled, false)).toEqual({ text: "▲ 20%", style: "warn" });
     expect(change({ today: 0, lastWeek: 0, yesterday: 3 }, true)).toBe("–");
+  });
+
+  it("shows a plain difference when last week's number is small", () => {
+    // 5 → 18 would read "▲ 260%".
+    expect(change({ today: 18, lastWeek: 5, yesterday: 9 }, false)).toEqual({ text: "▲ +13", style: "warn" });
+    expect(change({ today: 12, lastWeek: 15, yesterday: 9 }, false)).toEqual({ text: "▼ -3", style: "good" });
+    expect(change({ today: 7, lastWeek: 7, yesterday: 9 }, true)).toBe("same");
+    expect(change({ today: 20, lastWeek: 20, yesterday: 9 }, true)).toBe("0%");
   });
 
   it("matches the designed layout", () => {
@@ -103,7 +110,7 @@ describe("pm-stats business", () => {
       "  Picked up                1,102         1,060     ▲ 4%          1,350",
       "  Delivered                  968           941     ▲ 3%          1,210",
       "  Returned                    41            47    ▼ 13%             52",
-      "  Cancelled                   18            15    ▲ 20%             22",
+      "  Cancelled                   18            15     ▲ +3             22",
       "  COD collected    NPR 18,42,300 NPR 17,95,000     ▲ 3%  NPR 22,10,450",
     ]);
     expect(lines.join("\n")).toContain("Success rate today       95.9%");
@@ -187,6 +194,33 @@ describe("pm-stats live", () => {
     const shown = frame(lines, 60, 140).split("\r\n");
     expect(shown.length).toBe(lines.length);
     expect(frame(lines, 60, 140)).not.toContain("more lines");
+  });
+
+  it("never counts an app without a version as the latest", () => {
+    // No rider has an app that reports its version yet: every Android app is old.
+    const before = {
+      ...state,
+      riders: { ...state.riders, newest: null, apps: [{ platform: "android", version: null, riders: 8 }], activeToday: 8 },
+    };
+    const text = renderLive(before, 140).join("\n");
+    expect(text).toMatch(/Latest app\s+░+\s+0 /);
+    expect(text).toMatch(/Older app\s+█+\s+8 ▲/);
+  });
+
+  it("says how far back the people count goes instead of repeating today's number", () => {
+    const users = (trackingSince: string | null) => ({ ...state.users, today: "2026-10-09", trackingSince });
+    expect(usedOverTime(users("2026-10-09"))).toBe("Counting began today.");
+    expect(usedOverTime(users(null))).toBe("Counting began today.");
+    expect(usedOverTime(users("2026-10-06"))).toBe("Since 6 Oct: 7  (counting began then)");
+    expect(usedOverTime(users("2026-09-20"))).toBe("Last 7 days 6  ·  since 20 Sept 7");
+    expect(usedOverTime(users("2026-08-01"))).toBe("Last 7 days 6  ·  last 30 days 7");
+    const text = renderLive({ ...state, users: users("2026-10-09") }, 140).join("\n");
+    expect(text).toContain("Used it today 5");
+    expect(text).not.toMatch(/7 days 6 .*30 days/);
+  });
+
+  it("says COD is cash collected", () => {
+    expect(renderLive(state, 140).join("\n")).toMatch(/COD collected\s+NPR 18,42,300/);
   });
 
   it("stacks the panels on a narrow terminal", () => {
