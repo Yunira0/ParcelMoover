@@ -128,3 +128,29 @@ export const cancelSettlementSchema = z.object({
 export const notificationQuerySchema = paginationQuerySchema;
 
 export type NotificationQuery = z.infer<typeof notificationQuerySchema>;
+
+// ── VAT registers ────────────────────────────────────────────────────────────
+
+export const vatRegisterQuerySchema = z.object({
+  year: z.coerce.number().int().min(2070).max(2200),
+  month: z.coerce.number().int().min(1).max(12),
+});
+
+const moneySchema = z.coerce.number().min(0).max(1_000_000_000).transform((n) => Math.round(n * 100) / 100);
+const optionalText = (max: number) => z.string().trim().max(max).optional().nullable().transform((v) => v || null);
+
+export const createPurchaseBillSchema = z.object({
+  billDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Bill date must be YYYY-MM-DD"),
+  billNo: z.string().trim().min(1, "Bill number is required").max(64),
+  customsNo: optionalText(64),
+  supplierName: z.string().trim().min(1, "Supplier name is required").max(200),
+  supplierPan: z.string().trim().regex(/^\d{9}$/, "PAN must be 9 digits").optional().nullable().or(z.literal("")).transform((v) => v || null),
+  purchaseType: z.enum(["local", "import", "capital"]),
+  description: optionalText(200),
+  totalAmount: moneySchema.refine((n) => n > 0, "Total amount must be more than 0"),
+  exemptAmount: moneySchema.default(0),
+});
+
+export const cancelPurchaseBillSchema = z.object({
+  remark: z.string().trim().min(1, "Remark is required").max(500),
+});

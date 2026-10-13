@@ -67,6 +67,7 @@ const CashBankVoucherPage = lazy(() => import('./pages/finance/CashBankVoucherPa
 const JournalEntryPage = lazy(() => import('./pages/finance/JournalEntryPage'))
 const MastersPage = lazy(() => import('./pages/finance/MastersPage'))
 const BankTransferPage = lazy(() => import('./pages/finance/BankTransferPage'))
+const VatRegisterPage = lazy(() => import('./pages/finance/VatRegisterPage'))
 const SettlementPayPage = lazy(() => import('./pages/SettlementPayPage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const BranchDestinations = lazy(() => import('./pages/branch/BranchDestinations'))
@@ -461,6 +462,14 @@ function App() {
             path="/finance/bank-transfer"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><BankTransferPage /></RoleGuard>}
           />
+          {/* VAT registers: books grant, like the API (head office only, enforced there). */}
+          {(['sales', 'sales-return', 'purchase', 'purchase-return'] as const).map((kind) => (
+            <Route
+              key={kind}
+              path={`/finance/reports/${kind}-register`}
+              element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><VatRegisterPage kind={kind} /></RoleGuard>}
+            />
+          ))}
           <Route
             path="/finance/pending-cod"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorPendingCod /></RoleGuard>}
