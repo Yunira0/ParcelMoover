@@ -311,8 +311,15 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
             header: payeeType === 'rider' ? 'Rider' : 'Vendor',
             accessor: 'payeeName',
           },
+          // The delivery charges on the statement, split for VAT, ahead of what is paid out.
+          ...(payeeType === 'vendor'
+            ? [
+                { header: 'Taxable amount', className: 'acc-num', accessor: (item: SettlementRow) => money(item.taxableAmount ?? 0) },
+                { header: 'VAT 13%', className: 'acc-num', accessor: (item: SettlementRow) => money(item.vatAmount ?? 0) },
+              ]
+            : []),
           {
-            header: 'Amount',
+            header: payeeType === 'vendor' ? 'Payable amount' : 'Amount',
             className: 'acc-num',
             accessor: (item) => <span className="acc-num">{money(item.amount)}</span>,
           },

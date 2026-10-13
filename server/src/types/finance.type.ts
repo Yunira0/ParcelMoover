@@ -111,6 +111,13 @@ export interface SettlementListItem {
   remark: string | null;
   /** The vendor's invoice number for this payout. Null until staff record it. */
   invoiceNo: string | null;
+  /**
+   * The statement's delivery charges split into taxable value and VAT. Staff
+   * only, vendor statements only - like vatRate, never sent to a vendor or the
+   * Partner API.
+   */
+  taxableAmount?: number;
+  vatAmount?: number;
 }
 
 export interface SettlementsListResult {

@@ -14,6 +14,7 @@ import { getActivePaymentMethodNames } from "./payment-method.service";
 import { adminBranchScopeIds, assertHeadOfficeOnly } from "../lib/branchScope";
 import { isFinanceStaff } from "../utils/financeRoles";
 import { DELIVERY_CHARGE_VAT_RATE } from "./money-rules";
+import { splitVat } from "./vat-register.service";
 import {
   AttachSettlementDocumentsInput,
   CodPaymentFilter,
@@ -436,6 +437,13 @@ export async function listOrderCod(
   return result;
 }
 
+/** A vendor statement's delivery charges (collected - payable + credit), split into taxable value and VAT. */
+function vatSplitOf(s: { amount: Prisma.Decimal; payable_amount: Prisma.Decimal | null; vendor_credit_applied: Prisma.Decimal; vat_rate: Prisma.Decimal | null }) {
+  const charges = round2(Number(s.amount) - Number(s.payable_amount ?? s.amount) + Number(s.vendor_credit_applied));
+  const { taxable, vat } = splitVat(charges, s.vat_rate === null ? DELIVERY_CHARGE_VAT_RATE : Number(s.vat_rate));
+  return { taxableAmount: taxable, vatAmount: vat };
+}
+
 export async function listSettlements(
   actor: Actor,
   payeeType: "rider" | "vendor",
@@ -637,6 +645,7 @@ export async function listSettlements(
       paymentBreakdown: sumByMethod(s.payments),
       remark: s.remark,
       invoiceNo: s.invoice_no,
+      ...(isStaff && payeeType === "vendor" ? vatSplitOf(s) : {}),
     };
   });
 
