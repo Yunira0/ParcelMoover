@@ -576,6 +576,7 @@ const DepartmentSidebar: React.FC<{ workspace: DepartmentWorkspace }> = ({ works
     <aside className={asideClassName(collapsed, mobileOpen)}>
       <SidebarToggleBtn />
       <div className="sidebar-nav">
+        <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
 
         <SidebarSection label="Overview" />

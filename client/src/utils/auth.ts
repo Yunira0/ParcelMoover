@@ -180,14 +180,14 @@ export function getDepartmentWorkspace(): DepartmentWorkspace | null {
 }
 
 /** Where a department workspace lands, and where any other URL sends it back to. */
-export const DEPARTMENT_HOME = '/orders';
+export const DEPARTMENT_HOME = '/dashboard';
 
 const matches = (pathname: string, prefixes: string[]) =>
   prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
 // Pages each workspace has by department. Order page includes create, bulk
 // create and an order's detail.
-const COMMON_DEPARTMENT_PATHS = ['/profile', '/orders'];
+const COMMON_DEPARTMENT_PATHS = ['/profile', '/orders', '/dashboard', '/overview'];
 const DEPARTMENT_PATHS: Record<DepartmentWorkspace, string[]> = {
   operation: [
     // Operations: pickup, dispatch, run sheet, transit, return, hold, L&D.
@@ -226,6 +226,19 @@ export function isDepartmentPathAllowed(workspace: DepartmentWorkspace, pathname
   return Object.entries(PERMISSION_PATHS).some(
     ([permission, paths]) => hasAdminPermission(permission) && matches(pathname, paths),
   );
+}
+
+/**
+ * Whether the signed-in user may open a page - the same workspace rules
+ * ProtectedRoute enforces, so shared screens can hide links that would only
+ * bounce back. Query strings are ignored.
+ */
+export function canOpenPath(to: string): boolean {
+  const pathname = to.split('?')[0];
+  if (isBranchWorkspaceUser()) return isBranchWorkspacePathAllowed(pathname);
+  if (isAccountantUser()) return isAccountantPathAllowed(pathname);
+  const workspace = getDepartmentWorkspace();
+  return workspace ? isDepartmentPathAllowed(workspace, pathname) : true;
 }
 
 /** True for a pure sales account — excludes admin/super_admin, who also carry the 'sales' role code when department = Sales but use the admin views. */
