@@ -17,6 +17,7 @@ import { apiErrorMessage } from '../../utils/serverValidation';
 import { todayNepalAd } from '../../utils/nepaliDate';
 import { useCarrierCharges } from './carrierCharges';
 import { CarrierChargeFields, CarrierChargeInput } from './CarrierChargeFields';
+import { SkeletonList } from '../../components/Skeleton';
 import '../SettlementCreatePage.css';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -190,7 +191,7 @@ const CarrierSettlementCreatePage: React.FC = () => {
           )}
 
           {fetchingOrders ? (
-            <div className="scp-empty">Loading orders...</div>
+            <SkeletonList />
           ) : visible.length === 0 ? (
             <div className="scp-empty">No unsettled orders found for {label}.</div>
           ) : (

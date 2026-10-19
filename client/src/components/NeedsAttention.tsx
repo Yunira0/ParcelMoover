@@ -5,6 +5,7 @@ import type { DashboardSummary, SlaStatusBreach, SlaValleySplit } from '../servi
 import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 import { canOpenPath } from '../utils/auth';
 import './NeedsAttention.css';
+import { SkeletonRegion, SkeletonText } from './Skeleton';
 
 interface NeedsAttentionProps {
   sla: DashboardSummary['sla'];
@@ -142,7 +143,7 @@ const NeedsAttention: React.FC<NeedsAttentionProps> = ({ sla, loading = false })
         </div>
 
         {loading ? (
-          <p className="needs-attention-empty">Loading…</p>
+          <SkeletonRegion><SkeletonText lines={3} /></SkeletonRegion>
         ) : items.length === 0 ? (
           <p className="needs-attention-clear">
             <CheckCircle2 size={18} /> Nothing needs attention right now.

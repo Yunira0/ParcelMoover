@@ -339,26 +339,22 @@ const VendorManagement: React.FC = () => {
         </div>
       </div>
 
-      {loading ? (
-        <div className="loading-state">Loading vendors...</div>
-      ) : (
-        <>
-          {statusError && <p className="vendor-status-error">{statusError}</p>}
-          <Table columns={columns} data={vendors} selectable={false} />
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            ariaLabel="Vendor management pagination"
-            summary={`${total} vendor${total !== 1 ? 's' : ''} total`}
-            pageSize={pageSizeChoice}
-            pageSizeLabel="vendors"
-            onPageSizeChange={(size) => {
-              setPageSizeChoice(size);
-              setPage(1);
-            }}
-          />
-        </>
+      {statusError && <p className="vendor-status-error">{statusError}</p>}
+      <Table columns={columns} data={vendors} selectable={false} loading={loading} />
+      {(!loading || total > 0) && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          ariaLabel="Vendor management pagination"
+          summary={`${total} vendor${total !== 1 ? 's' : ''} total`}
+          pageSize={pageSizeChoice}
+          pageSizeLabel="vendors"
+          onPageSizeChange={(size) => {
+            setPageSizeChoice(size);
+            setPage(1);
+          }}
+        />
       )}
 
       <UserDocumentsModal

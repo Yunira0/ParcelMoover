@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { getTopVendors } from '../services/users.service';
 import { queryKeys } from '../queries/keys';
 import './TopVendors.css';
+import { SkeletonList } from './Skeleton';
 
 interface VendorRow {
   id: string;
@@ -33,7 +34,7 @@ const TopVendors: React.FC = () => {
       {error && <p className="top-vendors-error">{error}</p>}
 
       {loading ? (
-        <p className="top-vendors-empty">Loading vendor performance…</p>
+        <SkeletonList rows={4} />
       ) : vendors.length === 0 ? (
         <p className="top-vendors-empty">No vendors assigned yet.</p>
       ) : (

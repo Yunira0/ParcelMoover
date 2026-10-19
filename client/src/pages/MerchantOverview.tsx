@@ -26,6 +26,7 @@ import { useCursorPagination } from '../hooks/useCursorPagination';
 import './MerchantOverview.css';
 import { formatReceiverPhones } from '../utils/format';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Skeleton } from '../components/Skeleton';
 
 const PAGE_SIZE = 10;
 
@@ -304,7 +305,7 @@ const MerchantOverview: React.FC = () => {
       <div className="order-toolbar">
         <div className="order-toolbar-left">
           <span className="vendor-overview-count">
-            {loading ? 'Loading…' : `${totalCount} order${totalCount === 1 ? '' : 's'}`}
+            {loading ? <Skeleton width={64} height={12} className="skeleton-inline" /> : `${totalCount} order${totalCount === 1 ? '' : 's'}`}
             {selectedIds.size > 0 && <> · {selectedIds.size} selected</>}
           </span>
         </div>

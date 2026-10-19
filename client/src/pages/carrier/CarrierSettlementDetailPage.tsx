@@ -19,6 +19,7 @@ import {
 import { isSettlementPayable, settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
 import { toBsDate, toBsDateTime } from '../../utils/nepaliDate';
 import '../vendor/VendorFinance.css';
+import { SkeletonPage } from '../../components/Skeleton';
 import '../SettlementDetailPage.css';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
@@ -79,7 +80,7 @@ const CarrierSettlementDetailPage: React.FC = () => {
       {banner && <ConfirmBanner title={banner.title} meta={banner.meta} onDismiss={() => setBanner(null)} />}
 
       {loading ? (
-        <div className="loading-state">Loading statement…</div>
+        <SkeletonPage heading={false} />
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>
       ) : detail ? (

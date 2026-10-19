@@ -10,6 +10,7 @@ import {
   type CarrierSettlementDetail,
 } from '../../services/carrierCod.service';
 import { getPaymentMethods, type PaymentMethodOption } from '../../services/paymentMethods.service';
+import { SkeletonPage } from '../../components/Skeleton';
 import '../SettlementPayPage.css';
 
 type PaymentRow = { method: string; amount: string };
@@ -89,7 +90,7 @@ const CarrierSettlementPayPage: React.FC = () => {
     }
   };
 
-  if (loadingDetail) return <div className="mpp-page"><div className="mpp-empty">Loading settlement…</div></div>;
+  if (loadingDetail) return <div className="mpp-page"><SkeletonPage /></div>;
   if (!detail) return <div className="mpp-page"><div className="mpp-empty">{error || 'Settlement not found.'}</div></div>;
   if (detail.status === 'settled' || detail.status === 'cancelled') {
     return (

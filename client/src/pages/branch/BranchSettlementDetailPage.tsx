@@ -24,6 +24,7 @@ import type { ParcelStatus } from '../../services/orders.service';
 import '../../pages/SettlementCreatePage.css';
 import './BranchSettlement.css';
 import './BranchSettlementDetailPage.css';
+import { SkeletonPage } from '../../components/Skeleton';
 import ReceiverPhones from '../../components/ReceiverPhones';
 
 type PaymentRow = { method: string; amount: string };
@@ -101,7 +102,7 @@ const BranchSettlementDetailPage: React.FC = () => {
     }
   };
 
-  if (loading) return <div className="scp-page"><div className="scp-empty">Loading branch settlement…</div></div>;
+  if (loading) return <div className="scp-page"><SkeletonPage /></div>;
   if (!detail) return <div className="scp-page"><Button variant="secondary" onClick={() => navigate('/branches/settlement')}>Back to Branch COD</Button><Banner tone="danger">{error || 'Branch settlement not found.'}</Banner></div>;
 
   const payable = detail.status === 'pending' || detail.status === 'partially_paid';

@@ -16,6 +16,7 @@ import './vendor/VendorBilling.css';
 import './SettlementCreatePage.css';
 import ReceiverPhones from '../components/ReceiverPhones';
 import { DeliveryChargeCells, DeliveryChargeHeads } from '../components/DeliveryChargeCells';
+import { SkeletonList } from '../components/Skeleton';
 import { DELIVERY_CHARGE_VAT_RATE, splitVat, sumVatSplits, vatColumns } from '../utils/vat';
 
 type PayeeType = 'rider' | 'vendor';
@@ -422,7 +423,7 @@ const SettlementCreatePage: React.FC = () => {
             </div>
 
             {fetchingOrders ? (
-              <div className="scp-empty">Loading orders...</div>
+              <SkeletonList />
             ) : ordersError ? (
               <div className="scp-error" role="alert">{ordersError}</div>
             ) : orders.length === 0 ? (

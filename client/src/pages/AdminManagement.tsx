@@ -278,25 +278,21 @@ const AdminManagement: React.FC = () => {
         </Banner>
       )}
 
-      {loading ? (
-        <div className="loading-state">Loading admins...</div>
-      ) : (
-        <>
-          <Table columns={columns} data={admins} selectable={false} />
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            ariaLabel="Admin management pagination"
-            summary={`${total} admin${total !== 1 ? 's' : ''} total`}
-            pageSize={pageSizeChoice}
-            pageSizeLabel="admins"
-            onPageSizeChange={(size) => {
-              setPageSizeChoice(size);
-              setPage(1);
-            }}
-          />
-        </>
+      <Table columns={columns} data={admins} selectable={false} loading={loading} />
+      {(!loading || total > 0) && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          ariaLabel="Admin management pagination"
+          summary={`${total} admin${total !== 1 ? 's' : ''} total`}
+          pageSize={pageSizeChoice}
+          pageSizeLabel="admins"
+          onPageSizeChange={(size) => {
+            setPageSizeChoice(size);
+            setPage(1);
+          }}
+        />
       )}
 
       <UserDocumentsModal

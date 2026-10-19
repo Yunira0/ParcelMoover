@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Edit, KeyRound } from 'lucide-react';
 import Button from './Button';
+import { Skeleton } from './Skeleton';
 import './Table.css';
 
 interface Column<T> {
@@ -56,12 +57,12 @@ const SkeletonRows = ({ columnCount, selectable }: { columnCount: number; select
       <tr key={`skeleton-${rowIndex}`} className="table-skeleton-row" aria-hidden="true">
         {selectable && (
           <td className="checkbox-column">
-            <span className="skeleton-bar skeleton-bar-checkbox" />
+            <Skeleton width={16} height={16} style={{ margin: '0 auto' }} />
           </td>
         )}
         {Array.from({ length: columnCount }).map((_, colIndex) => (
           <td key={colIndex}>
-            <span className="skeleton-bar" />
+            <Skeleton width="70%" />
           </td>
         ))}
       </tr>

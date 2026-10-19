@@ -3,6 +3,7 @@ import { Info, Calendar } from 'lucide-react';
 import type { DashboardTrendDay } from '../services/orders.service';
 import { toBsDate, toBsDateLabel } from '../utils/nepaliDate';
 import './WeeklyStats.css';
+import { Skeleton, SkeletonRegion } from './Skeleton';
 
 interface WeeklyStatsProps {
   data: DashboardTrendDay[];
@@ -202,7 +203,7 @@ const WeeklyStats: React.FC<WeeklyStatsProps> = ({ data, loading, period, onPeri
       <div className="graph-placeholder">
         <div className="chart-area" ref={chartRef}>
           {loading && data.length === 0 ? (
-            <div className="chart-loading">Loading chart…</div>
+            <SkeletonRegion className="skeleton-fill"><Skeleton height="100%" /></SkeletonRegion>
           ) : n === 0 ? (
             <div className="chart-loading">No data for this range.</div>
           ) : (

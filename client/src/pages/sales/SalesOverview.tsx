@@ -29,6 +29,7 @@ import { useCursorPagination } from '../../hooks/useCursorPagination';
 import '../OrderManagement.css';
 import '../MerchantOverview.css';
 import './SalesOverview.css';
+import { Skeleton } from '../../components/Skeleton';
 
 const PAGE_SIZE = 10;
 
@@ -270,7 +271,7 @@ const SalesOverview: React.FC = () => {
           <div className="order-toolbar sales-orders-anchor">
             <div className="order-toolbar-left">
               <span className="vendor-overview-count">
-                {loading ? 'Loading…' : `${totalCount} order${totalCount === 1 ? '' : 's'}`}
+                {loading ? <Skeleton width={64} height={12} className="skeleton-inline" /> : `${totalCount} order${totalCount === 1 ? '' : 's'}`}
                 {selectedVendor && <> · {salesVendorName(selectedVendor)}</>}
                 {selectedIds.size > 0 && <> · {selectedIds.size} selected</>}
               </span>
