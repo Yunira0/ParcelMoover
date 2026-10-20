@@ -266,6 +266,8 @@ const VendorFormPage: React.FC = () => {
   const hubFieldDisabled = hubLocked || (isEdit && isPlainAdmin);
   const salesName = getCachedUser()?.fullName ?? '';
   const ownSalesUserId = getCachedUser()?.id ?? '';
+  // Rate model and hub the vendor was saved with (edit mode); null when creating.
+  const [saved, setSaved] = useState<{ rateType: string; hub: string } | null>(null);
   const [form, setForm] = useState<VendorFormInput>(
     isSalesUser && salesName
       ? { ...emptyForm, sales: salesName, salesUserId: ownSalesUserId }
@@ -386,12 +388,14 @@ const VendorFormPage: React.FC = () => {
   const outsideLabel = useBranchRateModel ? `outside ${branchLabel}` : 'outside valley';
   // The optional inside-valley flat rate is only offered for these models (zone
   // pricing has its own inside-valley rate); blank means no override. When it's
-  // hidden, a value left over from an earlier model/hub must not keep being
-  // saved - it would silently override the rates on screen.
+  // hidden after a model/hub change, a leftover value must not keep being saved
+  // - it would silently override the rates on screen. A vendor already saved on
+  // the hidden model keeps its rate untouched, so its charges don't change.
   const insideValleyRateOffered =
     form.rateType === 'per_destination'
     || (useBranchRateModel && form.rateType === 'flat');
   const insideValleyRateActive = insideValleyRateOffered && form.insideValleyFlatRate.trim() !== '';
+  const keepSavedInsideValleyRate = !insideValleyRateOffered && saved?.rateType === form.rateType && saved.hub === form.pickupLocation;
 
   // Prefill the per-vendor rate fields with the global defaults from Settings;
   // the creator can then edit them so this vendor gets its own rates. Create
@@ -432,6 +436,7 @@ const VendorFormPage: React.FC = () => {
         if (!res?.success || !res.data) return;
         const d = res.data;
         const s = (v: unknown) => (v == null ? '' : String(v));
+        setSaved({ rateType: s(d.rateType) || 'flat', hub: s(d.locationId) });
         setForm((prev) => ({
           ...prev,
           onlineBusinessName: s(d.businessName),
@@ -672,7 +677,8 @@ const VendorFormPage: React.FC = () => {
           zoneUrbanAreas: form.zoneUrbanAreas,
           zoneRemoteAreas: form.zoneRemoteAreas,
           zoneInsideValley: form.zoneInsideValley,
-          insideValleyFlatRate: insideValleyRateActive ? form.insideValleyFlatRate : '',
+          // undefined leaves the saved value as is; '' clears it.
+          insideValleyFlatRate: keepSavedInsideValleyRate ? undefined : insideValleyRateActive ? form.insideValleyFlatRate : '',
           returnInsideValleyPercent: form.returnInsideValleyPercent,
           returnOutsideValleyPercent: form.returnOutsideValleyPercent,
           branchReturnInsideValleyPercent: form.returnInsideValleyPercent,
