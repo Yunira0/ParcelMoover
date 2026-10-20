@@ -515,7 +515,7 @@ const CreateOrderPage: React.FC = () => {
       resetForm(true);
       // A spent voucher leaves "My Vouchers" — refresh so it can't be picked twice.
       setVoucherRefresh(t => t + 1);
-      setSuccessMessage(`Order #${res.data.orderNumber} (${res.data.trackingId}) created successfully. You can create another order below.`);
+      setSuccessMessage(`Order #${res.data.orderNumber} created · ${res.data.trackingId}`);
     } catch (err: any) {
       const data = err.response?.data;
       if (data?.code === 'DUPLICATE_ORDER' && !payload.confirmDuplicate) {
@@ -1011,7 +1011,7 @@ const CreateOrderPage: React.FC = () => {
 
           <Toast tone="success" message={successMessage} onShown={() => setSuccessMessage('')} />
           <Toast tone="error" message={generalError} onShown={() => setGeneralError('')} />
-          <Toast tone="warning" message={duplicateWarning && `${duplicateWarning} Click Create anyway to create it regardless.`} />
+          <Toast tone="warning" sticky message={duplicateWarning && `${duplicateWarning} Click Create anyway to create it regardless.`} />
 
           <div className="create-order-actions">
             <Button type="submit" variant="primary" grow disabled={submitting}>

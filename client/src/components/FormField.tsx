@@ -1,18 +1,14 @@
-import React, { createContext, useContext, useId, useState } from 'react';
+import React, { useContext, useId, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import SearchableSelect, { type SearchableSelectOption } from './SearchableSelect';
 import SearchableSelectAsync, {
   type SearchableSelectAsyncResult,
 } from './SearchableSelectAsync';
 import NepaliDatePicker from './NepaliDatePicker';
+import { FieldMarkerContext } from './fieldMarkerContext';
 import './FormField.css';
 
 export type FormFieldOption = { value: string; label: string };
-
-/** Labels mark the fields people may skip with "(optional)"; required fields
- *  carry no marker. Wrap a filter bar or similar in `value="none"` to drop it. */
-export type FieldMarkerMode = 'optional' | 'none';
-export const FieldMarkerContext = createContext<FieldMarkerMode>('optional');
 
 export function FieldMarker({ required, disabled }: { required?: boolean; disabled?: boolean }) {
   const mode = useContext(FieldMarkerContext);

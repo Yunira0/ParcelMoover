@@ -1062,7 +1062,7 @@ const OrderManagement: React.FC = () => {
       />
 
       {loadError && <p className="order-load-error">{loadError}</p>}
-      {notice && <p className="order-update-notice">{notice}</p>}
+      <Toast tone="success" message={notice} onShown={() => setNotice('')} />
 
       <section className="order-filter-panel">
         <button

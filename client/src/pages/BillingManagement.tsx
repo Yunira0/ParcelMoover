@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, ExternalLink, FileText, Search, X } from 'lucide-react';
+import { ExternalLink, FileText, Search, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import CreditUsageBar from '../components/CreditUsageBar';
@@ -547,11 +547,7 @@ const BillingManagement: React.FC = () => {
                 />
               </label>
               <Toast tone="error" message={settingsError} onShown={() => setSettingsError('')} />
-              {settingsMessage && (
-                <p className="billing-success">
-                  <CheckCircle2 size={14} /> {settingsMessage}
-                </p>
-              )}
+              <Toast tone="success" message={settingsMessage} onShown={() => setSettingsMessage('')} />
               {isSuperAdmin ? (
                 <Button type="submit" variant="primary" disabled={savingSettings}>
                   {savingSettings ? 'Saving...' : 'Save thresholds'}
@@ -582,11 +578,7 @@ const BillingManagement: React.FC = () => {
               disabled={!isSuperAdmin || savingNote}
             />
             <Toast tone="error" message={noteError} onShown={() => setNoteError('')} />
-            {noteMessage && (
-              <p className="billing-success">
-                <CheckCircle2 size={14} /> {noteMessage}
-              </p>
-            )}
+            <Toast tone="success" message={noteMessage} onShown={() => setNoteMessage('')} />
             {isSuperAdmin && (
               <Button
                 variant="secondary"
@@ -610,11 +602,7 @@ const BillingManagement: React.FC = () => {
                   }}
                 />
                 <Toast tone="error" message={qrError} onShown={() => setQrError('')} />
-                {qrMessage && (
-                  <p className="billing-success">
-                    <CheckCircle2 size={14} /> {qrMessage}
-                  </p>
-                )}
+                <Toast tone="success" message={qrMessage} onShown={() => setQrMessage('')} />
                 {qrFile && (
                   <div className="billing-review-actions">
                     <Button variant="secondary" onClick={() => setQrFile(null)} disabled={qrUploading}>

@@ -125,6 +125,13 @@
     radial-gradient(circle, var(--color-primary) 0 4px, transparent 5px);
 }
 
+.vfp-rate-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
 .vfp-rate-text {
   display: flex;
   flex-direction: column;
@@ -141,19 +148,6 @@
   color: var(--color-text-caption);
 }
 
-.vfp-rate-fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.vfp-rate-note {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--color-text-caption);
-}
-
 /* Subhead for a rate sub-group (branch rate, return rate) that isn't
    anchored to anything above it the way the primary rate fields are
    anchored to the type selector — needs its own label to scan. */
@@ -163,49 +157,6 @@
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semi-bold);
   line-height: var(--line-height-xs);
-}
-
-.vfp-rate-subhead + .vfp-rate-note {
-  margin-top: 2px;
-}
-
-/* Optional "second rate" add-on, styled as a card to match the rate options. */
-.vfp-inside-valley-block {
-  margin-top: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-lg);
-  background: var(--color-background-surface);
-  gap: var(--space-3);
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.vfp-inside-valley-block.is-on {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
-}
-
-.vfp-inside-valley-toggle {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2-5);
-  cursor: pointer;
-}
-
-.vfp-inside-valley-toggle input {
-  margin-top: 3px;
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--color-primary);
-  cursor: pointer;
-}
-
-/* Reveal the rate input with a subtle divider once the option is on. */
-.vfp-inside-valley-block .vfp-fields {
-  padding-top: var(--space-1);
-  margin-top: var(--space-1);
-  border-top: 1px dashed var(--color-border-default);
 }
 
 .vfp-rate-config-link {

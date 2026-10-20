@@ -26,6 +26,7 @@ import {
   updateCarrierSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
+import { requireFeature } from "../middlewares/featureFlag.middleware";
 import {
   attachCarrierSettlementDocumentsController,
   cancelCarrierSettlementController,
@@ -304,8 +305,10 @@ financeRouter.get("/carrier-settlements/:id/documents/:documentId", ...carrierSt
 financeRouter.delete("/carrier-settlements/:id/documents/:documentId", ...carrierStaff, csrfProtection, settlementCreateLimiter, deleteCarrierSettlementDocumentController);
 
 // ── VAT registers (Sales / Purchase and their returns) ── books grant, head office only (in the service).
-financeRouter.get("/vat-registers/:kind", ...carrierStaff, financeReadLimiter, validate(vatRegisterQuerySchema, "query"), getVatRegisterController);
-financeRouter.post("/purchase-bills", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(createPurchaseBillSchema), createPurchaseBillController);
-financeRouter.post("/purchase-bills/:id/cancel", ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(cancelPurchaseBillSchema), cancelPurchaseBillController);
+// Not released yet: 404 unless VAT_REGISTERS_ENABLED=true.
+const vatRegistersFeature = requireFeature("VAT_REGISTERS_ENABLED");
+financeRouter.get("/vat-registers/:kind", vatRegistersFeature, ...carrierStaff, financeReadLimiter, validate(vatRegisterQuerySchema, "query"), getVatRegisterController);
+financeRouter.post("/purchase-bills", vatRegistersFeature, ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(createPurchaseBillSchema), createPurchaseBillController);
+financeRouter.post("/purchase-bills/:id/cancel", vatRegistersFeature, ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(cancelPurchaseBillSchema), cancelPurchaseBillController);
 
 export default financeRouter;

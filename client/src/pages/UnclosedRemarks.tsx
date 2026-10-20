@@ -98,7 +98,7 @@ const UnclosedRemarks: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  useEffect(() => { setPage(1); }, [appliedSearch, pageSize, authorTab]);
+  useEffect(() => { setPage(1); }, [appliedSearch, pageSize]);
 
   // Closing the last remark on the final page leaves that page empty - step back
   // instead of showing an empty table with pages still listed behind it.
@@ -199,7 +199,7 @@ const UnclosedRemarks: React.FC = () => {
         <SegmentedTabs
           options={AUTHOR_TABS}
           value={authorTab}
-          onChange={setAuthorTab}
+          onChange={(tab) => { setAuthorTab(tab); setPage(1); }}
           ariaLabel="Filter remarks by author"
           fullWidth={false}
         />

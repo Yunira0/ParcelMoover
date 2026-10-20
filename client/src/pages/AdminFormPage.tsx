@@ -469,7 +469,7 @@ const AdminFormPage: React.FC = () => {
           <div className="afp-success-icon-wrap">
             <CheckCircle size={48} />
           </div>
-          <h3>Admin Created Successfully!</h3>
+          <h3>Admin created</h3>
           <p>Admin <strong>{form.fullName}</strong> has been created.</p>
           <p className="afp-success-hint">Login credentials will be sent to <strong>{form.email}</strong></p>
           <div className="afp-success-actions">

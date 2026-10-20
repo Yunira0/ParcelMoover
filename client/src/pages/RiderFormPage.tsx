@@ -382,7 +382,7 @@ const RiderFormPage: React.FC = () => {
           <div className="rfp-success-icon-wrap">
             <CheckCircle size={48} />
           </div>
-          <h3>Rider Created Successfully!</h3>
+          <h3>Rider created</h3>
           <p>Rider <strong>{form.fullName}</strong> has been created.</p>
           <p className="rfp-success-hint">Login credentials will be sent to <strong>{form.email}</strong></p>
           <div className="rfp-success-actions">

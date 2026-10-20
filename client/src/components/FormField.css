@@ -12,7 +12,6 @@
 
 .optional {
   color: var(--color-text-caption);
-  font-weight: var(--font-weight-regular);
 }
 
 .form-group input,

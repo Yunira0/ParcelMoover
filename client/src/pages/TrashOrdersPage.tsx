@@ -18,6 +18,7 @@ import {
 import { ORDER_STATUS_LABELS as STATUS_LABELS } from '../utils/orderStatus';
 import './TrashOrdersPage.css';
 import { useToast } from '../components/toast';
+import { Toast } from '../components/toast';
 
 const PAGE_SIZE = 10;
 
@@ -190,7 +191,7 @@ const TrashOrdersPage: React.FC = () => {
       </div>
 
       {error && <p className="trash-error">{error}</p>}
-      {notice && <p className="trash-notice">{notice}</p>}
+      <Toast tone="success" message={notice} onShown={() => setNotice('')} />
 
       <Table
         columns={columns}

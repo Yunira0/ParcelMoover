@@ -471,6 +471,16 @@ const VendorFormPage: React.FC = () => {
           bankAccountNo: s(d.bankAccountNo),
           bankAccountHolder: s(d.bankAccountHolder),
         }));
+        // Extra weight is required now; a vendor that inherited the Settings
+        // value shows that value, so saving keeps what they're charged today.
+        if (d.extraWeightPercent == null) {
+          getPricingSettings()
+            .then((p) => {
+              const v = p?.data?.extraWeightPercent;
+              if (v != null) setForm((prev) => (prev.extraWeightPercent ? prev : { ...prev, extraWeightPercent: String(v) }));
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => setError('Failed to load vendor details.'));
   }, [isEdit, editId]);
@@ -792,7 +802,7 @@ const VendorFormPage: React.FC = () => {
           <div className="vfp-success-icon-wrap">
             <CheckCircle size={48} />
           </div>
-          <h3>Vendor Created Successfully!</h3>
+          <h3>Vendor created</h3>
           <p>Vendor <strong>{form.ownerName}</strong> has been created.</p>
           <p className="vfp-success-hint">Login credentials will be sent to <strong>{form.ownerEmail}</strong></p>
           <div className="vfp-success-actions">

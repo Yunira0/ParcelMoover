@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Ruler } from 'lucide-react';
+import { Ruler } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import Button from '../../components/Button';
 import {
@@ -219,11 +219,7 @@ const VendorPrintSettings: React.FC = () => {
                 Enter whole numbers between {MIN_MM} and {MAX_MM}mm for both width and height.
               </p>
             )}
-            {saveMessage && (
-              <p className="print-settings-success">
-                <CheckCircle2 size={14} /> {saveMessage}
-              </p>
-            )}
+            <Toast tone="success" message={saveMessage} onShown={() => setSaveMessage('')} />
 
             <Button variant="primary" onClick={handleSave} disabled={saving || !pendingSize || isUnchanged}>
               {saving ? 'Saving...' : 'Save'}

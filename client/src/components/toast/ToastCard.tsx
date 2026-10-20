@@ -13,20 +13,23 @@ const ICONS: Record<ToastTone, ReactNode> = {
 interface ToastCardProps {
   tone: ToastTone;
   message: ReactNode;
+  sticky?: boolean;
   onClose: () => void;
 }
 
-// One popup. Hides itself after a few seconds; hovering keeps it open.
-export default function ToastCard({ tone, message, onClose }: ToastCardProps) {
+// One popup. Hides itself after a few seconds (hovering keeps it open), unless sticky.
+export default function ToastCard({ tone, message, sticky, onClose }: ToastCardProps) {
   const [paused, setPaused] = useState(false);
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
 
   useEffect(() => {
-    if (paused) return;
+    if (paused || sticky) return;
     const timer = setTimeout(() => closeRef.current(), DURATION_MS[tone]);
     return () => clearTimeout(timer);
-  }, [paused, tone]);
+  }, [paused, sticky, tone]);
 
   return (
     <div

@@ -163,7 +163,7 @@ const KycApplicationPage: React.FC = () => {
       <div className="kyc-page">
         <div className="kyc-success">
           <CheckCircle size={56} className="kyc-success-icon" />
-          <h2>Application Submitted!</h2>
+          <h2>Application submitted</h2>
           <p>
             Thank you, <strong>{form.ownerName}</strong>. Your KYC application for{' '}
             <strong>{form.onlineBusinessName}</strong> has been received.

@@ -2,8 +2,15 @@ import { createContext, useContext, type ReactNode } from 'react';
 
 export type ToastTone = 'success' | 'error' | 'warning';
 
+export interface ToastOptions {
+  /** Stays until dismissed instead of hiding itself. */
+  sticky?: boolean;
+}
+
 export interface ToastApi {
-  show: (tone: ToastTone, message: ReactNode) => void;
+  /** Returns the toast's id, or undefined when nothing was shown. */
+  show: (tone: ToastTone, message: ReactNode, options?: ToastOptions) => number | undefined;
+  dismiss: (id: number) => void;
   success: (message: ReactNode) => void;
   error: (message: ReactNode) => void;
   warning: (message: ReactNode) => void;
