@@ -19,8 +19,8 @@
 }
 
 .billing-banner-blocked {
-  background-color: var(--color-danger-surface, #fdeceb);
-  border-color: var(--color-danger-border, #f0a9a4);
+  background-color: var(--color-danger-surface);
+  border-color: var(--color-danger-border);
   color: var(--color-danger-text);
 }
 
@@ -257,12 +257,12 @@
 }
 
 .billing-pill-verified {
-  background-color: var(--color-success-surface, #e8f5ec);
+  background-color: var(--color-success-surface);
   color: var(--color-success-default);
 }
 
 .billing-pill-rejected {
-  background-color: var(--color-danger-surface, #fdeceb);
+  background-color: var(--color-danger-surface);
   color: var(--color-danger-text);
 }
 

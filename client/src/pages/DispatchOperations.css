@@ -52,7 +52,7 @@
 
 .dispatch-search:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 12%);
 }
 
 .dispatch-search input {
@@ -301,7 +301,7 @@
 
 .dispatch-status-option:focus-visible {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 18%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 18%);
   outline: none;
 }
 
@@ -425,7 +425,7 @@
 .dispatch-partial-textarea:focus,
 .dispatch-partial-input:focus {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 12%);
   outline: none;
 }
 

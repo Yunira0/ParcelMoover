@@ -20,7 +20,7 @@
   padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
   border-radius: var(--border-radius-lg);
   box-shadow: var(--shadow-lg);
-  color: #ffffff;
+  color: var(--color-text-base);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   line-height: var(--line-height-sm);

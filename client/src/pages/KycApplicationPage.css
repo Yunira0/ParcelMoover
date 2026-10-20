@@ -23,7 +23,7 @@
   gap: 8px;
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   text-decoration: none;
   margin-bottom: 16px;
   letter-spacing: -0.3px;
@@ -44,7 +44,7 @@
 
 .kyc-header p {
   font-size: 0.9rem;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   margin: 0;
 }
 
@@ -76,13 +76,13 @@
   justify-content: center;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--color-text-caption, #9ca3af);
+  color: var(--color-text-caption);
   transition: all 0.2s;
 }
 
 .kyc-step.active .kyc-step-circle {
-  border-color: var(--color-primary, #4f46e5);
-  background: var(--color-primary, #4f46e5);
+  border-color: var(--color-primary);
+  background: var(--color-primary);
   color: var(--color-text-base);
 }
 
@@ -95,12 +95,12 @@
 .kyc-step-label {
   font-size: 0.75rem;
   font-weight: 500;
-  color: var(--color-text-caption, #9ca3af);
+  color: var(--color-text-caption);
   white-space: nowrap;
 }
 
 .kyc-step.active .kyc-step-label {
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-primary);
   font-weight: 600;
 }
 
@@ -153,7 +153,7 @@
 }
 
 .kyc-review-group {
-  background: var(--color-background-surface, #f9fafb);
+  background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
   border-radius: 8px;
   padding: 16px;
@@ -162,7 +162,7 @@
 .kyc-review-group h4 {
   font-size: 0.85rem;
   font-weight: 700;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   margin: 0 0 12px;
 }
 
@@ -179,7 +179,7 @@
 }
 
 .review-label {
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   flex-shrink: 0;
   width: 140px;
 }
@@ -192,7 +192,7 @@
 
 .kyc-declaration {
   font-size: 0.8rem;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   line-height: 1.5;
   margin: 0;
 }
@@ -207,7 +207,7 @@
 .kyc-file-label {
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--color-text-default, #1f2937);
+  color: var(--color-text-default);
 }
 
 .kyc-file-btn,
@@ -216,12 +216,12 @@
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  border: 1px dashed var(--color-border-default, #d1d5db);
+  border: 1px dashed var(--color-border-default);
   border-radius: 8px;
-  background: var(--color-background-surface, #fff);
+  background: var(--color-background-surface);
   font-size: 0.85rem;
   cursor: pointer;
-  color: var(--color-text-default, #1f2937);
+  color: var(--color-text-default);
 }
 
 .kyc-file-chip {
@@ -234,7 +234,7 @@
   border: none;
   cursor: pointer;
   display: inline-flex;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
 }
 
 /* Actions */
@@ -272,7 +272,7 @@
 
 .kyc-success p {
   font-size: 0.9rem;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   line-height: 1.6;
   margin: 0 0 12px;
 }

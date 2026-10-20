@@ -40,7 +40,7 @@ const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('').
 
 const getAvatarColor = (name: string) => {
   const lower = name.toLowerCase();
-  if (lower.includes('admin') || lower.includes('super')) return '#e24c00';
+  if (lower.includes('admin') || lower.includes('super')) return 'var(--color-primary)';
   if (lower.includes('vendor') || lower.includes('branch')) return '#0f766e';
   return '#64748b';
 };

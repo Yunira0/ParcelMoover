@@ -13,14 +13,14 @@
 
 .kyc-cell-sub {
   font-size: 0.78rem;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   margin-top: 2px;
 }
 
 .kyc-verification-note {
   display: block;
   font-size: 0.78rem;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   margin-top: 4px;
 }
 
@@ -28,7 +28,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   display: flex;
   align-items: center;
   padding: 4px;
@@ -37,8 +37,8 @@
 }
 
 .kyc-view-btn:hover {
-  color: var(--color-primary, #4f46e5);
-  background: var(--color-background-surface, #f3f4f6);
+  color: var(--color-primary);
+  background: var(--color-background-surface);
 }
 
 /* Modal */
@@ -84,7 +84,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   display: flex;
   align-items: center;
   padding: 4px;
@@ -94,7 +94,7 @@
 }
 
 .kyc-modal-close:hover {
-  background: var(--color-background-surface, #f3f4f6);
+  background: var(--color-background-surface);
 }
 
 .kyc-modal-body {
@@ -124,7 +124,7 @@
 .kyc-detail-section h4 {
   font-size: 0.78rem;
   font-weight: 700;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   margin: 0 0 12px;
 }
 
@@ -141,7 +141,7 @@
 }
 
 .kyc-detail-label {
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   flex-shrink: 0;
   width: 120px;
 }
@@ -170,7 +170,7 @@
 
 .kyc-notes {
   margin-top: 8px !important;
-  color: var(--color-text-caption, #6b7280) !important;
+  color: var(--color-text-caption) !important;
   font-style: italic;
 }
 
@@ -193,7 +193,7 @@
 .kyc-doc-item:last-child { border-bottom: none; }
 
 .kyc-doc-label {
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   flex-shrink: 0;
   width: 120px;
 }
@@ -204,7 +204,7 @@
   flex-direction: column;
   gap: 10px;
   padding: 16px;
-  background: var(--color-background-surface, #f9fafb);
+  background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
   border-radius: 8px;
 }
@@ -229,7 +229,7 @@
 }
 
 .kyc-action-form textarea:focus {
-  border-color: var(--color-primary, #4f46e5);
+  border-color: var(--color-primary);
 }
 
 .kyc-action-buttons {

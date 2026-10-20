@@ -47,7 +47,7 @@
 }
 
 .sidebar-toggle-btn:hover {
-  background-color: var(--color-background-elevated, #f3f4f6);
+  background-color: var(--color-background-elevated);
   border-color: var(--color-text-placeholder);
 }
 
@@ -164,13 +164,13 @@
 }
 
 .sidebar-item:hover {
-  background-color: var(--color-background-elevated, #f3f4f6);
+  background-color: var(--color-background-elevated);
   color: var(--color-text-default);
 }
 
 .sidebar-item.active {
-  background-color: var(--color-background-primary-invert-default, #ede9fe);
-  color: var(--color-background-primary-default, #4f46e5);
+  background-color: var(--color-background-primary-invert-default);
+  color: var(--color-background-primary-default);
   font-weight: var(--font-weight-semi-bold);
 }
 
@@ -233,7 +233,7 @@
 }
 
 .sidebar-group-toggle:hover {
-  background-color: var(--color-background-elevated, #f3f4f6);
+  background-color: var(--color-background-elevated);
   color: var(--color-text-default);
 }
 
@@ -321,13 +321,13 @@
 }
 
 .sidebar-subitem:hover {
-  background-color: var(--color-background-elevated, #f3f4f6);
+  background-color: var(--color-background-elevated);
   color: var(--color-text-default);
 }
 
 .sidebar-subitem.active {
-  background-color: var(--color-background-primary-invert-default, #ede9fe);
-  color: var(--color-background-primary-default, #4f46e5);
+  background-color: var(--color-background-primary-invert-default);
+  color: var(--color-background-primary-default);
   font-weight: var(--font-weight-semi-bold);
 }
 
@@ -386,8 +386,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--color-background-primary-default, #ef4444);
-  color: #fff;
+  background-color: var(--color-background-primary-default);
+  color: var(--color-text-base);
   border-radius: 9px;
   font-size: 11px;
   font-weight: 600;

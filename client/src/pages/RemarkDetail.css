@@ -421,7 +421,7 @@
   flex-shrink: 0;
 }
 
-.rd-bottom-replying-close:hover { background: rgb(226 76 0 / 0.15); color: var(--color-text-primary); }
+.rd-bottom-replying-close:hover { background: rgb(242 101 34 / 0.15); color: var(--color-text-primary); }
 
 .rd-bottom-input-bar {
   display: flex;

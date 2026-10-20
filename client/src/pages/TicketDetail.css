@@ -78,7 +78,7 @@
   border: 1px solid var(--color-border-default);
 }
 .td-vendor-status-closed {
-  color: #15803d;
+  color: var(--color-success-default);
   background: rgba(22, 163, 74, 0.08);
   border-color: rgba(22, 163, 74, 0.25);
 }

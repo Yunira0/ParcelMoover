@@ -325,7 +325,7 @@
   flex-shrink: 0;
 }
 
-.qr-replying-close:hover { background: rgb(226 76 0 / 0.15); color: var(--color-text-primary); }
+.qr-replying-close:hover { background: rgb(242 101 34 / 0.15); color: var(--color-text-primary); }
 
 /* Compose */
 .qr-compose {

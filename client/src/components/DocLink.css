@@ -11,6 +11,6 @@
 .doc-link:hover { text-decoration: underline; }
 
 .doc-link-missing {
-  color: var(--color-text-caption, #9ca3af);
+  color: var(--color-text-caption);
   font-size: 0.85rem;
 }
