@@ -19,6 +19,7 @@ import {
   ReportsRedirect,
   SearchRedirect,
 } from './pages/accounting/legacyRedirects'
+import { VAT_REGISTERS_ENABLED } from './constants/features'
 import './App.css'
 
 // Keep public entry points independent of the authenticated workspace and
@@ -459,7 +460,7 @@ function App() {
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><BankTransferPage /></RoleGuard>}
           />
           {/* VAT registers: books grant, like the API (head office only, enforced there). */}
-          {(['sales', 'sales-return', 'purchase', 'purchase-return'] as const).map((kind) => (
+          {VAT_REGISTERS_ENABLED && (['sales', 'sales-return', 'purchase', 'purchase-return'] as const).map((kind) => (
             <Route
               key={kind}
               path={`/finance/reports/${kind}-register`}
