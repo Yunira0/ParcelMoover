@@ -12,6 +12,7 @@ import {
   type ReturnManifest,
 } from '../services/returnManifests.service';
 import type { Order } from '../services/orders.service';
+import { Toast } from './toast';
 
 interface AddToReturnManifestModalProps {
   isOpen: boolean;
@@ -218,7 +219,7 @@ const AddToReturnManifestModal: React.FC<AddToReturnManifestModalProps> = ({
           </ul>
         )}
 
-        {error && <p className="error-text">{error}</p>}
+        <Toast tone="error" message={error} onShown={() => setError('')} />
 
         <div className="modal-footer">
           <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>

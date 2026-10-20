@@ -385,12 +385,6 @@
   color: var(--color-text-caption);
 }
 
-.qr-error {
-  font-size: var(--font-size-sm);
-  color: var(--color-danger-default);
-  margin: 0;
-}
-
 /* Responsive */
 @media (max-width: 600px) {
   .qr-overlay { padding: var(--space-2); }

@@ -782,7 +782,7 @@ const BulkOrderPage: React.FC = () => {
             <div className="bop-sender-fields">
               <div className="bop-field-full">
                 <label>
-                  Vendor <span className="required">*</span>
+                  Vendor
                 </label>
                 <SearchableSelectAsync
                   asyncSearch={handleVendorSearch}

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import './Modal.css';
 import Button from './Button';
 import { revertSettlement, cancelSettlement } from '../services/finance.service';
+import { Toast } from './toast';
 
 interface RevertSettlementModalProps {
   settlementId: string;
@@ -98,7 +99,7 @@ const RevertSettlementModal: React.FC<RevertSettlementModalProps> = ({
           <div className="form-group" style={{ marginBottom: '16px' }}>
             <label>
               Reason
-              <span className="required"> *</span>
+             
             </label>
             <input
               type="text"
@@ -110,7 +111,7 @@ const RevertSettlementModal: React.FC<RevertSettlementModalProps> = ({
             />
           </div>
 
-          {error && <p className="error-text">{error}</p>}
+          <Toast tone="error" message={error} onShown={() => setError('')} />
 
           <div className="modal-footer">
             <Button type="button" variant="secondary" onClick={onClose}>

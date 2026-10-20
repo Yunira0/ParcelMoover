@@ -20,7 +20,7 @@ const VendorAnnouncementsPage: React.FC = () => {
 
   return (
     <div className="vendor-announcements-page">
-      <PageHeader title="ANNOUNCEMENTS" />
+      <PageHeader title="Announcements" />
 
       {error && <p className="vendor-announcements-page-error">{error}</p>}
 

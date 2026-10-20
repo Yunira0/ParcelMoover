@@ -20,6 +20,7 @@ import {
 import { hasAnyRole } from '../utils/auth';
 import { formatDate } from '../utils/format';
 import './SettlementPayPage.css';
+import { Toast } from '../components/toast';
 
 type PaymentRow = { method: string; amount: string };
 type Step = 'pay' | 'proof';
@@ -655,7 +656,7 @@ const SettlementPayPage: React.FC = () => {
                 </div>
               ))}
 
-              {methodError && <p className="error-text">{methodError}</p>}
+              <Toast tone="error" message={methodError} onShown={() => setMethodError('')} />
             </div>
           )}
 

@@ -16,6 +16,7 @@ import KycManagement from './KycManagement';
 import { getVendors, updateUserStatus } from '../services/users.service';
 import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser, hasAdminPermission } from '../utils/auth';
 import './VendorManagement.css';
+import { Toast } from '../components/toast';
 
 interface VendorUser {
   id: string;
@@ -277,7 +278,7 @@ const VendorManagement: React.FC = () => {
   return (
     <div className="vendor-management-container">
       <PageHeader
-        title="VENDOR MANAGEMENT"
+        title="Vendor Management"
         actionLabel={canCreate && view === 'vendors' ? 'Add new' : undefined}
         actionIcon={canCreate && view === 'vendors' ? <Plus size={16} /> : undefined}
         onAction={canCreate && view === 'vendors' ? () => navigate('/vendors/new') : undefined}
@@ -339,7 +340,7 @@ const VendorManagement: React.FC = () => {
         </div>
       </div>
 
-      {statusError && <p className="vendor-status-error">{statusError}</p>}
+      <Toast tone="error" message={statusError} onShown={() => setStatusError('')} />
       <Table columns={columns} data={vendors} selectable={false} loading={loading} />
       {(!loading || total > 0) && (
         <Pagination

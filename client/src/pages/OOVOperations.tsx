@@ -39,6 +39,7 @@ import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OOVOperations.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Toast } from '../components/toast';
 
 type OOVTab = 'oov' | 'dispatched';
 
@@ -646,6 +647,7 @@ const OOVOperations: React.FC = () => {
 
   return (
     <div className="oov-operations-container">
+      <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
       <PageHeader title="Transit Operations" />
 
       <SegmentedTabs
@@ -788,7 +790,7 @@ const OOVOperations: React.FC = () => {
                 {isReasonRequiredAction && (
                   <div className="oov-reason-field">
                     <label className="oov-reason-label">
-                      Reason <span className="oov-reason-required">*</span>
+                      Reason
                     </label>
                     <textarea
                       rows={2}
@@ -800,7 +802,6 @@ const OOVOperations: React.FC = () => {
                     />
                   </div>
                 )}
-                {actionError && <p className="oov-action-error">{actionError}</p>}
                 {statusUpdateProgress && (
                   <p className="oov-status-empty" aria-live="polite">
                     Processing {statusUpdateProgress.completed} of {statusUpdateProgress.total} orders…

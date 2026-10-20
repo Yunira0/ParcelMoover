@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, Building2, User, FileText, CreditCard, Lock, Tag, ExternalLink, Receipt } from 'lucide-react';
 import Button from '../components/Button';
-import FormField, { FieldMarker, FieldMarkerContext } from '../components/FormField';
+import FormField, { FieldMarker } from '../components/FormField';
 import BankSelectField from '../components/BankSelectField';
 import {
   registerUser,
@@ -819,7 +819,6 @@ const VendorFormPage: React.FC = () => {
         <p>{isEdit ? 'Update this vendor’s details below.' : 'Complete the registration form below to create a new vendor account.'}</p>
       </div>
 
-      <FieldMarkerContext.Provider value="optional">
       <form className="vfp-form" onSubmit={handleSubmit} noValidate>
         <div className="vfp-body">
           {/* Left Column - Main Fields */}
@@ -1286,7 +1285,6 @@ const VendorFormPage: React.FC = () => {
           </Button>
         </div>
       </form>
-      </FieldMarkerContext.Provider>
     </div>
   );
 };

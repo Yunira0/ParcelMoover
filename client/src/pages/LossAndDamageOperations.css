@@ -92,12 +92,6 @@
   font-weight: var(--font-weight-regular);
 }
 
-.lossdamage-action-error {
-  color: var(--color-danger-text);
-  font-size: var(--font-size-sm);
-  margin: 0;
-}
-
 @media (max-width: 900px) {
   .lossdamage-toolbar {
     align-items: stretch;

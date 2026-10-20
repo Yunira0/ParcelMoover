@@ -9,6 +9,7 @@ import {
   type SlaSettings as SlaSettingsMap,
 } from '../services/sla.service';
 import './SlaSettings.css';
+import { useToast } from '../components/toast';
 
 // Form state keeps each hour value as a string so an empty field cleanly maps
 // to "SLA disabled" (null) on save.
@@ -31,6 +32,7 @@ const SlaSettings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const toast = useToast();
 
   const load = async () => {
     setLoading(true);
@@ -69,7 +71,7 @@ const SlaSettings: React.FC = () => {
         setSaved(true);
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save SLA settings.');
+      toast.error(err.response?.data?.message || 'Failed to save SLA settings.');
     } finally {
       setSaving(false);
     }

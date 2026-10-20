@@ -409,10 +409,6 @@
   font-weight: var(--font-weight-medium);
 }
 
-.dispatch-partial-required {
-  color: var(--color-danger-text);
-}
-
 .dispatch-partial-textarea,
 .dispatch-partial-input {
   background: var(--color-background-surface);

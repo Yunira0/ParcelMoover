@@ -27,6 +27,7 @@ import '../vendor/VendorFinance.css';
 import '../vendor/VendorBilling.css';
 import '../BillingManagement.css';
 import '../../components/Modal.css';
+import { Toast, useToast } from '../../components/toast';
 
 type Tab = 'pay' | 'queue' | 'statements' | 'branches' | 'settings';
 
@@ -107,6 +108,7 @@ const BranchBilling: React.FC = () => {
   const [receiptProof, setReceiptProof] = useState<File | null>(null);
   const [receiptSaving, setReceiptSaving] = useState(false);
   const [receiptMessage, setReceiptMessage] = useState('');
+  const toast = useToast();
 
   const tabs = useMemo<Array<{ value: Tab; label: string; count?: number }>>(
     () => isSuperAdmin ? [
@@ -226,7 +228,7 @@ const BranchBilling: React.FC = () => {
       await reviewBranchPayment(payment.id, decision, remarks[payment.id]);
       await loadPayments();
       if (balances.length) await loadBalances();
-    } catch (err) { setError(apiErrorMessage(err, 'Failed to review branch payment.')); }
+    } catch (err) { toast.error(apiErrorMessage(err, 'Failed to review branch payment.')); }
     finally { setReviewing(null); }
   };
 
@@ -236,15 +238,15 @@ const BranchBilling: React.FC = () => {
     // owed, so an untouched field showing the smaller amount-to-unblock (or
     // nothing at all) submitted a different figure than the one on screen.
     const amount = Math.round(Number(amountValue) * 100) / 100;
-    if (!Number.isFinite(amount) || amount <= 0) { setError('Enter the amount you paid.'); return; }
-    if (!payProof) { setError('Attach the payment screenshot before submitting.'); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { toast.error('Enter the amount you paid.'); return; }
+    if (!payProof) { toast.error('Attach the payment screenshot before submitting.'); return; }
     setPaySaving(true); setError(''); setPayMessage('');
     try {
       await submitBranchPayment({ amount, reference: payReference, note: payNote, proof: payProof });
       setPayMessage('Payment submitted. It will be added after the head branch verifies it.');
       setPayAmount(null); setPayReference(''); setPayNote(''); setPayProof(null); setPaymentsPage(1);
       await Promise.all([loadPayments(), loadBranchStatus()]);
-    } catch (err) { setError(apiErrorMessage(err, 'Failed to submit branch payment.')); }
+    } catch (err) { toast.error(apiErrorMessage(err, 'Failed to submit branch payment.')); }
     finally { setPaySaving(false); }
   };
 
@@ -270,15 +272,15 @@ const BranchBilling: React.FC = () => {
     event.preventDefault();
     if (!selectedSettlement) return;
     const amount = Number(receiptAmount);
-    if (!Number.isFinite(amount) || amount <= 0) { setError('Enter the receipt amount.'); return; }
-    if (!receiptProof) { setError('Attach the paid receipt or payment screenshot before submitting.'); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { toast.error('Enter the receipt amount.'); return; }
+    if (!receiptProof) { toast.error('Attach the paid receipt or payment screenshot before submitting.'); return; }
     setReceiptSaving(true); setError(''); setReceiptMessage('');
     try {
       await submitBranchPayment({ settlementId: selectedSettlement.id, amount, reference: receiptReference, note: receiptNote, proof: receiptProof });
       setReceiptMessage(`Payment submitted for ${selectedSettlement.statementNo}. It will clear after the head branch verifies it.`);
       setSelectedSettlement(null); setReceiptAmount(''); setReceiptReference(''); setReceiptNote(''); setReceiptProof(null); setPaymentsPage(1);
       await Promise.all([loadPayments(), loadPendingSettlements()]);
-    } catch (err) { setError(apiErrorMessage(err, 'Failed to submit payment receipt.')); }
+    } catch (err) { toast.error(apiErrorMessage(err, 'Failed to submit payment receipt.')); }
     finally { setReceiptSaving(false); }
   };
 
@@ -406,7 +408,7 @@ const BranchBilling: React.FC = () => {
 
     {activeTab === 'branches' && isSuperAdmin && <><p className="billing-hint">A branch at its block threshold cannot receive new transit until verified credit clears the hold. Overdue COD is COD past the branch SLA in the SLA settings page{balances[0]?.codSlaHours ? ` (currently ${balances[0].codSlaHours} hours after delivery)` : ''}.</p><Table selectable={false} columns={balanceColumns} data={balanceRows} loading={balancesLoading} loadingMessage="Calculating branch balances…" emptyMessage="No active branches found." /></>}
 
-    {activeTab === 'settings' && isSuperAdmin && <div className="billing-grid"><section className="billing-card"><h3>Branch transit thresholds</h3><p className="billing-hint">Both values are negative balances. A branch is warned at the first threshold and cannot receive transit at the block threshold.</p><form className="billing-form" onSubmit={saveThresholds}><label>Warn threshold<input type="number" step="0.01" value={branchWarn} onChange={(event) => setBranchWarn(event.target.value)} disabled={savingSettings} /></label><label>Transit block threshold<input type="number" step="0.01" value={branchBlock} onChange={(event) => setBranchBlock(event.target.value)} disabled={savingSettings} /></label>{settingsError && <p className="vendor-finance-error">{settingsError}</p>}{settingsMessage && <p className="billing-success"><CheckCircle2 size={14} /> {settingsMessage}</p>}<Button type="submit" variant="primary" disabled={savingSettings}>{savingSettings ? 'Saving…' : 'Save thresholds'}</Button></form></section><section className="billing-card"><h3>Branch payment QR</h3><p className="billing-hint">Shown to branch staff before they add money.</p>{settings?.paymentQrPath ? <img className="billing-qr" src={paymentQrUrl(settings.paymentQrPath)} alt="Current payment QR" /> : <p className="billing-hint">No QR uploaded yet.</p>}<FileField label={settings?.paymentQrPath ? 'Replace with a new QR' : 'Upload a QR'} hint="JPG, PNG, or WebP · max 5 MB" file={qrFile} onChange={(file) => { setQrFile(file); setQrError(''); setQrMessage(''); }} />{qrError && <p className="vendor-finance-error">{qrError}</p>}{qrMessage && <p className="billing-success"><CheckCircle2 size={14} /> {qrMessage}</p>}{qrFile && <div className="billing-review-actions"><Button variant="secondary" onClick={() => setQrFile(null)} disabled={qrUploading}>Cancel</Button><Button variant="primary" onClick={() => void replaceQr()} disabled={qrUploading}>{qrUploading ? 'Uploading…' : 'Replace QR'}</Button></div>}</section></div>}
+    {activeTab === 'settings' && isSuperAdmin && <div className="billing-grid"><section className="billing-card"><h3>Branch transit thresholds</h3><p className="billing-hint">Both values are negative balances. A branch is warned at the first threshold and cannot receive transit at the block threshold.</p><form className="billing-form" onSubmit={saveThresholds}><label>Warn threshold<input type="number" step="0.01" value={branchWarn} onChange={(event) => setBranchWarn(event.target.value)} disabled={savingSettings} /></label><label>Transit block threshold<input type="number" step="0.01" value={branchBlock} onChange={(event) => setBranchBlock(event.target.value)} disabled={savingSettings} /></label><Toast tone="error" message={settingsError} onShown={() => setSettingsError('')} />{settingsMessage && <p className="billing-success"><CheckCircle2 size={14} /> {settingsMessage}</p>}<Button type="submit" variant="primary" disabled={savingSettings}>{savingSettings ? 'Saving…' : 'Save thresholds'}</Button></form></section><section className="billing-card"><h3>Branch payment QR</h3><p className="billing-hint">Shown to branch staff before they add money.</p>{settings?.paymentQrPath ? <img className="billing-qr" src={paymentQrUrl(settings.paymentQrPath)} alt="Current payment QR" /> : <p className="billing-hint">No QR uploaded yet.</p>}<FileField label={settings?.paymentQrPath ? 'Replace with a new QR' : 'Upload a QR'} hint="JPG, PNG, or WebP · max 5 MB" file={qrFile} onChange={(file) => { setQrFile(file); setQrError(''); setQrMessage(''); }} /><Toast tone="error" message={qrError} onShown={() => setQrError('')} />{qrMessage && <p className="billing-success"><CheckCircle2 size={14} /> {qrMessage}</p>}{qrFile && <div className="billing-review-actions"><Button variant="secondary" onClick={() => setQrFile(null)} disabled={qrUploading}>Cancel</Button><Button variant="primary" onClick={() => void replaceQr()} disabled={qrUploading}>{qrUploading ? 'Uploading…' : 'Replace QR'}</Button></div>}</section></div>}
 
     {creditBranch && (
       <div className="modal-overlay" onClick={closeCreditEditor}>
@@ -432,7 +434,7 @@ const BranchBilling: React.FC = () => {
               hint="Only this branch changes."
             />
           </div>
-          {creditError && <p role="alert" className="error-text">{creditError}</p>}
+          <Toast tone="error" message={creditError} onShown={() => setCreditError('')} />
           <div className="modal-footer">
             <Button variant="secondary" onClick={closeCreditEditor} disabled={creditSaving}>Cancel</Button>
             <Button variant="primary" onClick={() => void handleSaveCredit()} disabled={creditSaving}>

@@ -15,6 +15,7 @@ import Button from '../components/Button';
 import UserDocumentsModal from '../components/UserDocumentsModal';
 import { getRiders, updateUserStatus } from '../services/users.service';
 import './RiderManagement.css';
+import { Toast } from '../components/toast';
 
 interface RiderUser {
   id: string;
@@ -187,7 +188,7 @@ const RiderManagement: React.FC = () => {
   return (
     <div className="rider-management-container">
       <PageHeader
-        title="RIDER MANAGEMENT"
+        title="Rider Management"
         actionLabel="Add new"
         actionIcon={<Plus size={16} />}
         onAction={() => navigate('/riders/new')}
@@ -216,7 +217,7 @@ const RiderManagement: React.FC = () => {
         </div>
       </div>
 
-      {statusError && <p className="rider-status-error">{statusError}</p>}
+      <Toast tone="error" message={statusError} onShown={() => setStatusError('')} />
       {loadError && (
         <Banner tone="danger">
           {loadError}{' '}

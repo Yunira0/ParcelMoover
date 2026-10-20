@@ -19,6 +19,7 @@ import { apiErrorMessage } from '../../utils/serverValidation';
 import { useSessionState } from '../../hooks/useSessionState';
 import './VendorFinance.css';
 import './VendorBilling.css';
+import { Toast } from '../../components/toast';
 
 const STATUS_LABEL: Record<VendorPayment['status'], string> = {
   pending: 'Awaiting verification',
@@ -289,7 +290,7 @@ const VendorBilling: React.FC = () => {
                     onChange={setProof}
                   />
 
-                  {formError && <p className="vendor-finance-error">{formError}</p>}
+                  <Toast tone="error" message={formError} onShown={() => setFormError('')} />
                   {submitted && (
                     <p className="billing-success">
                       <CheckCircle2 size={14} /> {submitted}

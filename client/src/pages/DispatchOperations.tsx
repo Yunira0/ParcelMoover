@@ -35,6 +35,7 @@ import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStat
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './DispatchOperations.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Toast } from '../components/toast';
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
@@ -602,6 +603,7 @@ const DispatchOperations: React.FC = () => {
 
   return (
     <div className="dispatch-operations-container">
+      <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
       <PageHeader title="Local Dispatch" />
 
       <SegmentedTabs
@@ -715,7 +717,7 @@ const DispatchOperations: React.FC = () => {
                   <div className="dispatch-partial-form">
                     <div className="dispatch-partial-field">
                       <label className="dispatch-partial-label">
-                        Remarks <span className="dispatch-partial-required">*</span>
+                        Remarks
                       </label>
                       <textarea
                         rows={2}
@@ -728,7 +730,7 @@ const DispatchOperations: React.FC = () => {
                     </div>
                     <div className="dispatch-partial-field">
                       <label className="dispatch-partial-label">
-                        COD Collected <span className="dispatch-partial-required">*</span>
+                        COD Collected
                       </label>
                       <input
                         type="number"
@@ -747,7 +749,7 @@ const DispatchOperations: React.FC = () => {
                   <div className="dispatch-partial-form">
                     <div className="dispatch-partial-field">
                       <label className="dispatch-partial-label">
-                        Reason <span className="dispatch-partial-required">*</span>
+                        Reason
                       </label>
                       <textarea
                         rows={2}
@@ -760,7 +762,6 @@ const DispatchOperations: React.FC = () => {
                     </div>
                   </div>
                 )}
-                {actionError && <p className="dispatch-action-error">{actionError}</p>}
                 <div className="dispatch-status-submit-row">
                   <Button variant="secondary" className="dispatch-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); setReasonRemarks(''); }}>
                     Cancel

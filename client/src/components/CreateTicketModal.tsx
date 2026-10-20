@@ -14,6 +14,7 @@ import {
 } from '../services/tickets.service';
 import { getActivePickupTimeSlots, type PickupTimeSlot } from '../services/pickupTimeSlots.service';
 import { getCurrentUserRoles } from '../utils/auth';
+import { Toast } from './toast';
 
 interface CreateTicketModalProps {
   isOpen: boolean;
@@ -269,7 +270,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
                   onChange={(value) => update({ numberOfParcels: value })}
                 />
                 <div className="form-group">
-                  <label htmlFor="pickup-date">Pickup Date<span className="required">*</span></label>
+                  <label htmlFor="pickup-date">Pickup Date</label>
                   {isSuperAdmin ? (
                     <select
                       id="pickup-date"
@@ -284,7 +285,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
                   )}
                 </div>
                 <div className="form-group">
-                  <label htmlFor="pickup-slot">Pickup Time<span className="required">*</span></label>
+                  <label htmlFor="pickup-slot">Pickup Time</label>
                   <select
                     id="pickup-slot"
                     required
@@ -312,7 +313,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
 
             {(form.category === 'delivery' || form.category === 'loss_and_damage') && (
               <div className="ticket-orderids">
-                <label>Order IDs<span className="required">*</span></label>
+                <label>Order IDs</label>
                 {form.orderIds.map((orderId, index) => (
                   <div className="ticket-orderid-row" key={index}>
                     <input
@@ -360,7 +361,7 @@ const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, onClose, 
             />
           </div>
 
-          {error && <p className="error-text">{error}</p>}
+          <Toast tone="error" message={error} onShown={() => setError('')} />
           <div className="modal-footer">
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={loading}>

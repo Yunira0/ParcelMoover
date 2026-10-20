@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import './Modal.css';
 import FormField from './FormField';
 import Button from './Button';
+import { Toast } from './toast';
 import {
   updateUserPassword,
   updateUserProfile,
@@ -239,7 +240,7 @@ const UserActionModal: React.FC<UserActionModalProps> = ({
               />
             </div>
           )}
-          {generalError && <p className="error-text">{generalError}</p>}
+          <Toast tone="error" message={generalError} onShown={() => setGeneralError('')} />
           <div className="modal-footer">
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={loading}>

@@ -29,6 +29,7 @@ import { downloadVoucherPng, printVoucher } from '../utils/voucherImage';
 import '../components/Modal.css';
 import './vendor/VendorFinance.css';
 import './Vouchers.css';
+import { Toast, useToast } from '../components/toast';
 
 const isOfferList = (v: unknown): v is { data: VoucherOffer[]; totalPages: number; total: number } =>
   !!v && typeof v === 'object' && 'data' in (v as object) && Array.isArray((v as { data: unknown }).data);
@@ -53,6 +54,7 @@ export default function Vouchers() {
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const toast = useToast();
   const [notice, setNotice] = useState('');
 
   // Claim by code (a scanned slip can prefill it via ?code=)
@@ -129,7 +131,7 @@ export default function Vouchers() {
       await setCampaignStatus(c.id, c.status === 'active' ? 'paused' : 'active');
       setCampaignRevision(v => v + 1);
     } catch (err) {
-      setCampaignsError(apiErrorMessage(err, 'Could not update the campaign.'));
+      toast.error(apiErrorMessage(err, 'Could not update the campaign.'));
     }
   }
 
@@ -251,7 +253,7 @@ export default function Vouchers() {
       await setVoucherActive(offer.id, !offer.isActive);
       setRevision(v => v + 1);
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not update the voucher.'));
+      toast.error(apiErrorMessage(err, 'Could not update the voucher.'));
     }
   }
 
@@ -330,7 +332,7 @@ export default function Vouchers() {
           : 'Shipping offers you can use on an outbound order — type the code while creating it, or save one here first.'}
       />
 
-      {notice && <Banner tone="success">{notice}</Banner>}
+      <Toast tone="success" message={notice} onShown={() => setNotice('')} />
       {error && (
         <Banner tone="danger">
           {error}{' '}
@@ -546,7 +548,7 @@ export default function Vouchers() {
               <VoucherPromo offer={previewOffer} copyable={false} />
             </aside>
           </div>
-          {formError && <p role="alert" className="vendor-finance-error">{formError}</p>}
+          <Toast tone="error" message={formError} onShown={() => setFormError('')} />
           <div><Button type="submit" variant="primary" disabled={saving}>{saving ? 'Publishing…' : 'Publish voucher'}</Button></div>
         </form>
 
@@ -589,7 +591,7 @@ export default function Vouchers() {
                 Live preview of the vendor voucher — download the PNG to share, or print a copy to hand over.
               </p>
               <VoucherPromo offer={voucher} />
-              {voucherError && <Banner tone="danger">{voucherError}</Banner>}
+              <Toast tone="error" message={voucherError} onShown={() => setVoucherError('')} />
               <div className="modal-footer">
                 <Button variant="secondary" onClick={() => setVoucher(null)}>Close</Button>
                 <Button variant="secondary" disabled={voucherBusy !== null} onClick={() => void exportVoucher(voucher, 'print')}>

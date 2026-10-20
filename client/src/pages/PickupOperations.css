@@ -387,10 +387,6 @@
   color: var(--color-text-default);
 }
 
-.pickup-reason-required {
-  color: var(--color-danger-text);
-}
-
 .pickup-reason-textarea {
   width: 100%;
   padding: var(--space-2);

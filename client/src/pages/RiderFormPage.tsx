@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Truck, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
-import FormField, { FieldMarker, FieldMarkerContext } from '../components/FormField';
+import FormField, { FieldMarker } from '../components/FormField';
 import DocLink from '../components/DocLink';
 import { registerUser, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
 import { getLocations } from '../queries/lookups';
@@ -417,7 +417,6 @@ const RiderFormPage: React.FC = () => {
         <p>Complete the registration form below to create a new rider account.</p>
       </div>
 
-      <FieldMarkerContext.Provider value="optional">
       <form className="rfp-form" onSubmit={handleSubmit} noValidate>
         <div className="rfp-body">
           {/* Left Column */}
@@ -706,7 +705,6 @@ const RiderFormPage: React.FC = () => {
           </Button>
         </div>
       </form>
-      </FieldMarkerContext.Provider>
     </div>
   );
 };

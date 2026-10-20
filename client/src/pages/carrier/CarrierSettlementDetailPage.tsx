@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Ban, CreditCard, Pencil } from 'lucide-react';
 import Button from '../../components/Button';
 import StatusChip from '../../components/StatusChip';
-import ConfirmBanner from '../../components/ConfirmBanner';
+import { Toast } from '../../components/toast';
 import RevertSettlementModal from '../../components/RevertSettlementModal';
 import SegmentedTabs from '../../components/SegmentedTabs';
 import ReceiverPhones from '../../components/ReceiverPhones';
@@ -77,7 +77,7 @@ const CarrierSettlementDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {banner && <ConfirmBanner title={banner.title} meta={banner.meta} onDismiss={() => setBanner(null)} />}
+      <Toast tone="success" message={banner && [banner.title, banner.meta].filter(Boolean).join(' · ')} onShown={() => setBanner(null)} />
 
       {loading ? (
         <SkeletonPage heading={false} />

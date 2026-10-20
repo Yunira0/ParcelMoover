@@ -83,10 +83,6 @@
   min-width: 0;
 }
 
-.kyc-form-error {
-  margin: 0;
-}
-
 /* Page-level action bar, not a modal footer: hint on the left names where the
    submit goes, actions on the right. Sticky so a long form never hides them. */
 .kyc-form-footer {

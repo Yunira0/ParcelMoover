@@ -481,10 +481,6 @@
   color: var(--color-text-default);
 }
 
-.oov-reason-required {
-  color: var(--color-danger-text);
-}
-
 .oov-reason-textarea {
   width: 100%;
   padding: var(--space-2);

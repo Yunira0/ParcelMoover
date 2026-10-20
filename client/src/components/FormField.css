@@ -10,11 +10,6 @@
   color: var(--color-text-caption);
 }
 
-.form-group label .required {
-  color: var(--color-danger-text);
-  margin-left: 2px;
-}
-
 .optional {
   color: var(--color-text-caption);
   font-weight: var(--font-weight-regular);

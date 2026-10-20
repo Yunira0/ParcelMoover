@@ -167,10 +167,6 @@
   color: var(--color-text-default);
 }
 
-.afp-required {
-  color: var(--color-danger-default);
-}
-
 .afp-file-btn {
   display: inline-flex;
   align-items: center;

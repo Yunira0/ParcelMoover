@@ -9,6 +9,7 @@ import {
 } from '../../services/vendorPrintSettings.service';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import './VendorPrintSettings.css';
+import { Toast } from '../../components/toast';
 
 const DEFAULT_WIDTH_MM = 100;
 const DEFAULT_HEIGHT_MM = 75;
@@ -141,6 +142,7 @@ const VendorPrintSettings: React.FC = () => {
 
   return (
     <div className="print-settings-page">
+      <Toast tone="error" message={saveError} onShown={() => setSaveError('')} />
       <PageHeader
         title="Print Settings"
       />
@@ -216,7 +218,6 @@ const VendorPrintSettings: React.FC = () => {
                 Enter whole numbers between {MIN_MM} and {MAX_MM}mm for both width and height.
               </p>
             )}
-            {saveError && <p className="print-settings-error">{saveError}</p>}
             {saveMessage && (
               <p className="print-settings-success">
                 <CheckCircle2 size={14} /> {saveMessage}

@@ -9,16 +9,15 @@ import './FormField.css';
 
 export type FormFieldOption = { value: string; label: string };
 
-/** How labels flag the fields that differ: a `*` on required ones (default),
- *  or "(optional)" on the rest. Forms opt in by wrapping in the provider. */
-export type FieldMarkerMode = 'required' | 'optional';
-export const FieldMarkerContext = createContext<FieldMarkerMode>('required');
-export const useFieldMarker = () => useContext(FieldMarkerContext);
+/** Labels mark the fields people may skip with "(optional)"; required fields
+ *  carry no marker. Wrap a filter bar or similar in `value="none"` to drop it. */
+export type FieldMarkerMode = 'optional' | 'none';
+export const FieldMarkerContext = createContext<FieldMarkerMode>('optional');
 
-export function FieldMarker({ required }: { required?: boolean }) {
-  const mode = useFieldMarker();
-  if (mode === 'optional') return required ? null : <span className="optional"> (optional)</span>;
-  return required ? <span className="required">*</span> : null;
+export function FieldMarker({ required, disabled }: { required?: boolean; disabled?: boolean }) {
+  const mode = useContext(FieldMarkerContext);
+  if (mode === 'none' || required || disabled) return null;
+  return <span className="optional"> (optional)</span>;
 }
 
 // No 'datetime-local': every date the UI collects goes through type="date",
@@ -106,7 +105,7 @@ const FormField: React.FC<FormFieldProps> = ({
           className={hideLabel ? 'sr-only' : undefined}
         >
           {label}
-          <FieldMarker required={required} />
+          <FieldMarker required={required} disabled={disabled} />
         </label>
       )}
       {type === 'select' ? (

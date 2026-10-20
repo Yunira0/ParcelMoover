@@ -19,6 +19,7 @@ import { markNotificationsReadByTrackingId } from '../services/notifications.ser
 import './RemarkDetail.css';
 import { toBsDate } from '../utils/nepaliDate';
 import './TicketDetail.css';
+import { Toast } from '../components/toast';
 
 const STATUS_TONE: Record<TicketStatus, StatusChipTone> = {
   pending: 'warning',
@@ -348,7 +349,7 @@ const TicketDetail: React.FC = () => {
                   <Send size={18} />
                 </button>
               </div>
-              {replyError && <p className="rd-bottom-error">{replyError}</p>}
+              <Toast tone="error" message={replyError} onShown={() => setReplyError('')} />
                 </div>
               </div>
             </div>

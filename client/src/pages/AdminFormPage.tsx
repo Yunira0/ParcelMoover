@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useId } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
-import FormField, { FieldMarker, FieldMarkerContext } from '../components/FormField';
+import FormField, { FieldMarker } from '../components/FormField';
 import BankSelectField from '../components/BankSelectField';
 import DocLink from '../components/DocLink';
 import { registerUser, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
@@ -500,7 +500,6 @@ const AdminFormPage: React.FC = () => {
         <p>Complete the registration form below to create a new admin account.</p>
       </div>
 
-      <FieldMarkerContext.Provider value="optional">
       <form className="afp-form" onSubmit={handleSubmit} noValidate>
         <div className="afp-body">
           {/* Left Column */}
@@ -819,7 +818,6 @@ const AdminFormPage: React.FC = () => {
           </Button>
         </div>
       </form>
-      </FieldMarkerContext.Provider>
     </div>
   );
 };

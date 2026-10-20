@@ -28,6 +28,7 @@ import {
 } from '../services/transitManifests.service';
 import CreateTransitManifestModal from './CreateTransitManifestModal';
 import '../pages/OOVOperations.css';
+import { useToast } from './toast';
 
 const STATUS_TONE: Record<TransitManifestStatus, StatusChipTone> = {
   open: 'warning',
@@ -261,6 +262,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
   // that ever held parcels or ever left is a record of real work, not a
   // mistake to clean up.
   const [pendingDelete, setPendingDelete] = useState<TransitManifestModel | null>(null);
+  const toast = useToast();
   const handleDelete = (manifest: TransitManifestModel) => setPendingDelete(manifest);
 
   const confirmDelete = async () => {
@@ -277,7 +279,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
       if (expandedId === manifest.id) setExpandedId('');
       await load();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to delete the manifest.'));
+      toast.error(apiErrorMessage(err, 'Failed to delete the manifest.'));
     } finally {
       setBusy(false);
     }
@@ -300,7 +302,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
       if (expandedId === manifest.id) void loadDetail(manifest.id);
       await load();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to dispatch the manifest.'));
+      toast.error(apiErrorMessage(err, 'Failed to dispatch the manifest.'));
     } finally {
       dispatching.current = false;
       setBusy(false);
@@ -366,7 +368,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
         .filter((o): o is Order => Boolean(o));
       downloadOrdersExcel(`${manifest.manifestNo}.xlsx`, manifest.manifestNo, orders);
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to download the orders on this manifest.'));
+      toast.error(apiErrorMessage(err, 'Failed to download the orders on this manifest.'));
     } finally {
       setDownloading(false);
     }

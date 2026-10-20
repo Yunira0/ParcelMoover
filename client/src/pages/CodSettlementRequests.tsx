@@ -8,6 +8,7 @@ import FilterDropdown from '../components/FilterDropdown';
 import ClearableFilter from '../components/ClearableFilter';
 import Pagination from '../components/Pagination';
 import { Banner } from './accounting/ui';
+import { useToast } from '../components/toast';
 import { isSalesUser } from '../utils/auth';
 import {
   COD_REQUEST_STATUS_LABELS,
@@ -53,6 +54,7 @@ const CodSettlementRequests: React.FC = () => {
   const [status, setStatus] = useSessionState('cod-settlement-requests:status', '');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<CodSettlementRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -101,7 +103,7 @@ const CodSettlementRequests: React.FC = () => {
     let active = true;
     getCodSettlementRequestById(linkedId)
       .then((response) => { if (active) setLinked(response.data); })
-      .catch((err) => { if (active) setError(apiErrorMessage(err, 'Could not open that request')); });
+      .catch((err) => { if (active) toast.error(apiErrorMessage(err, 'Could not open that request')); });
     return () => { active = false; };
   }, [linkedId, requests]);
 
@@ -138,7 +140,7 @@ const CodSettlementRequests: React.FC = () => {
       setStatementChoice('');
       await load();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not update the request'));
+      toast.error(apiErrorMessage(err, 'Could not update the request'));
     } finally {
       setBusyId(null);
     }

@@ -24,6 +24,7 @@ import { printLabels } from '../utils/printLabels';
 import { isBranchWorkspaceUser } from '../utils/auth';
 import './HoldOperations.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Toast } from '../components/toast';
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -280,6 +281,7 @@ const HoldOperations: React.FC = () => {
 
   return (
     <div className="hold-operations-container">
+      <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
       <PageHeader title="Hold" />
 
       <div className="hold-toolbar">
@@ -313,7 +315,6 @@ const HoldOperations: React.FC = () => {
         </div>
       </div>
 
-      {actionError && <p className="hold-action-error">{actionError}</p>}
 
       <label className="hold-search">
         <Search size={16} />

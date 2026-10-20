@@ -17,6 +17,7 @@ import {
 } from '../services/orders.service';
 import { ORDER_STATUS_LABELS as STATUS_LABELS } from '../utils/orderStatus';
 import './TrashOrdersPage.css';
+import { useToast } from '../components/toast';
 
 const PAGE_SIZE = 10;
 
@@ -40,6 +41,7 @@ const TrashOrdersPage: React.FC = () => {
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   // The order awaiting restore confirmation; null when closed.
   const [restoreTarget, setRestoreTarget] = useState<Order | null>(null);
+  const toast = useToast();
 
   // Same keyset pager the orders list uses: /orders/trash goes through
   // listOrders, so it returns the identical cursor meta.
@@ -99,7 +101,7 @@ const TrashOrdersPage: React.FC = () => {
       await load();
     } catch (err) {
       setRestoreTarget(null);
-      setError(apiErrorMessage(err, 'Failed to restore the order'));
+      toast.error(apiErrorMessage(err, 'Failed to restore the order'));
     } finally {
       setBusyId(null);
     }

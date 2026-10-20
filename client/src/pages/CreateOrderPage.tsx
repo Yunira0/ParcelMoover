@@ -15,6 +15,7 @@ import { createOrder, updateOrder, getSenderProfile, type CreateOrderInput, type
 import { getCurrentUser, isVendorSide } from '../utils/auth';
 import { findMasterHub } from '../utils/locations';
 import { apiErrorMessage } from '../utils/serverValidation';
+import { Toast } from '../components/toast';
 import './CreateOrderPage.css';
 
 interface VendorOption {
@@ -161,9 +162,9 @@ const CreateOrderPage: React.FC = () => {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [generalError, setGeneralError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  // Set when the server flags a same-day duplicate. Shown inline as a warning;
-  // while it's set, the next "Create Order" click resends with confirmDuplicate
-  // to create the order anyway.
+  // Set when the server flags a same-day duplicate. Popped as a warning; while
+  // it's set, the next "Create Order" click resends with confirmDuplicate to
+  // create the order anyway.
   const [duplicateWarning, setDuplicateWarning] = useState('');
 
   const [quote, setQuote] = useState<{ weightSurcharge: number; baseCharge: number; totalPayable: number; basis?: string } | null>(null);
@@ -1008,13 +1009,9 @@ const CreateOrderPage: React.FC = () => {
             </Banner>
           </div>
 
-          {successMessage && <p className="order-form-success">{successMessage}</p>}
-          {generalError && <p className="order-form-error">{generalError}</p>}
-          {duplicateWarning && (
-            <p className="order-form-warning">
-              {duplicateWarning} Click <strong>Create anyway</strong> to create it regardless.
-            </p>
-          )}
+          <Toast tone="success" message={successMessage} onShown={() => setSuccessMessage('')} />
+          <Toast tone="error" message={generalError} onShown={() => setGeneralError('')} />
+          <Toast tone="warning" message={duplicateWarning && `${duplicateWarning} Click Create anyway to create it regardless.`} />
 
           <div className="create-order-actions">
             <Button type="submit" variant="primary" grow disabled={submitting}>

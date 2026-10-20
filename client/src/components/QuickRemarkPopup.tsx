@@ -4,6 +4,7 @@ import Button from './Button';
 import { getOrderByTrackingId, addOrderRemark, type OrderRemark } from '../services/orders.service';
 import { toBsDate, toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './QuickRemarkPopup.css';
+import { Toast } from './toast';
 
 interface QuickRemarkPopupProps {
   orderId: string;
@@ -291,7 +292,7 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
                   {inlineSubmitting ? 'Posting...' : 'Reply'}
                 </Button>
               </div>
-              {inlineError && <p className="qr-error">{inlineError}</p>}
+              <Toast tone="error" message={inlineError} onShown={() => setInlineError('')} />
             </div>
           ) : (
             <div className="qr-main-compose">
@@ -322,7 +323,7 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
                   {replySubmitting ? 'Posting...' : 'Reply'}
                 </Button>
               </div>
-              {replyError && <p className="qr-error">{replyError}</p>}
+              <Toast tone="error" message={replyError} onShown={() => setReplyError('')} />
             </div>
           )}
         </div>

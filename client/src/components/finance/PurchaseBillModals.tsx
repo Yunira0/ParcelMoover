@@ -7,6 +7,7 @@ import { apiErrorMessage } from '../../utils/serverValidation';
 import { formatAmount } from '../../utils/format';
 import { todayNepalAd } from '../../utils/nepaliDate';
 import '../Modal.css';
+import { Toast } from '../toast';
 
 const VAT_RATE = 13;
 
@@ -88,7 +89,7 @@ export const AddPurchaseBillModal: React.FC<AddProps> = ({ onClose, onSaved }) =
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>
-              Bill date (BS)<span className="required"> *</span>
+              Bill date (BS)
             </label>
             <NepaliDatePicker value={form.billDate} max={todayNepalAd()} onChange={set('billDate')} aria-label="Bill date" />
           </div>
@@ -116,7 +117,7 @@ export const AddPurchaseBillModal: React.FC<AddProps> = ({ onClose, onSaved }) =
             hint={`Taxable value Rs. ${formatAmount(Math.max(taxable, 0))} · VAT ${VAT_RATE}% Rs. ${formatAmount(Math.max(vat, 0))}`}
           />
 
-          {error && <p className="error-text">{error}</p>}
+          <Toast tone="error" message={error} onShown={() => setError('')} />
 
           <div className="modal-footer">
             <Button type="button" variant="secondary" onClick={onClose}>
@@ -178,7 +179,7 @@ export const CancelPurchaseBillModal: React.FC<CancelProps> = ({ billId, billNo,
             Bill <strong>{billNo}</strong> will move to the Purchase Return Register for this month.
           </div>
           <FormField label="Reason" required value={remark} onChange={setRemark} maxLength={500} />
-          {error && <p className="error-text">{error}</p>}
+          <Toast tone="error" message={error} onShown={() => setError('')} />
           <div className="modal-footer">
             <Button type="button" variant="secondary" onClick={onClose}>
               Go back

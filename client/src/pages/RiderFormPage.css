@@ -167,10 +167,6 @@
   color: var(--color-text-default);
 }
 
-.rfp-required {
-  color: var(--color-danger-default);
-}
-
 .rfp-file-btn {
   display: inline-flex;
   align-items: center;

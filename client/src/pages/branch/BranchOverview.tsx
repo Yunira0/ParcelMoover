@@ -31,6 +31,7 @@ import '../MerchantOverview.css';
 import './BranchOverview.css';
 import ReceiverPhones from '../../components/ReceiverPhones';
 import { Skeleton } from '../../components/Skeleton';
+import { useToast } from '../../components/toast';
 
 const hubName = (loc: string) => loc.split(' - ')[0];
 
@@ -54,6 +55,7 @@ const BranchOverview: React.FC = () => {
   // Collapsed by default so the branch list doesn't push the order report down.
   const [branchListOpen, setBranchListOpen] = useState(false);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const toast = useToast();
   const pager = useCursorPagination();
 
   const filters: BranchFilters = useMemo(() => ({
@@ -150,7 +152,7 @@ const BranchOverview: React.FC = () => {
     ]);
       await downloadExcel('branch-overview.xlsx', 'Branch Overview', headers, body);
     } catch {
-      setError('Failed to export branch orders.');
+      toast.error('Failed to export branch orders.');
     } finally {
       setExporting(false);
     }

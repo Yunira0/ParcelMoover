@@ -8,6 +8,7 @@ import { listManagedLocations, type ManagedLocation } from '../../services/locat
 import { createBranch, updateBranch, type Branch } from '../../services/branchTracking.service';
 import { listBranches } from '../../queries/lookups';
 import { apiErrorMessage } from '../../utils/serverValidation';
+import { Toast } from '../toast';
 
 interface AddBranchModalProps {
   isOpen: boolean;
@@ -188,7 +189,7 @@ const AddBranchModal: React.FC<AddBranchModalProps> = ({ isOpen, onClose, onSucc
             placeholder="e.g. 50"
             hint="Rs. per parcel this branch keeps when a settlement is recorded."
           />
-          {error && <p className="error-text">{error}</p>}
+          <Toast tone="error" message={error} onShown={() => setError('')} />
           <div className="modal-footer">
             <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>
               Cancel

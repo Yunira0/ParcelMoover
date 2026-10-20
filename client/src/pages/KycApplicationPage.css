@@ -212,10 +212,6 @@
   color: var(--color-text-default, #1f2937);
 }
 
-.kyc-file-label .required {
-  color: var(--color-danger-default, #dc2626);
-}
-
 .kyc-file-btn,
 .kyc-file-chip {
   display: inline-flex;
@@ -241,16 +237,6 @@
   cursor: pointer;
   display: inline-flex;
   color: var(--color-text-caption, #6b7280);
-}
-
-.kyc-error {
-  margin: 16px 0 0;
-  padding: 10px 14px;
-  background: var(--color-danger-surface);
-  border: 1px solid var(--color-danger-border);
-  border-radius: 6px;
-  color: var(--color-danger-default);
-  font-size: 0.85rem;
 }
 
 /* Actions */

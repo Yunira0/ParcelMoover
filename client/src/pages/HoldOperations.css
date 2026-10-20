@@ -126,12 +126,6 @@
   border-bottom-color: var(--color-background-primary-default);
 }
 
-.hold-action-error {
-  color: var(--color-danger-text);
-  font-size: var(--font-size-sm);
-  margin: 0;
-}
-
 @media (max-width: 900px) {
   .hold-toolbar {
     align-items: stretch;

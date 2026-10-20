@@ -2,12 +2,13 @@ import React, { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle, ChevronRight, ChevronLeft, Upload, X } from 'lucide-react';
 import Button from '../components/Button';
-import FormField from '../components/FormField';
+import FormField, { FieldMarker } from '../components/FormField';
 import { submitKycApplication, type KycApplicationInput } from '../services/kyc.service';
 import { apiErrorMessage, hasLetter, isValidEmail, isValidName, isValidPhone } from '../utils/serverValidation';
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { usePageMeta } from '../utils/pageMeta';
 import './KycApplicationPage.css';
+import { Toast } from '../components/toast';
 
 const STEPS = ['Business', 'Owner & Bank', 'Documents'];
 
@@ -54,7 +55,7 @@ const FileField: React.FC<{
     <div className="kyc-file-field">
       <span className="kyc-file-label">
         {label}
-        {required && <span className="required"> *</span>}
+        <FieldMarker required={required} />
       </span>
       {file ? (
         <div className="kyc-file-chip">
@@ -346,7 +347,7 @@ const KycApplicationPage: React.FC = () => {
             </div>
           )}
 
-          {error && <p className="kyc-error">{error}</p>}
+          <Toast tone="error" message={error} onShown={() => setError('')} />
 
           <div className="kyc-actions">
             {step > 0 && (
