@@ -19,6 +19,7 @@ import { apiErrorMessage } from '../../utils/serverValidation';
 import { useSessionState } from '../../hooks/useSessionState';
 import './VendorFinance.css';
 import './VendorBilling.css';
+import { Toast } from '../../components/toast';
 
 const STATUS_LABEL: Record<VendorPayment['status'], string> = {
   pending: 'Awaiting verification',
@@ -129,12 +130,12 @@ const VendorBilling: React.FC = () => {
 
       {loading ? (
         <div className="billing-skeleton-set" aria-busy="true" aria-label="Loading billing details">
-          <div className="billing-skeleton billing-skeleton-banner" />
+          <div className="skeleton billing-skeleton billing-skeleton-banner" />
           <div className="billing-grid">
-            <div className="billing-skeleton billing-skeleton-card" />
-            <div className="billing-skeleton billing-skeleton-card" />
+            <div className="skeleton billing-skeleton billing-skeleton-card" />
+            <div className="skeleton billing-skeleton billing-skeleton-card" />
           </div>
-          <div className="billing-skeleton billing-skeleton-table" />
+          <div className="skeleton billing-skeleton billing-skeleton-table" />
         </div>
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>
@@ -289,7 +290,7 @@ const VendorBilling: React.FC = () => {
                     onChange={setProof}
                   />
 
-                  {formError && <p className="vendor-finance-error">{formError}</p>}
+                  <Toast tone="error" message={formError} onShown={() => setFormError('')} />
                   {submitted && (
                     <p className="billing-success">
                       <CheckCircle2 size={14} /> {submitted}

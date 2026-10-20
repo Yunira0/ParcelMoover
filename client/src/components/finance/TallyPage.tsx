@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { keyLabel } from './tallyKeys';
 import './tally.css';
 import './tallyVoucher.css';
+import { SkeletonList } from '../Skeleton';
 
 /**
  * One action in the right-hand panel.
@@ -133,7 +134,7 @@ const TallyPage: React.FC<TallyPageProps> = ({
 
         {message && <p className="tly-note tly-note-danger">{message}</p>}
 
-        {loading ? <p className="tly-note">Loading…</p> : children}
+        {loading ? <SkeletonList /> : children}
 
         {menu && actions.length > 0 && (
           <nav className="jv-menu tly-menu" aria-label="Menu">

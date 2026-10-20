@@ -20,7 +20,7 @@
 
 .lossdamage-search:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 12%);
 }
 
 .lossdamage-search input {
@@ -90,12 +90,6 @@
   color: var(--color-text-placeholder);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
-}
-
-.lossdamage-action-error {
-  color: var(--color-danger-text);
-  font-size: var(--font-size-sm);
-  margin: 0;
 }
 
 @media (max-width: 900px) {

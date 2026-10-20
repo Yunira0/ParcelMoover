@@ -50,6 +50,11 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
+/* A panel alone in the row (Needs attention hidden) takes the full width. */
+.dashboard-row-split > :only-child {
+  grid-column: 1 / -1;
+}
+
 /* Wrapper that turns a bare (unstyled) panel component into a surface card,
    matching the built-in cards (chart, COD, today's overview). */
 .dashboard-panel {

@@ -83,7 +83,7 @@
 .print-settings-tile-swatch {
   background: var(--color-background-canvas);
   border: 1.5px solid var(--color-text-caption);
-  border-radius: 2px;
+  border-radius: var(--border-radius-sm);
 }
 
 .print-settings-tile-active .print-settings-tile-swatch {

@@ -5,6 +5,7 @@ import { getUserDocuments, type ManagedUserDocument } from '../services/users.se
 import { toDocumentUrl } from '../utils/documentUrl';
 import './Modal.css';
 import './UserDocumentsModal.css';
+import { SkeletonList } from './Skeleton';
 
 type ManagedUserType = 'admin' | 'vendor' | 'rider';
 
@@ -68,10 +69,9 @@ const UserDocumentsModal: React.FC<UserDocumentsModalProps> = ({
           </Button>
         </div>
 
-        <p className="modal-desc">Documents submitted by {target.name} at registration.</p>
 
         {loading ? (
-          <p className="user-documents-state">Loading documents...</p>
+          <SkeletonList rows={3} />
         ) : error ? (
           <p className="error-text">{error}</p>
         ) : documents.length === 0 ? (

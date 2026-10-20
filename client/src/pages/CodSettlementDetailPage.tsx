@@ -18,6 +18,7 @@ import { downloadExcel } from '../utils/excel';
 import { formatCurrency, formatDate, formatReceiverPhones } from '../utils/format';
 import { toBsDateTimeCell } from '../utils/nepaliDate';
 import { useSessionState } from '../hooks/useSessionState';
+import { Skeleton } from '../components/Skeleton';
 import './CodSettlementDetailPage.css';
 
 const PAGE_SIZE = 10;
@@ -231,7 +232,7 @@ const CodSettlementDetailPage: React.FC = () => {
         pageSizeLabel="orders"
         summary={
           loading
-            ? 'Loading…'
+            ? <Skeleton width={140} className="skeleton-inline" />
             : rows.length === 0
               ? 'No orders'
               : `Showing ${(currentPage - 1) * pageSize + 1}–${Math.min(

@@ -56,6 +56,7 @@ import type { DepartmentWorkspace } from '../utils/auth';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
 import { useMobileNav } from '../context/MobileNavContext';
 import { logout } from '../services/auth.service';
+import { VAT_REGISTERS_ENABLED } from '../constants/features';
 import './Sidebar.css';
 
 // ── Collapse context ───────────────────────────────────────────────────────────
@@ -520,8 +521,16 @@ const FinanceNav: React.FC<{ canReadBooks: boolean }> = ({ canReadBooks }) => (
 
       {canReadBooks && <SubItem to="/finance/masters" icon={FileText} label="Masters" />}
 
-      <SidebarGroup label="Report" icon={FileText} match="/finance/bank-transfer">
+      <SidebarGroup label="Report" icon={FileText} match={['/finance/bank-transfer', '/finance/reports']}>
         <SubItem to="/finance/bank-transfer" icon={Landmark} label="COD Transfer Report" />
+        {VAT_REGISTERS_ENABLED && canReadBooks && (
+          <>
+            <SubItem to="/finance/reports/sales-register" icon={Receipt} label="Sales Register" />
+            <SubItem to="/finance/reports/sales-return-register" icon={Receipt} label="Sales Return Register" />
+            <SubItem to="/finance/reports/purchase-register" icon={FileText} label="Purchase Register" />
+            <SubItem to="/finance/reports/purchase-return-register" icon={FileText} label="Purchase Return Register" />
+          </>
+        )}
       </SidebarGroup>
     </div>
   </>

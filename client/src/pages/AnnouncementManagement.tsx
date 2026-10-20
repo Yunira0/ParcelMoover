@@ -16,6 +16,7 @@ import {
   type AnnouncementStatus,
 } from '../services/announcements.service';
 import './AnnouncementManagement.css';
+import { useToast } from '../components/toast';
 
 const STATUS_TONE: Record<AnnouncementStatus, StatusChipTone> = {
   draft: 'neutral',
@@ -46,6 +47,7 @@ const AnnouncementManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const toast = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,7 +74,7 @@ const AnnouncementManagement: React.FC = () => {
     try {
       await updateAnnouncement(a.id, { isEnabled: next });
     } catch {
-      setError('Failed to update that announcement.');
+      toast.error('Failed to update that announcement.');
       setAnnouncements((prev) => prev.map((row) => (row.id === a.id ? { ...row, isEnabled: a.isEnabled } : row)));
     } finally {
       setBusyId(null);
@@ -92,7 +94,7 @@ const AnnouncementManagement: React.FC = () => {
       await deleteAnnouncement(a.id);
       setAnnouncements((prev) => prev.filter((row) => row.id !== a.id));
     } catch {
-      setError('Failed to delete that announcement.');
+      toast.error('Failed to delete that announcement.');
     } finally {
       setBusyId(null);
     }
@@ -142,7 +144,7 @@ const AnnouncementManagement: React.FC = () => {
   return (
     <div className="announcement-management-container">
       <PageHeader
-        title="ANNOUNCEMENTS"
+        title="Announcements"
         actionLabel="Add announcement"
         actionIcon={<Plus size={16} />}
         onAction={() => navigate('/announcements/new')}

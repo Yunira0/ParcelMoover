@@ -393,7 +393,7 @@ const CashBankVoucherPage: React.FC = () => {
                       </div>
                       {isBranchLine(line) ? (
                         <div className="jv-who">
-                          <span className={line.branchId ? 'jv-who-label' : 'jv-who-label jv-who-required'}>Branch *</span>
+                          <span className={line.branchId ? 'jv-who-label' : 'jv-who-label jv-who-required'}>Branch</span>
                           <FormField
                             label={`Line ${index + 1} branch`}
                             hideLabel
@@ -408,7 +408,7 @@ const CashBankVoucherPage: React.FC = () => {
                       ) : (
                         <div className="jv-who">
                           <span className={required && !line.party ? 'jv-who-label jv-who-required' : 'jv-who-label'}>
-                            {copy.whoHint}{required ? ' *' : ''}
+                            {copy.whoHint}{required ? '' : ' (optional)'}
                           </span>
                           <PartyPicker
                             types={kindsFor(line.accountCode)}

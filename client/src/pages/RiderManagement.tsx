@@ -15,6 +15,7 @@ import Button from '../components/Button';
 import UserDocumentsModal from '../components/UserDocumentsModal';
 import { getRiders, updateUserStatus } from '../services/users.service';
 import './RiderManagement.css';
+import { Toast } from '../components/toast';
 
 interface RiderUser {
   id: string;
@@ -187,7 +188,7 @@ const RiderManagement: React.FC = () => {
   return (
     <div className="rider-management-container">
       <PageHeader
-        title="RIDER MANAGEMENT"
+        title="Rider Management"
         actionLabel="Add new"
         actionIcon={<Plus size={16} />}
         onAction={() => navigate('/riders/new')}
@@ -216,7 +217,7 @@ const RiderManagement: React.FC = () => {
         </div>
       </div>
 
-      {statusError && <p className="rider-status-error">{statusError}</p>}
+      <Toast tone="error" message={statusError} onShown={() => setStatusError('')} />
       {loadError && (
         <Banner tone="danger">
           {loadError}{' '}
@@ -224,25 +225,21 @@ const RiderManagement: React.FC = () => {
         </Banner>
       )}
 
-      {loading ? (
-        <div className="loading-state">Loading riders...</div>
-      ) : (
-        <>
-          <Table columns={columns} data={riders} selectable={false} />
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            ariaLabel="Rider management pagination"
-            summary={`${total} rider${total !== 1 ? 's' : ''} total`}
-            pageSize={pageSizeChoice}
-            pageSizeLabel="riders"
-            onPageSizeChange={(size) => {
-              setPageSizeChoice(size);
-              setPage(1);
-            }}
-          />
-        </>
+      <Table columns={columns} data={riders} selectable={false} loading={loading} />
+      {(!loading || total > 0) && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          ariaLabel="Rider management pagination"
+          summary={`${total} rider${total !== 1 ? 's' : ''} total`}
+          pageSize={pageSizeChoice}
+          pageSizeLabel="riders"
+          onPageSizeChange={(size) => {
+            setPageSizeChoice(size);
+            setPage(1);
+          }}
+        />
       )}
 
       <UserDocumentsModal

@@ -4,6 +4,7 @@ import PageHeader from '../../components/PageHeader';
 import { toBsDateLabel } from '../../utils/nepaliDate';
 import { getActiveAnnouncements, type Announcement } from '../../services/announcements.service';
 import './VendorAnnouncementsPage.css';
+import { SkeletonList } from '../../components/Skeleton';
 
 const VendorAnnouncementsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -20,12 +21,12 @@ const VendorAnnouncementsPage: React.FC = () => {
 
   return (
     <div className="vendor-announcements-page">
-      <PageHeader title="ANNOUNCEMENTS" />
+      <PageHeader title="Announcements" />
 
       {error && <p className="vendor-announcements-page-error">{error}</p>}
 
       {loading ? (
-        <p className="vendor-announcements-page-muted">Loading announcements…</p>
+        <SkeletonList rows={3} />
       ) : announcements.length === 0 ? (
         <p className="vendor-announcements-page-muted">No announcements right now.</p>
       ) : (

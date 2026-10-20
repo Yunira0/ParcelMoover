@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import Pagination from '../../components/Pagination';
+import { SkeletonPage } from '../../components/Skeleton';
 import type { PendingCodBill } from '../../services/finance.service';
 import { getPendingCod } from '../../services/finance.service';
 import { formatCurrency } from '../../utils/format';
@@ -75,7 +76,7 @@ const VendorPendingCod: React.FC = () => {
       />
 
       {loading ? (
-        <div className="loading-state">Loading pending COD...</div>
+        <SkeletonPage heading={false} cards={1} />
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>
       ) : !bill || bill.items.length === 0 ? (

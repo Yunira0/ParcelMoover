@@ -19,6 +19,7 @@ import { getLocations, searchVendors } from '../../queries/lookups';
 import { isVendorSide } from '../../utils/auth';
 import { downloadExcelTemplate } from '../../utils/excel';
 import './BulkOrderPage.css';
+import { SkeletonForm } from '../../components/Skeleton';
 
 interface VendorOption {
   id: string;
@@ -775,14 +776,14 @@ const BulkOrderPage: React.FC = () => {
             <p>Applied to every order in this batch.</p>
           </div>
           {senderLoading ? (
-            <p className="bop-empty">Loading sender details…</p>
+            <SkeletonForm fields={2} />
           ) : senderError ? (
             <p role="alert" className="bop-error">{senderError}</p>
           ) : actingForVendor ? (
             <div className="bop-sender-fields">
               <div className="bop-field-full">
                 <label>
-                  Vendor <span className="required">*</span>
+                  Vendor
                 </label>
                 <SearchableSelectAsync
                   asyncSearch={handleVendorSearch}

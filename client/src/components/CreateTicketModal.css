@@ -34,11 +34,6 @@
   color: var(--color-text-caption);
 }
 
-.ticket-orderids label .required {
-  color: var(--color-danger-text);
-  margin-left: 2px;
-}
-
 .ticket-orderid-row {
   display: flex;
   gap: var(--space-2);

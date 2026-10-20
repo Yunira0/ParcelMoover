@@ -65,6 +65,7 @@ import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OrderManagement.css';
 import { formatReceiverPhones } from '../utils/format';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Toast } from '../components/toast';
 
 // Mirrors REDIRECT_ALLOWED_STATUSES in order.service.ts — once a parcel is
 // delivered, cancelled or in the RTO chain, its destination is history.
@@ -1061,7 +1062,7 @@ const OrderManagement: React.FC = () => {
       />
 
       {loadError && <p className="order-load-error">{loadError}</p>}
-      {notice && <p className="order-update-notice">{notice}</p>}
+      <Toast tone="success" message={notice} onShown={() => setNotice('')} />
 
       <section className="order-filter-panel">
         <button
@@ -1361,7 +1362,7 @@ const OrderManagement: React.FC = () => {
                 disabled={statusEditSaving}
               />
             </div>
-            {statusEditError && <p className="error-text">{statusEditError}</p>}
+            <Toast tone="error" message={statusEditError} onShown={() => setStatusEditError('')} />
             <div className="modal-footer">
               <Button variant="secondary" onClick={closeStatusEdit} disabled={statusEditSaving}>
                 Cancel

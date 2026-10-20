@@ -5,6 +5,7 @@ import SegmentedTabs from '../../components/SegmentedTabs';
 import DestinationsSettings from './DestinationsSettings';
 import { hasAdminPermission } from '../../utils/auth';
 import './Settings.css';
+import { SkeletonList } from '../../components/Skeleton';
 
 const DeliveryRateSettings = lazy(() => import('../DeliveryRateSettings'));
 
@@ -54,7 +55,7 @@ const Settings: React.FC = () => {
       <div className="settings-body">
         {tab === 'destinations' && <DestinationsSettings />}
         {tab === 'rates' && (
-          <Suspense fallback={<p className="dest-muted">Loading rates…</p>}>
+          <Suspense fallback={<SkeletonList />}>
             <DeliveryRateSettings embedded />
           </Suspense>
         )}

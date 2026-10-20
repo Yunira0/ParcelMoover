@@ -19,6 +19,7 @@ import {
   type AccountNode,
 } from '../../services/accounting.service';
 import { useBackOr } from '../../hooks/useBackOr';
+import { Toast } from '../../components/toast';
 
 /**
  * Masters — the chart of accounts, as a tree you can add to and edit.
@@ -299,7 +300,7 @@ const MastersPage: React.FC = () => {
       loading={loading}
       menu={!formOpen}
     >
-      {notice && <p className="tly-note">{notice}</p>}
+      <Toast tone="success" message={notice} onShown={() => setNotice('')} />
 
       {opening !== null && openingAccount && (
         <form ref={formRef} className="tly-voucher jv" onSubmit={saveOpening}>

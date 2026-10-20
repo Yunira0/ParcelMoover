@@ -30,6 +30,8 @@ import '../OrderManagement.css';
 import '../MerchantOverview.css';
 import './BranchOverview.css';
 import ReceiverPhones from '../../components/ReceiverPhones';
+import { Skeleton } from '../../components/Skeleton';
+import { useToast } from '../../components/toast';
 
 const hubName = (loc: string) => loc.split(' - ')[0];
 
@@ -53,6 +55,7 @@ const BranchOverview: React.FC = () => {
   // Collapsed by default so the branch list doesn't push the order report down.
   const [branchListOpen, setBranchListOpen] = useState(false);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const toast = useToast();
   const pager = useCursorPagination();
 
   const filters: BranchFilters = useMemo(() => ({
@@ -149,7 +152,7 @@ const BranchOverview: React.FC = () => {
     ]);
       await downloadExcel('branch-overview.xlsx', 'Branch Overview', headers, body);
     } catch {
-      setError('Failed to export branch orders.');
+      toast.error('Failed to export branch orders.');
     } finally {
       setExporting(false);
     }
@@ -271,7 +274,7 @@ const BranchOverview: React.FC = () => {
       <div className="order-toolbar">
         <div className="order-toolbar-left">
           <span className="vendor-overview-count">
-            {loading ? 'Loading…' : `${meta?.total ?? rows.length} order${(meta?.total ?? rows.length) === 1 ? '' : 's'}`}
+            {loading ? <Skeleton width={64} height={12} className="skeleton-inline" /> : `${meta?.total ?? rows.length} order${(meta?.total ?? rows.length) === 1 ? '' : 's'}`}
             {selectedIds.size > 0 && <> · {selectedIds.size} selected</>}
           </span>
         </div>

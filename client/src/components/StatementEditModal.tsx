@@ -4,6 +4,7 @@ import ReceiverPhones from './ReceiverPhones';
 import { apiErrorMessage } from '../utils/serverValidation';
 import './Modal.css';
 import './EditSettlementModal.css';
+import { SkeletonList } from './Skeleton';
 import '../pages/SettlementCreatePage.css';
 
 /** One order as the edit window lists it. `amount` is what it contributes to the statement. */
@@ -189,13 +190,12 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
                 (id) => !keptIds.has(id),
               )
             )}
-            <p className="esm-hint">Uncheck an order to remove it from the statement.</p>
           </div>
 
           <div className="esm-section">
             <label className="scp-label">Add other unsettled orders</label>
             {fetchingOrders ? (
-              <div className="scp-empty">Loading orders...</div>
+              <SkeletonList rows={3} />
             ) : addable.length === 0 ? (
               <div className="scp-empty">No other unsettled orders for this {payeeNoun}.</div>
             ) : (

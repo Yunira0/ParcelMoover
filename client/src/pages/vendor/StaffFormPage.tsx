@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Button from '../../components/Button';
-import FormField from '../../components/FormField';
+import FormField, { FieldMarker } from '../../components/FormField';
 import {
   createStaff,
   updateStaff,
@@ -83,7 +83,7 @@ const PasswordInput: React.FC<PasswordInputProps> = ({
     <div className="form-group sfp-password-field">
       <label htmlFor={id}>
         {label}
-        {required && <span className="required">*</span>}
+        <FieldMarker required={required} />
       </label>
       <div className="sfp-password-wrap">
         <input

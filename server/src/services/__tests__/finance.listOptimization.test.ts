@@ -35,6 +35,17 @@ describe("settlement list relation counts", () => {
     expect(args.include).not.toHaveProperty("settlement_items");
     expect(args.orderBy).toEqual([{ created_at: "desc" }, { id: "desc" }]);
   });
+  it("splits a vendor statement's delivery charges into taxable value and VAT for staff only", async () => {
+    vi.mocked(prisma.settlements.findMany).mockResolvedValue([{
+      id: "statement-1", statement_id: "STM-1", _count: { settlement_items: 1 }, riders: null, vendors: null,
+      settlement_date: null, created_at: new Date("2026-10-06T00:00:00Z"), payable_amount: 887, amount: 1000,
+      vendor_credit_applied: 0, vat_rate: 13, status: "pending", paid_amount: 0, payments: null, remark: null, invoice_no: null,
+    }] as any);
+    const staff = await listSettlements({ id: "admin-1", roles: ["super_admin"] }, "vendor", undefined);
+    expect(staff.data[0]).toMatchObject({ taxableAmount: 100, vatAmount: 13 });
+    const vendor = await listSettlements({ id: "user-a", roles: ["vendor"] }, "vendor", undefined);
+    expect(vendor.data[0]).not.toHaveProperty("taxableAmount");
+  });
   it("rejects a vendor without a valid profile before querying finance records", async () => {
     vi.mocked(resolveOwnVendorId).mockResolvedValue(null);
     await expect(listSettlements({ id: "user-a", roles: ["vendor"] }, "vendor", undefined)).rejects.toMatchObject({ statusCode: 403 });

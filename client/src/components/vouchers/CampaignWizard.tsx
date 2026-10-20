@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
 import Button from '../Button';
-import Banner from '../Banner';
+import { Toast } from '../toast';
 import FormField from '../FormField';
 import VoucherTermsFields, { defaultVoucherTerms, deriveHiddenTerms, expiryIso, type VoucherTermsValues } from './VoucherTermsFields';
 import { createCampaign, type VoucherCampaign } from '../../services/voucher.service';
@@ -77,10 +77,6 @@ export default function CampaignWizard({ onClose, onCreated }: CampaignWizardPro
         </div>
         {!created ? (
           <form onSubmit={submit}>
-            <p className="modal-desc">
-              One campaign, many unique single-claim codes — e.g. Dashain 20% off across 100 printed slips.
-              Terms cannot be edited after creation; pause instead.
-            </p>
             <fieldset disabled={saving} className="vouchers-fields">
               <FormField label="Campaign name" required minLength={3} error={fieldErrors.name} value={name} onChange={setName} placeholder="Dashain 2083" />
               <FormField
@@ -91,7 +87,7 @@ export default function CampaignWizard({ onClose, onCreated }: CampaignWizardPro
               <FormField label="How many codes" required type="number" min={1} max={5000} step={1} error={fieldErrors.codeCount} value={codeCount} onChange={setCodeCount} />
               <VoucherTermsFields values={terms} onChange={patch => setTerms({ ...terms, ...patch })} errors={fieldErrors} />
             </fieldset>
-            {error && <Banner tone="danger">{error}</Banner>}
+            <Toast tone="error" message={error} onShown={() => setError('')} />
             <div className="modal-footer">
               <Button variant="secondary" onClick={onClose}>Cancel</Button>
               <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Generating…' : 'Generate codes'}</Button>

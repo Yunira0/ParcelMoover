@@ -30,6 +30,7 @@ import {
 } from '../../services/staff.service';
 import '../../components/Modal.css';
 import './VendorUserManagement.css';
+import { Toast, useToast } from '../../components/toast';
 
 const PERMISSION_ICONS: Record<StaffPermission, LucideIcon> = {
   DASHBOARD_ACCESS: LayoutDashboard,
@@ -71,6 +72,7 @@ const VendorUserManagement: React.FC = () => {
   const [pwdErrors, setPwdErrors] = useState<{ password?: string; confirmPassword?: string }>({});
   const [pwdGeneralError, setPwdGeneralError] = useState('');
   const [pwdSubmitting, setPwdSubmitting] = useState(false);
+  const toast = useToast();
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -150,7 +152,7 @@ const VendorUserManagement: React.FC = () => {
       await setStaffEnabled(member.id, !member.enabled);
       await loadStaff();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to update staff status.');
+      toast.error(err?.response?.data?.message || 'Failed to update staff status.');
     } finally {
       setTogglingId(null);
     }
@@ -331,7 +333,7 @@ const VendorUserManagement: React.FC = () => {
                   error={pwdErrors.confirmPassword}
                 />
               </div>
-              {pwdGeneralError && <p className="error-text">{pwdGeneralError}</p>}
+              <Toast tone="error" message={pwdGeneralError} onShown={() => setPwdGeneralError('')} />
               <div className="modal-footer">
                 <Button type="button" variant="secondary" onClick={closePassword}>Cancel</Button>
                 <Button type="submit" variant="primary" disabled={pwdSubmitting}>

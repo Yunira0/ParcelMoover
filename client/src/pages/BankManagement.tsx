@@ -8,6 +8,8 @@ import Table from '../components/Table';
 import { createBank, getBanks, updateBank, type Bank } from '../services/banks.service';
 import { apiErrorMessage } from '../utils/serverValidation';
 import './BankManagement.css';
+import { useToast } from '../components/toast';
+import { Skeleton } from '../components/Skeleton';
 
 /**
  * The banks vendors can be paid through, with their bank codes. Feeds every
@@ -23,6 +25,7 @@ const BankManagement: React.FC = () => {
   const [editing, setEditing] = useState<{ id: string; code: string } | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const toast = useToast();
 
   // The whole list is already in memory, so paging is a slice of it.
   const totalPages = Math.max(1, Math.ceil(banks.length / pageSize));
@@ -45,7 +48,7 @@ const BankManagement: React.FC = () => {
       onDone();
       setBanks(await getBanks());
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to save bank'));
+      toast.error(apiErrorMessage(err, 'Failed to save bank'));
     } finally {
       setSaving(false);
     }
@@ -159,7 +162,7 @@ const BankManagement: React.FC = () => {
         pageSizeLabel="banks"
         summary={
           loading
-            ? 'Loading…'
+            ? <Skeleton width={140} className="skeleton-inline" />
             : banks.length === 0
               ? 'No banks'
               : `Showing ${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, banks.length)} of ${banks.length} banks`

@@ -129,7 +129,7 @@ const OrderDetailHeader: React.FC<OrderDetailHeaderProps> = ({
               aria-label="Copy tracking ID"
             >
               {copied ? <Check size={13} /> : <Copy size={13} />}
-              {copied && <span className="od-copy-tooltip">Copied!</span>}
+              {copied && <span className="od-copy-tooltip">Copied</span>}
             </button>
           </div>
           <StatusChip tone={STATUS_TONE_MAP[status]} variant="solid">

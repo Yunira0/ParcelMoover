@@ -17,7 +17,7 @@
   align-items: center;
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: 6px;
+  border-radius: var(--border-radius-md);
   display: flex;
   height: 38px;
   overflow: hidden;
@@ -79,7 +79,7 @@
   align-items: center;
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: 6px;
+  border-radius: var(--border-radius-md);
   display: inline-flex;
   height: 38px;
   padding-right: var(--space-2);

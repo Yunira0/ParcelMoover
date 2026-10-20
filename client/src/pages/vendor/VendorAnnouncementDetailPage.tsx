@@ -5,6 +5,7 @@ import { toBsDateLabel } from '../../utils/nepaliDate';
 import { PHONE_DISPLAY, PHONE_TEL } from '../../constants/contact';
 import { getActiveAnnouncement, type Announcement } from '../../services/announcements.service';
 import './VendorAnnouncementDetailPage.css';
+import { SkeletonRegion, SkeletonText } from '../../components/Skeleton';
 
 // Same brand URL printed on shipping labels (see utils/printLabels.ts) — kept
 // in sync there rather than duplicated as a constant, since this is the only
@@ -51,7 +52,7 @@ const VendorAnnouncementDetailPage: React.FC = () => {
         </div>
 
         {loading ? (
-          <p className="vandp-muted">Loading announcement…</p>
+          <SkeletonRegion><SkeletonText lines={5} /></SkeletonRegion>
         ) : error ? (
           <p className="vandp-error">{error}</p>
         ) : !announcement ? (

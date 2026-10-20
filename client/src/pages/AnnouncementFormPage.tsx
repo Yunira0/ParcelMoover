@@ -10,6 +10,7 @@ import {
   updateAnnouncement,
 } from '../services/announcements.service';
 import './AnnouncementFormPage.css';
+import { SkeletonForm } from '../components/Skeleton';
 
 interface AnnouncementFormState {
   title: string;
@@ -107,7 +108,7 @@ const AnnouncementFormPage: React.FC = () => {
   if (loading) {
     return (
       <div className="anfp-page">
-        <p className="anfp-muted">Loading announcement…</p>
+        <SkeletonForm />
       </div>
     );
   }

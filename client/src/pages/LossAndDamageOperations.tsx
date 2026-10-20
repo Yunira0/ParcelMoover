@@ -21,6 +21,7 @@ import { printLabels } from '../utils/printLabels';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './LossAndDamageOperations.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Toast } from '../components/toast';
 
 const PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -223,6 +224,7 @@ const LossAndDamageOperations: React.FC = () => {
 
   return (
     <div className="lossdamage-operations-container">
+      <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
       <PageHeader
         title="Loss and damage"
       />
@@ -248,7 +250,6 @@ const LossAndDamageOperations: React.FC = () => {
         </div>
       </div>
 
-      {actionError && <p className="lossdamage-action-error">{actionError}</p>}
 
       <label className="lossdamage-search">
         <Search size={16} />

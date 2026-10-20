@@ -11,6 +11,8 @@ import {
   type PickupTimeSlot,
 } from '../services/pickupTimeSlots.service';
 import './PickupTimeSlots.css';
+import { useToast } from '../components/toast';
+import { SkeletonList } from '../components/Skeleton';
 
 const toTimeInput = (mins: number) => {
   const h = Math.floor(mins / 60) % 24;
@@ -49,6 +51,7 @@ const PickupTimeSlots: React.FC = () => {
   const [newStart, setNewStart] = useState('09:00');
   const [newEnd, setNewEnd] = useState('12:00');
   const [adding, setAdding] = useState(false);
+  const toast = useToast();
 
   const load = async () => {
     setLoading(true);
@@ -82,7 +85,7 @@ const PickupTimeSlots: React.FC = () => {
         setRows((prev) => prev.map((r) => (r.id === row.id ? toRow(res.data) : r)));
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save that slot.');
+      toast.error(err.response?.data?.message || 'Failed to save that slot.');
     } finally {
       setSavingId(null);
     }
@@ -99,7 +102,7 @@ const PickupTimeSlots: React.FC = () => {
       setDeleteId(null);
     } catch (err: any) {
       setDeleteId(null);
-      setError(err.response?.data?.message || 'Failed to delete that slot.');
+      toast.error(err.response?.data?.message || 'Failed to delete that slot.');
     } finally {
       setSavingId(null);
     }
@@ -119,7 +122,7 @@ const PickupTimeSlots: React.FC = () => {
         setNewEnd('12:00');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to add that slot.');
+      toast.error(err.response?.data?.message || 'Failed to add that slot.');
     } finally {
       setAdding(false);
     }
@@ -134,7 +137,7 @@ const PickupTimeSlots: React.FC = () => {
       {error && <p className="pickup-slots-error">{error}</p>}
 
       {loading ? (
-        <p className="pickup-slots-muted">Loading pickup time slots…</p>
+        <SkeletonList rows={4} />
       ) : (
         <div className="pickup-slots-card">
           <table className="pickup-slots-table">

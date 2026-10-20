@@ -8,7 +8,7 @@ import EditSettlementModal from '../components/EditSettlementModal';
 import RevertSettlementModal from '../components/RevertSettlementModal';
 import AttachSettlementDocumentsCard from '../components/AttachSettlementDocumentsCard';
 import SettlementInvoiceNo from '../components/SettlementInvoiceNo';
-import ConfirmBanner from '../components/ConfirmBanner';
+import { Toast, useToast } from '../components/toast';
 import {
   getSettlementDetail,
   deleteSettlementDocument,
@@ -73,6 +73,7 @@ const DocumentCard: React.FC<{
   const [replacing, setReplacing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState('');
+  const toast = useToast();
   const href = documentUrl(settlementId, document.id);
 
   if (replacing) {
@@ -101,7 +102,7 @@ const DocumentCard: React.FC<{
       await deleteSettlementDocument(settlementId, document.id);
       onChanged();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to remove this file');
+      toast.error(err?.response?.data?.message || 'Failed to remove this file');
       setRemoving(false);
     }
   };
@@ -398,12 +399,6 @@ const SettlementDetailPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!banner) return;
-    const timer = setTimeout(() => setBanner(null), 6000);
-    return () => clearTimeout(timer);
-  }, [banner]);
-
   const canPay = hasAnyRole(['super_admin', 'admin', 'accountant']);
   // Correcting a mistake — gated by the delegable EDIT_SETTLEMENTS permission,
   // same pattern as MANAGE_USERS/SETTINGS_ACCESS. Also covers reverting a
@@ -561,22 +556,22 @@ const SettlementDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {banner && <ConfirmBanner title={banner.title} meta={banner.meta} onDismiss={() => setBanner(null)} />}
+      <Toast tone="success" message={banner && [banner.title, banner.meta].filter(Boolean).join(' · ')} onShown={() => setBanner(null)} />
 
       {loading ? (
         <div className="sdp-bill sdp-skeleton" role="status" aria-label="Loading statement">
           <div className="sdp-bill-head">
-            <span className="sdp-skeleton-bar sdp-skeleton-avatar" />
+            <span className="skeleton sdp-skeleton-bar sdp-skeleton-avatar" />
             <div className="sdp-payee-text">
-              <span className="sdp-skeleton-bar" style={{ width: '160px', height: '18px' }} />
-              <span className="sdp-skeleton-bar" style={{ width: '110px', height: '13px', marginTop: 'var(--space-2)' }} />
+              <span className="skeleton sdp-skeleton-bar" style={{ width: '160px', height: '18px' }} />
+              <span className="skeleton sdp-skeleton-bar" style={{ width: '110px', height: '13px', marginTop: 'var(--space-2)' }} />
             </div>
           </div>
           <div className="sdp-meta">
-            <span className="sdp-skeleton-bar" style={{ width: '100%', height: '14px' }} />
-            <span className="sdp-skeleton-bar" style={{ width: '100%', height: '14px' }} />
+            <span className="skeleton sdp-skeleton-bar" style={{ width: '100%', height: '14px' }} />
+            <span className="skeleton sdp-skeleton-bar" style={{ width: '100%', height: '14px' }} />
           </div>
-          <span className="sdp-skeleton-bar" style={{ width: '100%', height: '160px' }} />
+          <span className="skeleton sdp-skeleton-bar" style={{ width: '100%', height: '160px' }} />
         </div>
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>

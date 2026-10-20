@@ -5,6 +5,7 @@ import Button from './Button';
 import { registerUser, type RegisterUserInput } from '../services/users.service';
 import { getLocations } from '../queries/lookups';
 import { findMasterHub } from '../utils/locations';
+import { Toast } from './toast';
 
 interface AddRiderModalProps {
   isOpen: boolean;
@@ -151,7 +152,7 @@ const AddRiderModal: React.FC<AddRiderModalProps> = ({ isOpen, onClose, onSucces
               error={fieldErrors.joinedAt}
             />
           </div>
-          {generalError && <p className="error-text">{generalError}</p>}
+          <Toast tone="error" message={generalError} onShown={() => setGeneralError('')} />
           <div className="modal-footer">
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={loading}>

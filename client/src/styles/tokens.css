@@ -6,15 +6,17 @@
   --color-border-default: #d1d5db;
   --color-text-base: #ffffff;
   --color-icon-base: #ffffff;
-  --color-background-primary-default: #e24c00;
-  --color-background-primary-invert-default: #ffe0cc;
-  --color-background-primary-subtle: rgb(226 76 0 / 6%);
-  --color-text-primary: #e24c00;
-  --color-icon-primary: #e24c00;
-  --color-border-primary: #e24c00;
-  --color-primary: #e24c00;
-  --color-primary-subtle: rgb(226 76 0 / 6%);
-  --color-primary-hover: #b83d00;
+  /* Brand orange from the logo (public/brand/logo-light-bg.svg). Orange text
+     uses a deeper shade of it so it stays readable on white (4.7:1). */
+  --color-background-primary-default: #f26522;
+  --color-background-primary-invert-default: #fde3d7;
+  --color-background-primary-subtle: rgb(242 101 34 / 6%);
+  --color-text-primary: #c2511b;
+  --color-icon-primary: #f26522;
+  --color-border-primary: #f26522;
+  --color-primary: #f26522;
+  --color-primary-subtle: rgb(242 101 34 / 6%);
+  --color-primary-hover: #d4561c;
   --color-text-caption: #4b5563;
   --color-text-default: #030712;
   --color-background-elevated: #e5e7eb;
@@ -105,7 +107,7 @@
   --shadow-sm: 0 1px 2px rgb(3 7 18 / 6%);
   --shadow-md: 0 4px 6px -1px rgb(3 7 18 / 10%), 0 2px 4px -2px rgb(3 7 18 / 6%);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
-  --shadow-focus: 0 0 0 3px rgb(226 76 0 / 45%);
+  --shadow-focus: 0 0 0 3px rgb(242 101 34 / 45%);
 
   /* ── Overlay ─────────────────────────────────────────────────────────────── */
   --color-overlay: rgba(0, 0, 0, 0.5);

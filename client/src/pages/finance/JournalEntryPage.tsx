@@ -244,7 +244,7 @@ const JournalEntryPage: React.FC = () => {
                       </div>
                       <div className="jv-who">
                         <span className={required && !line.party ? 'jv-who-label jv-who-required' : 'jv-who-label'}>
-                          {required ? 'Who *' : 'Who'}
+                          {required ? 'Who' : 'Who (optional)'}
                         </span>
                         <PartyPicker
                           types={kindsFor(line.accountCode)}

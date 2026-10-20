@@ -21,6 +21,7 @@ import { formatDate } from '../../utils/format';
 import { settlementStatusLabel } from '../../utils/settlementStatus';
 import type { SettlementStatus } from '../../services/finance.service';
 import './VendorCodSettlementRequests.css';
+import { Toast, useToast } from '../../components/toast';
 
 // Asking to be paid out the COD we're holding.
 //
@@ -45,6 +46,7 @@ const VendorCodSettlementRequests: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   const [notice, setNotice] = useState<string | null>(null);
   const [registeredBank, setRegisteredBank] = useState<RegisteredBankDetails | null>(null);
 
@@ -98,7 +100,7 @@ const VendorCodSettlementRequests: React.FC = () => {
     // the vendor to get wrong — only the case where the profile itself is
     // incomplete, which the card already explains.
     if (!registeredBank || !hasRegisteredBank) {
-      setError('There are no bank details on your profile to send a payout to.');
+      toast.error('There are no bank details on your profile to send a payout to.');
       return;
     }
     setSubmitting(true);
@@ -114,7 +116,7 @@ const VendorCodSettlementRequests: React.FC = () => {
       setNotice('Your COD settlement request has been raised.');
       await load();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not raise the request'));
+      toast.error(apiErrorMessage(err, 'Could not raise the request'));
     } finally {
       setSubmitting(false);
     }
@@ -167,7 +169,7 @@ const VendorCodSettlementRequests: React.FC = () => {
       />
 
       {error && <Banner tone="danger">{error}</Banner>}
-      {notice && !error && <Banner tone="success">{notice}</Banner>}
+      <Toast tone="success" message={notice} onShown={() => setNotice(null)} />
 
       {liveRequest ? (
         <Banner tone="info">

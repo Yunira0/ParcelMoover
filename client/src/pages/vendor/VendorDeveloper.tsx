@@ -29,6 +29,8 @@ import { toBsDateTime } from '../../utils/nepaliDate';
 import '../../components/Modal.css';
 import './VendorApiKeys.css';
 import './VendorWebhooks.css';
+import { Toast, useToast } from '../../components/toast';
+import { SkeletonList } from '../../components/Skeleton';
 
 const formatDate = (value: string | null) => (value ? toBsDateTime(value) : '—');
 
@@ -78,6 +80,7 @@ const VendorDeveloper: React.FC = () => {
   // straight from a click.
   const [pendingAction, setPendingAction] = useState<{ title: string; message: string; run: () => Promise<void> } | null>(null);
   const [pendingBusy, setPendingBusy] = useState(false);
+  const toast = useToast();
 
   const loadKeys = useCallback(async () => {
     setKeysLoading(true);
@@ -150,7 +153,7 @@ const VendorDeveloper: React.FC = () => {
       await revokeApiKey(key.id);
       await loadKeys();
     } catch (err: any) {
-      setKeysError(err?.response?.data?.message || 'Failed to revoke API key.');
+      toast.error(err?.response?.data?.message || 'Failed to revoke API key.');
     } finally {
       setRevokingId(null);
     }
@@ -292,7 +295,7 @@ const VendorDeveloper: React.FC = () => {
       await deleteWebhookEndpoint(endpoint.id);
       await loadEndpoints();
     } catch (err: any) {
-      setEndpointsError(err?.response?.data?.message || 'Failed to delete webhook endpoint.');
+      toast.error(err?.response?.data?.message || 'Failed to delete webhook endpoint.');
     } finally {
       setHookBusyId(null);
     }
@@ -305,7 +308,7 @@ const VendorDeveloper: React.FC = () => {
       await updateWebhookEndpoint(endpoint.id, { enabled: !endpoint.enabled });
       await loadEndpoints();
     } catch (err: any) {
-      setEndpointsError(err?.response?.data?.message || 'Failed to update webhook endpoint.');
+      toast.error(err?.response?.data?.message || 'Failed to update webhook endpoint.');
     } finally {
       setHookBusyId(null);
     }
@@ -329,7 +332,7 @@ const VendorDeveloper: React.FC = () => {
       setNewHookUrl(endpoint.url);
       setCreateHookOpen(true);
     } catch (err: any) {
-      setEndpointsError(err?.response?.data?.message || 'Failed to regenerate secret.');
+      toast.error(err?.response?.data?.message || 'Failed to regenerate secret.');
     } finally {
       setHookBusyId(null);
     }
@@ -341,7 +344,7 @@ const VendorDeveloper: React.FC = () => {
     try {
       await sendTestWebhookEvent(endpoint.id);
     } catch (err: any) {
-      setEndpointsError(err?.response?.data?.message || 'Failed to send test event.');
+      toast.error(err?.response?.data?.message || 'Failed to send test event.');
     } finally {
       setHookBusyId(null);
     }
@@ -371,7 +374,7 @@ const VendorDeveloper: React.FC = () => {
       await retryWebhookDelivery(deliveriesFor.id, deliveryId);
       await openDeliveries(deliveriesFor);
     } catch (err: any) {
-      setDeliveriesError(err?.response?.data?.message || 'Failed to retry delivery.');
+      toast.error(err?.response?.data?.message || 'Failed to retry delivery.');
     }
   };
 
@@ -620,16 +623,13 @@ const VendorDeveloper: React.FC = () => {
                     {keyCopied ? 'Copied' : 'Copy'}
                   </Button>
                 </div>
-                {createKeyError && <p className="api-keys-error">{createKeyError}</p>}
+                <Toast tone="error" message={createKeyError} onShown={() => setCreateKeyError('')} />
                 <div className="modal-footer">
                   <Button variant="primary" onClick={closeCreateKey}>Done</Button>
                 </div>
               </>
             ) : (
               <form onSubmit={handleCreateKey}>
-                <p className="modal-desc">
-                  Name the key after the store or system that will use it.
-                </p>
                 <label className="api-key-name-field">
                   <span>Key name</span>
                   <input
@@ -640,7 +640,7 @@ const VendorDeveloper: React.FC = () => {
                     autoFocus
                   />
                 </label>
-                {createKeyError && <p className="api-keys-error">{createKeyError}</p>}
+                <Toast tone="error" message={createKeyError} onShown={() => setCreateKeyError('')} />
                 <div className="modal-footer">
                   <Button variant="secondary" type="button" onClick={closeCreateKey}>Cancel</Button>
                   <Button variant="primary" type="submit" disabled={creatingKey}>
@@ -676,7 +676,7 @@ const VendorDeveloper: React.FC = () => {
                     {hookCopied ? 'Copied' : 'Copy'}
                   </Button>
                 </div>
-                {createHookError && <p className="webhooks-error">{createHookError}</p>}
+                <Toast tone="error" message={createHookError} onShown={() => setCreateHookError('')} />
                 <div className="modal-footer">
                   <Button variant="primary" onClick={closeCreateHook}>Done</Button>
                 </div>
@@ -705,7 +705,7 @@ const VendorDeveloper: React.FC = () => {
                     maxLength={2048}
                   />
                 </label>
-                {createHookError && <p className="webhooks-error">{createHookError}</p>}
+                <Toast tone="error" message={createHookError} onShown={() => setCreateHookError('')} />
                 <div className="modal-footer">
                   <Button variant="secondary" type="button" onClick={closeCreateHook}>Cancel</Button>
                   <Button variant="primary" type="submit" disabled={creatingHook}>
@@ -731,7 +731,7 @@ const VendorDeveloper: React.FC = () => {
             {deliveriesError && <p className="webhooks-error">{deliveriesError}</p>}
 
             {deliveriesLoading ? (
-              <p className="modal-desc">Loading…</p>
+              <SkeletonList rows={3} />
             ) : deliveries.length === 0 ? (
               <p className="modal-desc">No deliveries yet.</p>
             ) : (

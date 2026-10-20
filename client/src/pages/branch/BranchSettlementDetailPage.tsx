@@ -24,7 +24,9 @@ import type { ParcelStatus } from '../../services/orders.service';
 import '../../pages/SettlementCreatePage.css';
 import './BranchSettlement.css';
 import './BranchSettlementDetailPage.css';
+import { SkeletonPage } from '../../components/Skeleton';
 import ReceiverPhones from '../../components/ReceiverPhones';
+import { Toast, useToast } from '../../components/toast';
 
 type PaymentRow = { method: string; amount: string };
 type DetailTab = 'statement' | 'proof';
@@ -51,6 +53,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const toast = useToast();
   const [notice, setNotice] = useState(location.state && typeof location.state === 'object' && 'created' in location.state ? 'Pending statement created. Record payment when the branch remits the COD.' : '');
 
   const activeMethods = useMemo(() => methods.filter((method) => method.isActive), [methods]);
@@ -83,9 +86,9 @@ const BranchSettlementDetailPage: React.FC = () => {
     event.preventDefault();
     if (!detail) return;
     const validPayments = payments.map((payment) => ({ method: payment.method.trim(), amount: Number(payment.amount) || 0 })).filter((payment) => payment.amount > 0 || detail.remainingAmount === 0);
-    if (validPayments.length === 0) { setError('Enter at least one payment amount.'); return; }
-    if (validPayments.some((payment) => !payment.method)) { setError('Choose a payment method for every amount.'); return; }
-    if (enteredAmount > detail.remainingAmount) { setError(`Payment is more than the ${money(detail.remainingAmount)} outstanding balance.`); return; }
+    if (validPayments.length === 0) { toast.error('Enter at least one payment amount.'); return; }
+    if (validPayments.some((payment) => !payment.method)) { toast.error('Choose a payment method for every amount.'); return; }
+    if (enteredAmount > detail.remainingAmount) { toast.error(`Payment is more than the ${money(detail.remainingAmount)} outstanding balance.`); return; }
     setSaving(true);
     setError('');
     try {
@@ -95,13 +98,13 @@ const BranchSettlementDetailPage: React.FC = () => {
       setPayments([{ method: activeMethods[0]?.name ?? '', amount: '' }]);
       await load();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to record branch payment.');
+      toast.error(err?.response?.data?.message || 'Failed to record branch payment.');
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="scp-page"><div className="scp-empty">Loading branch settlement…</div></div>;
+  if (loading) return <div className="scp-page"><SkeletonPage /></div>;
   if (!detail) return <div className="scp-page"><Button variant="secondary" onClick={() => navigate('/branches/settlement')}>Back to Branch COD</Button><Banner tone="danger">{error || 'Branch settlement not found.'}</Banner></div>;
 
   const payable = detail.status === 'pending' || detail.status === 'partially_paid';
@@ -129,7 +132,7 @@ const BranchSettlementDetailPage: React.FC = () => {
     <div className="scp-page bsd-page">
       <button type="button" className="scp-back" onClick={() => navigate('/branches/settlement')}><ArrowLeft size={15} />Branch COD</button>
       <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p><strong>{detail.fromBranch.name}</strong> pays collected COD to master branch <strong>{detail.toBranch.name}</strong>.</p></div><div className="bsd-heading-actions">{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="secondary" size="sm" onClick={() => setShowEdit(true)}><Pencil size={15} /> Edit statement</Button>}{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="danger" size="sm" onClick={() => setShowCancel(true)}><Ban size={15} /> Cancel statement</Button>}<StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div></div>
-      {notice && <Banner tone="success">{notice}</Banner>}
+      <Toast tone="success" message={notice} onShown={() => setNotice('')} />
       {error && <Banner tone="danger">{error}</Banner>}
 
       {hasVerifiedPayment && (

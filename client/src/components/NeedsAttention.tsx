@@ -5,6 +5,7 @@ import type { DashboardSummary, SlaStatusBreach, SlaValleySplit } from '../servi
 import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 import { canOpenPath } from '../utils/auth';
 import './NeedsAttention.css';
+import { SkeletonRegion, SkeletonText } from './Skeleton';
 
 interface NeedsAttentionProps {
   sla: DashboardSummary['sla'];
@@ -128,72 +129,78 @@ const NeedsAttention: React.FC<NeedsAttentionProps> = ({ sla, loading = false })
       details: sla.returnBreaches,
     },
   ];
-  const items = allItems.filter((item) => item.count > 0 && canOpenPath(item.to));
+  const accessible = allItems.filter((item) => canOpenPath(item.to));
+  const items = accessible.filter((item) => item.count > 0);
+  // A viewer only some alerts apply to sees nothing at all when none of theirs
+  // are raised, rather than an "all clear" that hides breaches they can't act on.
+  if (!loading && items.length === 0 && accessible.length < allItems.length) return null;
 
   return (
-    <section className="needs-attention" aria-label="Needs attention">
-      <div className="needs-attention-header">
-        <h3 className="section-title">Needs attention</h3>
-      </div>
+    <div className="dashboard-panel">
+      <section className="needs-attention" aria-label="Needs attention">
+        <div className="needs-attention-header">
+          <h3 className="section-title">Needs attention</h3>
+        </div>
 
-      {loading ? (
-        <p className="needs-attention-empty">Loading…</p>
-      ) : items.length === 0 ? (
-        <p className="needs-attention-clear">
-          <CheckCircle2 size={18} /> Nothing needs attention right now.
-        </p>
-      ) : (
-        <ul className="needs-attention-list">
-          {items.map((item) => (
-            <li key={item.key}>
-              {item.sides && item.sides.length > 0 ? (
-                <div className="needs-attention-item">
-                  <span className={`needs-attention-sev needs-attention-sev-${item.tone}`}>
-                    {item.icon}
-                  </span>
-                  <span className="needs-attention-label">
-                    {item.label}
-                    <span className="needs-attention-sides">
-                      {item.sides.map((side) => (
-                        <Link
-                          key={side.key}
-                          to={item.to}
-                          className="needs-attention-side"
-                          aria-label={`${item.label}, ${side.label}: ${side.count} ${item.hint}`}
-                        >
-                          <span className="needs-attention-side-body">
-                            <span className="needs-attention-side-title">{side.label}</span>
-                            <span className="needs-attention-hint">{side.count.toLocaleString()} {item.hint}</span>
-                            {side.details.length > 0 && (
-                              <span className="needs-attention-detail">{detailText(side.details)}</span>
-                            )}
-                          </span>
-                          <ArrowRight size={16} className="needs-attention-go" />
-                        </Link>
-                      ))}
+        {loading ? (
+          <SkeletonRegion><SkeletonText lines={3} /></SkeletonRegion>
+        ) : items.length === 0 ? (
+          <p className="needs-attention-clear">
+            <CheckCircle2 size={18} /> Nothing needs attention right now.
+          </p>
+        ) : (
+          <ul className="needs-attention-list">
+            {items.map((item) => (
+              <li key={item.key}>
+                {item.sides && item.sides.length > 0 ? (
+                  <div className="needs-attention-item">
+                    <span className={`needs-attention-sev needs-attention-sev-${item.tone}`}>
+                      {item.icon}
                     </span>
-                  </span>
-                </div>
-              ) : (
-                <Link to={item.to} className="needs-attention-item">
-                  <span className={`needs-attention-sev needs-attention-sev-${item.tone}`}>
-                    {item.icon}
-                  </span>
-                  <span className="needs-attention-label">
-                    {item.label}
-                    <span className="needs-attention-hint">{item.count.toLocaleString()} {item.hint}</span>
-                    {item.details && item.details.length > 0 && (
-                      <span className="needs-attention-detail">{detailText(item.details)}</span>
-                    )}
-                  </span>
-                  <ArrowRight size={16} className="needs-attention-go" />
-                </Link>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+                    <span className="needs-attention-label">
+                      {item.label}
+                      <span className="needs-attention-sides">
+                        {item.sides.map((side) => (
+                          <Link
+                            key={side.key}
+                            to={item.to}
+                            className="needs-attention-side"
+                            aria-label={`${item.label}, ${side.label}: ${side.count} ${item.hint}`}
+                          >
+                            <span className="needs-attention-side-body">
+                              <span className="needs-attention-side-title">{side.label}</span>
+                              <span className="needs-attention-hint">{side.count.toLocaleString()} {item.hint}</span>
+                              {side.details.length > 0 && (
+                                <span className="needs-attention-detail">{detailText(side.details)}</span>
+                              )}
+                            </span>
+                            <ArrowRight size={16} className="needs-attention-go" />
+                          </Link>
+                        ))}
+                      </span>
+                    </span>
+                  </div>
+                ) : (
+                  <Link to={item.to} className="needs-attention-item">
+                    <span className={`needs-attention-sev needs-attention-sev-${item.tone}`}>
+                      {item.icon}
+                    </span>
+                    <span className="needs-attention-label">
+                      {item.label}
+                      <span className="needs-attention-hint">{item.count.toLocaleString()} {item.hint}</span>
+                      {item.details && item.details.length > 0 && (
+                        <span className="needs-attention-detail">{detailText(item.details)}</span>
+                      )}
+                    </span>
+                    <ArrowRight size={16} className="needs-attention-go" />
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
   );
 };
 

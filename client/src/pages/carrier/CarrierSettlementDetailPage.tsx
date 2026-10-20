@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Ban, CreditCard, Pencil } from 'lucide-react';
 import Button from '../../components/Button';
 import StatusChip from '../../components/StatusChip';
-import ConfirmBanner from '../../components/ConfirmBanner';
+import { Toast } from '../../components/toast';
 import RevertSettlementModal from '../../components/RevertSettlementModal';
 import SegmentedTabs from '../../components/SegmentedTabs';
 import ReceiverPhones from '../../components/ReceiverPhones';
@@ -19,6 +19,7 @@ import {
 import { isSettlementPayable, settlementStatusLabel, settlementStatusTone } from '../../utils/settlementStatus';
 import { toBsDate, toBsDateTime } from '../../utils/nepaliDate';
 import '../vendor/VendorFinance.css';
+import { SkeletonPage } from '../../components/Skeleton';
 import '../SettlementDetailPage.css';
 
 const money = (value: number) => `Rs. ${value.toLocaleString()}`;
@@ -76,10 +77,10 @@ const CarrierSettlementDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {banner && <ConfirmBanner title={banner.title} meta={banner.meta} onDismiss={() => setBanner(null)} />}
+      <Toast tone="success" message={banner && [banner.title, banner.meta].filter(Boolean).join(' · ')} onShown={() => setBanner(null)} />
 
       {loading ? (
-        <div className="loading-state">Loading statement…</div>
+        <SkeletonPage heading={false} />
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>
       ) : detail ? (

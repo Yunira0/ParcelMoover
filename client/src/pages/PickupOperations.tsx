@@ -34,6 +34,7 @@ import { formatCurrency } from '../utils/format';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './PickupOperations.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Toast } from '../components/toast';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
 
@@ -791,6 +792,7 @@ const PickupOperations: React.FC = () => {
 
   return (
     <div className="pickup-operations-container">
+      <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
       <PageHeader title="Pickup Operations" />
 
       <SegmentedTabs
@@ -873,7 +875,7 @@ const PickupOperations: React.FC = () => {
                 {isReasonRequiredAction && (
                   <div className="pickup-reason-field">
                     <label className="pickup-reason-label">
-                      Reason <span className="pickup-reason-required">*</span>
+                      Reason
                     </label>
                     <textarea
                       rows={2}
@@ -885,7 +887,6 @@ const PickupOperations: React.FC = () => {
                     />
                   </div>
                 )}
-                {actionError && <p className="pickup-action-error">{actionError}</p>}
                 <div className="pickup-status-submit-row">
                   <Button variant="secondary" className="pickup-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); setReasonRemarks(''); }}>
                     Cancel

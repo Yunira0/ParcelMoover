@@ -21,7 +21,7 @@
 
 .vendor-user-search:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 12%);
 }
 
 .vendor-user-search input {
@@ -116,7 +116,7 @@
 .staff-switch {
   background: var(--color-border-default);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--border-radius-full);
   cursor: pointer;
   flex-shrink: 0;
   height: 22px;

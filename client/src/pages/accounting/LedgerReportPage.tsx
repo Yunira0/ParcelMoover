@@ -14,6 +14,7 @@ import { hasAdminPermission } from '../../utils/auth';
 import { drCr, formatAmount } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
 import { useBackOr } from '../../hooks/useBackOr';
+import { SkeletonRows } from '../../components/Skeleton';
 
 // The rider and vendor ledgers, as TallyPrime's Group Summary: one row per
 // party with what they were raised for, what was settled, and the closing
@@ -152,7 +153,7 @@ const LedgerReportPage: React.FC<{ view: PartyView }> = ({ view }) => {
               </tr>
             </thead>
             <tbody>
-              {loading && <tr className="jv-empty"><td colSpan={4}>Loading balances…</td></tr>}
+              {loading && <SkeletonRows columns={4} />}
               {!loading && visible.length === 0 && (
                 <tr className="jv-empty"><td colSpan={4}>No {view} has any ledger activity yet.</td></tr>
               )}

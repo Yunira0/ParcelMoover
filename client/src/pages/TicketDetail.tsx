@@ -19,6 +19,7 @@ import { markNotificationsReadByTrackingId } from '../services/notifications.ser
 import './RemarkDetail.css';
 import { toBsDate } from '../utils/nepaliDate';
 import './TicketDetail.css';
+import { Toast } from '../components/toast';
 
 const STATUS_TONE: Record<TicketStatus, StatusChipTone> = {
   pending: 'warning',
@@ -39,7 +40,7 @@ const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('').
 
 const getAvatarColor = (name: string) => {
   const lower = name.toLowerCase();
-  if (lower.includes('admin') || lower.includes('super')) return '#e24c00';
+  if (lower.includes('admin') || lower.includes('super')) return 'var(--color-primary)';
   if (lower.includes('vendor') || lower.includes('branch')) return '#0f766e';
   return '#64748b';
 };
@@ -348,7 +349,7 @@ const TicketDetail: React.FC = () => {
                   <Send size={18} />
                 </button>
               </div>
-              {replyError && <p className="rd-bottom-error">{replyError}</p>}
+              <Toast tone="error" message={replyError} onShown={() => setReplyError('')} />
                 </div>
               </div>
             </div>

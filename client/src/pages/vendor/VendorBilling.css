@@ -19,8 +19,8 @@
 }
 
 .billing-banner-blocked {
-  background-color: var(--color-danger-surface, #fdeceb);
-  border-color: var(--color-danger-border, #f0a9a4);
+  background-color: var(--color-danger-surface);
+  border-color: var(--color-danger-border);
   color: var(--color-danger-text);
 }
 
@@ -243,7 +243,7 @@
 
 .billing-pill {
   align-items: center;
-  border-radius: 999px;
+  border-radius: var(--border-radius-full);
   display: inline-flex;
   font-size: var(--font-size-xs);
   gap: var(--space-1);
@@ -257,12 +257,12 @@
 }
 
 .billing-pill-verified {
-  background-color: var(--color-success-surface, #e8f5ec);
+  background-color: var(--color-success-surface);
   color: var(--color-success-default);
 }
 
 .billing-pill-rejected {
-  background-color: var(--color-danger-surface, #fdeceb);
+  background-color: var(--color-danger-surface);
   color: var(--color-danger-text);
 }
 
@@ -293,14 +293,6 @@
 }
 
 .billing-skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--color-background-canvas) 25%,
-    var(--color-background-elevated) 50%,
-    var(--color-background-canvas) 75%
-  );
-  background-size: 200% 100%;
-  animation: billing-shimmer 1.5s infinite ease-in-out;
   border-radius: var(--border-radius-default);
 }
 
@@ -316,18 +308,9 @@
   height: 180px;
 }
 
-@keyframes billing-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .billing-skeleton {
-    animation: none;
   }
 
   .credit-usage-fill {

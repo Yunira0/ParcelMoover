@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Truck, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
-import FormField from '../components/FormField';
+import FormField, { FieldMarker } from '../components/FormField';
 import DocLink from '../components/DocLink';
 import { registerUser, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
 import { getLocations } from '../queries/lookups';
@@ -104,7 +104,7 @@ const FileInput: React.FC<{
   return (
     <div className="rfp-file-field">
       <label className="rfp-file-label">
-        {label}{required && <span className="rfp-required"> *</span>}
+        {label}<FieldMarker required={required} />
       </label>
       {file ? (
         <div className="rfp-file-chip">
@@ -382,7 +382,7 @@ const RiderFormPage: React.FC = () => {
           <div className="rfp-success-icon-wrap">
             <CheckCircle size={48} />
           </div>
-          <h3>Rider Created Successfully!</h3>
+          <h3>Rider created</h3>
           <p>Rider <strong>{form.fullName}</strong> has been created.</p>
           <p className="rfp-success-hint">Login credentials will be sent to <strong>{form.email}</strong></p>
           <div className="rfp-success-actions">
@@ -503,11 +503,10 @@ const RiderFormPage: React.FC = () => {
               <div className="rfp-fields">
                 <FormField
                   label="Service Branch"
-                  type="select"
+                  type="choice"
                   required
                   value={form.serviceBranch}
                   onChange={set('serviceBranch')}
-                  placeholder="Select hub"
                   options={hubs}
                   disabled={hubFieldDisabled}
                 />
@@ -686,7 +685,7 @@ const RiderFormPage: React.FC = () => {
                   </>
                 )}
               </div>
-              {!isEdit && <p className="rfp-hint">Minimum 8 characters. Rider can change password after logging in.</p>}
+              {!isEdit && <p className="rfp-hint">Minimum 8 characters.</p>}
             </section>
           </div>
         </div>

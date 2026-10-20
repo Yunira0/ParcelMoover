@@ -67,7 +67,7 @@
   margin: 0;
   max-width: 42ch;
   color: var(--color-text-default);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .track-loading {
@@ -80,14 +80,6 @@
 .track-skeleton-line,
 .track-skeleton-block {
   border-radius: var(--border-radius-default);
-  background: linear-gradient(
-    90deg,
-    var(--color-background-elevated) 25%,
-    var(--color-background-canvas) 50%,
-    var(--color-background-elevated) 75%
-  );
-  background-size: 200% 100%;
-  animation: track-shimmer 1.4s ease-in-out infinite;
 }
 
 .track-skeleton-line {
@@ -107,19 +99,10 @@
   margin-top: var(--space-2);
 }
 
-@keyframes track-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .track-skeleton-line,
   .track-skeleton-block {
-    animation: none;
   }
 }
 
@@ -148,7 +131,7 @@
   gap: var(--space-2);
   font-family: ui-monospace, Consolas, monospace;
   font-size: var(--font-size-md);
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-default);
   letter-spacing: 0.01em;
 }
@@ -174,7 +157,7 @@
 
 .track-result-place-label {
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-caption);
@@ -182,7 +165,7 @@
 
 .track-result-place-value {
   font-size: var(--font-size-lg);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   overflow-wrap: break-word;
 }
@@ -204,7 +187,7 @@
 
 .track-result-meta dt {
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-caption);
@@ -214,7 +197,7 @@
 .track-result-meta dd {
   margin: 0;
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-default);
 }
 
@@ -277,7 +260,7 @@
 
 .track-timeline-status {
   font-size: var(--font-size-sm);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
 }
 

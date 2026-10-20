@@ -8,6 +8,7 @@ import { listBranches } from '../queries/lookups';
 import { createTransitManifest, type TransitManifest } from '../services/transitManifests.service';
 import { apiErrorMessage } from '../utils/serverValidation';
 import { getCurrentUserLocationId } from '../utils/auth';
+import { Toast } from './toast';
 
 interface CreateTransitManifestModalProps {
   isOpen: boolean;
@@ -115,7 +116,7 @@ const CreateTransitManifestModal: React.FC<CreateTransitManifestModalProps> = ({
             onChange={setRemarks}
             placeholder="Optional note"
           />
-          {error && <p className="error-text">{error}</p>}
+          <Toast tone="error" message={error} onShown={() => setError('')} />
           <div className="modal-footer">
             <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>
               Cancel

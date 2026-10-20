@@ -11,6 +11,8 @@ import { ORDER_STATUS_LABELS, getOrderStatusTone, STATUS_TIMELINE_HEADERS, statu
 import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
 import './ReportsPage.css';
+import { useToast } from '../components/toast';
+import { Skeleton } from '../components/Skeleton';
 
 type ReportKey = 'pickup' | 'dispatch' | 'transit' | 'return';
 type Bucket = 'pending' | 'completed';
@@ -79,6 +81,7 @@ const ReportsPage: React.FC = () => {
   const viaTransit = REPORTS[report].viaTransit;
   // The table shows a capped first page; the count is the server's full total.
   const [total, setTotal] = useState(0);
+  const toast = useToast();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -186,7 +189,7 @@ const ReportsPage: React.FC = () => {
         rows,
       );
     } catch {
-      setError('Could not export this report. Please try again.');
+      toast.error('Could not export this report. Please try again.');
     } finally {
       setDownloading(false);
     }
@@ -223,7 +226,7 @@ const ReportsPage: React.FC = () => {
 
       <p className="reports-count">
         {loading
-          ? 'Loading…'
+          ? <Skeleton width={160} height={12} className="skeleton-inline" />
           : `${total.toLocaleString()} ${bucket} ${REPORTS[report].label.toLowerCase()} order${total === 1 ? '' : 's'}${
               total > orders.length ? ` (showing first ${orders.length.toLocaleString()} — download for all)` : ''
             }`}

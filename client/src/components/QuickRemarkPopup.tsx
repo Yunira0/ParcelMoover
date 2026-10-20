@@ -4,6 +4,7 @@ import Button from './Button';
 import { getOrderByTrackingId, addOrderRemark, type OrderRemark } from '../services/orders.service';
 import { toBsDate, toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './QuickRemarkPopup.css';
+import { Toast } from './toast';
 
 interface QuickRemarkPopupProps {
   orderId: string;
@@ -16,7 +17,7 @@ const getInitials = (name: string) =>
 
 const getAvatarColor = (name: string) => {
   const lower = name.toLowerCase();
-  if (lower.includes('admin') || lower.includes('super')) return '#e24c00';
+  if (lower.includes('admin') || lower.includes('super')) return 'var(--color-primary)';
   if (lower.includes('vendor') || lower.includes('branch')) return '#0f766e';
   if (lower.includes('rider')) return '#16a34a';
   return '#64748b';
@@ -215,8 +216,8 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
         <div className="qr-thread">
           {loading && (
             <div className="qr-loading">
-              <div className="qr-skeleton" />
-              <div className="qr-skeleton qr-skeleton-sm" />
+              <div className="skeleton qr-skeleton" />
+              <div className="skeleton qr-skeleton qr-skeleton-sm" />
             </div>
           )}
 
@@ -291,7 +292,7 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
                   {inlineSubmitting ? 'Posting...' : 'Reply'}
                 </Button>
               </div>
-              {inlineError && <p className="qr-error">{inlineError}</p>}
+              <Toast tone="error" message={inlineError} onShown={() => setInlineError('')} />
             </div>
           ) : (
             <div className="qr-main-compose">
@@ -322,7 +323,7 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
                   {replySubmitting ? 'Posting...' : 'Reply'}
                 </Button>
               </div>
-              {replyError && <p className="qr-error">{replyError}</p>}
+              <Toast tone="error" message={replyError} onShown={() => setReplyError('')} />
             </div>
           )}
         </div>

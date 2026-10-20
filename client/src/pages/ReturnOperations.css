@@ -41,7 +41,7 @@
 
 .return-search:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 12%);
 }
 
 .return-search input {
@@ -302,7 +302,7 @@
   border: 0;
   color: var(--color-text-caption);
   cursor: pointer;
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   height: 24px;
   line-height: 1;
   padding: 0;
@@ -354,7 +354,7 @@
 
 .return-status-option:focus-visible {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 18%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 18%);
   outline: none;
 }
 

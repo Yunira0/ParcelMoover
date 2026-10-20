@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, ExternalLink, FileText, Search, X } from 'lucide-react';
+import { ExternalLink, FileText, Search, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import CreditUsageBar from '../components/CreditUsageBar';
@@ -30,6 +30,7 @@ import { useSessionState } from '../hooks/useSessionState';
 import './vendor/VendorFinance.css';
 import './vendor/VendorBilling.css';
 import './BillingManagement.css';
+import { Toast, useToast } from '../components/toast';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
 const uploadUrl = (path: string) =>
@@ -111,6 +112,7 @@ const BillingManagement: React.FC = () => {
   const [savingNote, setSavingNote] = useState(false);
   const [noteMessage, setNoteMessage] = useState('');
   const [noteError, setNoteError] = useState('');
+  const toast = useToast();
 
   const loadClaims = useCallback(async () => {
     setClaimsLoading(true);
@@ -181,7 +183,7 @@ const BillingManagement: React.FC = () => {
       // A verification changes the vendor's balance, so any loaded report is stale.
       if (balances.length > 0) await loadBalances();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to review payment.'));
+      toast.error(apiErrorMessage(err, 'Failed to review payment.'));
     } finally {
       setReviewing(null);
     }
@@ -544,12 +546,8 @@ const BillingManagement: React.FC = () => {
                   disabled={!isSuperAdmin || savingSettings}
                 />
               </label>
-              {settingsError && <p className="vendor-finance-error">{settingsError}</p>}
-              {settingsMessage && (
-                <p className="billing-success">
-                  <CheckCircle2 size={14} /> {settingsMessage}
-                </p>
-              )}
+              <Toast tone="error" message={settingsError} onShown={() => setSettingsError('')} />
+              <Toast tone="success" message={settingsMessage} onShown={() => setSettingsMessage('')} />
               {isSuperAdmin ? (
                 <Button type="submit" variant="primary" disabled={savingSettings}>
                   {savingSettings ? 'Saving...' : 'Save thresholds'}
@@ -562,7 +560,6 @@ const BillingManagement: React.FC = () => {
 
           <section className="billing-card">
             <h3>Payment QR</h3>
-            <p className="billing-hint">Shown to every vendor on their billing page.</p>
 
             {settings?.paymentQrPath ? (
               <img className="billing-qr" src={paymentQrUrl(settings.paymentQrPath)} alt="Current payment QR" />
@@ -580,12 +577,8 @@ const BillingManagement: React.FC = () => {
               onChange={(e) => setNote(e.target.value)}
               disabled={!isSuperAdmin || savingNote}
             />
-            {noteError && <p className="vendor-finance-error">{noteError}</p>}
-            {noteMessage && (
-              <p className="billing-success">
-                <CheckCircle2 size={14} /> {noteMessage}
-              </p>
-            )}
+            <Toast tone="error" message={noteError} onShown={() => setNoteError('')} />
+            <Toast tone="success" message={noteMessage} onShown={() => setNoteMessage('')} />
             {isSuperAdmin && (
               <Button
                 variant="secondary"
@@ -608,12 +601,8 @@ const BillingManagement: React.FC = () => {
                     setQrMessage('');
                   }}
                 />
-                {qrError && <p className="vendor-finance-error">{qrError}</p>}
-                {qrMessage && (
-                  <p className="billing-success">
-                    <CheckCircle2 size={14} /> {qrMessage}
-                  </p>
-                )}
+                <Toast tone="error" message={qrError} onShown={() => setQrError('')} />
+                <Toast tone="success" message={qrMessage} onShown={() => setQrMessage('')} />
                 {qrFile && (
                   <div className="billing-review-actions">
                     <Button variant="secondary" onClick={() => setQrFile(null)} disabled={qrUploading}>
@@ -675,7 +664,7 @@ const BillingManagement: React.FC = () => {
                 hint="Only this vendor changes."
               />
             </div>
-            {creditError && <p role="alert" className="error-text">{creditError}</p>}
+            <Toast tone="error" message={creditError} onShown={() => setCreditError('')} />
             <div className="modal-footer">
               <Button variant="secondary" onClick={closeCreditEditor} disabled={creditSaving}>
                 Cancel

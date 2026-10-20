@@ -25,6 +25,7 @@ import { hasAdminPermission } from '../../utils/auth';
 import { formatAmount } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
 import { useBackOr } from '../../hooks/useBackOr';
+import { SkeletonRows } from '../../components/Skeleton';
 
 // The cash and bank registers — Tally's Payment and Receipt Registers, one
 // for each of cash and bank. Line-level, not entry-level: an entry that pays
@@ -251,7 +252,7 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({ scope, direction = 
               </tr>
             </thead>
             <tbody>
-              {loading && <tr className="jv-empty"><td colSpan={cols}>Loading…</td></tr>}
+              {loading && <SkeletonRows columns={cols} />}
               {!loading && rows.length === 0 && (
                 <tr className="jv-empty">
                   <td colSpan={cols}>

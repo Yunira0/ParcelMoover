@@ -15,6 +15,7 @@ import {
 } from '../services/kyc.service';
 import { toBsDate } from '../utils/nepaliDate';
 import './KycManagement.css';
+import { Toast } from '../components/toast';
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
@@ -162,6 +163,7 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
 
   return (
     <div className="kyc-management">
+      <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
       {!embedded && (
         <PageHeader
           title="KYC Applications"
@@ -282,7 +284,6 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
                 <div className="kyc-action-form">
                   <label>Internal Notes (optional)</label>
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any notes for internal reference…" rows={3} />
-                  {actionError && <p className="kyc-action-error">{actionError}</p>}
                   <div className="kyc-action-buttons">
                     <Button variant="secondary" onClick={() => setActionModal(null)} disabled={submitting}>Cancel</Button>
                     <Button variant="primary" onClick={handleApprove} disabled={submitting}>
@@ -294,11 +295,10 @@ const KycManagement: React.FC<KycManagementProps> = ({ embedded = false }) => {
 
               {actionModal === 'reject' && (
                 <div className="kyc-action-form">
-                  <label>Rejection Reason <span className="required">*</span></label>
+                  <label>Rejection Reason</label>
                   <textarea value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} placeholder="Explain why this application is being rejected…" rows={3} required />
                   <label>Internal Notes (optional)</label>
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any notes for internal reference…" rows={2} />
-                  {actionError && <p className="kyc-action-error">{actionError}</p>}
                   <div className="kyc-action-buttons">
                     <Button variant="secondary" onClick={() => setActionModal(null)} disabled={submitting}>Cancel</Button>
                     <Button variant="danger" onClick={handleReject} disabled={submitting}>

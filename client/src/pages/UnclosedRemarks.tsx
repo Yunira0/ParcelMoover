@@ -6,6 +6,7 @@ import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import StatusChip, { type StatusChipTone } from '../components/StatusChip';
+import SegmentedTabs, { type SegmentedTabOption } from '../components/SegmentedTabs';
 import {
   getRemarks,
   setRemarkStatus,
@@ -15,6 +16,7 @@ import {
   type RemarkStatus,
 } from '../services/remarks.service';
 import { toBsDate } from '../utils/nepaliDate';
+import { isVendorSide } from '../utils/auth';
 import './UnclosedRemarks.css';
 
 const PAGE_SIZE = 10;
@@ -26,27 +28,25 @@ const STATUS_TONE: Record<RemarkStatus, StatusChipTone> = {
   closed: 'success',
 };
 
-// Vendor- and rider-raised comments get their own routes rather than sharing one
-// list, so the two queues can be worked independently. Everything below the
-// heading is identical, so the page takes the group as a prop.
-const AUTHOR_COPY: Record<RemarkAuthorGroup, { title: string; subtitle: string }> = {
-  vendor: {
-    title: 'Unclosed Remarks',
-    subtitle: 'Open and pending remarks raised by vendors that need attention.',
-  },
-  rider: {
-    title: 'Rider Remarks',
-    subtitle: 'Open and pending remarks raised by riders that need attention.',
-  },
-};
+type AuthorTab = 'all' | RemarkAuthorGroup;
 
-interface UnclosedRemarksProps {
-  author: RemarkAuthorGroup;
-}
+const AUTHOR_TABS: SegmentedTabOption<AuthorTab>[] = [
+  { value: 'all', label: 'All' },
+  { value: 'vendor', label: 'Vendor' },
+  { value: 'rider', label: 'Rider' },
+];
 
-const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
+const parseAuthorTab = (value: string | null): AuthorTab =>
+  value === 'vendor' || value === 'rider' ? value : 'all';
+
+// One queue for vendor- and rider-raised comments. Staff can narrow it by
+// author; vendors only ever work their own comments.
+const UnclosedRemarks: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const vendorSide = isVendorSide();
+  const [authorTab, setAuthorTab] = useState<AuthorTab>(() => parseAuthorTab(searchParams.get('from')));
+  const author: RemarkAuthorGroup | undefined = vendorSide ? 'vendor' : authorTab === 'all' ? undefined : authorTab;
   const [remarks, setRemarks] = useState<Remark[]>([]);
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   // Search hits the server (the list is paginated there), so debounce the input
@@ -118,13 +118,14 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
     }
   }, [loadRemarks]);
 
-  // Keep search bookmarkable - mirror into the URL (replacing history, not
-  // pushing, so the back button doesn't step through every keystroke).
+  // Keep search and the author tab bookmarkable - mirror into the URL (replacing
+  // history, not pushing, so the back button doesn't step through every keystroke).
   useEffect(() => {
     const next = new URLSearchParams();
     if (searchQuery) next.set('search', searchQuery);
+    if (!vendorSide && authorTab !== 'all') next.set('from', authorTab);
     setSearchParams(next, { replace: true });
-  }, [searchQuery, setSearchParams]);
+  }, [searchQuery, authorTab, vendorSide, setSearchParams]);
 
   const visible = remarks;
 
@@ -192,7 +193,17 @@ const UnclosedRemarks: React.FC<UnclosedRemarksProps> = ({ author }) => {
 
   return (
     <div className="ucr-container">
-      <PageHeader title={AUTHOR_COPY[author].title} />
+      <PageHeader title="Unclosed Remarks" />
+
+      {!vendorSide && (
+        <SegmentedTabs
+          options={AUTHOR_TABS}
+          value={authorTab}
+          onChange={(tab) => { setAuthorTab(tab); setPage(1); }}
+          ariaLabel="Filter remarks by author"
+          fullWidth={false}
+        />
+      )}
 
       <div className="ucr-stats">
         <div className="ucr-stat-chip">

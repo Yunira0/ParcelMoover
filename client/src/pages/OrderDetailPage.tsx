@@ -27,6 +27,7 @@ import { printLabels } from '../utils/printLabels';
 import { queryKeys } from '../queries/keys';
 import { orderDetailQuery } from '../queries/orders';
 import './OrderDetailPage.css';
+import { Toast } from '../components/toast';
 
 // Statuses whose transition needs structured extra data (a rider pick, COD
 // amounts, a destination hub) - those keep their dedicated ops flows and are
@@ -221,9 +222,9 @@ const OrderDetailPage: React.FC = () => {
       <div className="od-page">
         <div className="od-container">
           <div className="od-loading">
-            <div className="od-skeleton od-skeleton-header" />
-            <div className="od-skeleton od-skeleton-card" />
-            <div className="od-skeleton od-skeleton-timeline" />
+            <div className="skeleton od-skeleton od-skeleton-header" />
+            <div className="skeleton od-skeleton od-skeleton-card" />
+            <div className="skeleton od-skeleton od-skeleton-timeline" />
           </div>
         </div>
       </div>
@@ -322,7 +323,7 @@ const OrderDetailPage: React.FC = () => {
                 {overrideSaving ? 'Applying...' : 'Apply'}
               </button>
             </div>
-            {overrideError && <p className="od-override-error">{overrideError}</p>}
+            <Toast tone="error" message={overrideError} onShown={() => setOverrideError('')} />
           </div>
         )}
 

@@ -17,6 +17,7 @@ import { getAdmins, updateAdminPermissions, updateAdminRole, updateUserStatus, A
 import { getCurrentUserRoles, hasAdminPermission } from '../utils/auth';
 import '../components/Modal.css';
 import './AdminManagement.css';
+import { Toast } from '../components/toast';
 
 interface AdminUser {
   id: string;
@@ -235,7 +236,7 @@ const AdminManagement: React.FC = () => {
   return (
     <div className="admin-management-container">
       <PageHeader
-        title="ADMIN MANAGEMENT"
+        title="Admin Management"
         {...(canManageAdmins
           ? {
               actionLabel: 'Add new',
@@ -270,7 +271,7 @@ const AdminManagement: React.FC = () => {
         </div>
       </div>
 
-      {statusError && <p className="admin-status-error">{statusError}</p>}
+      <Toast tone="error" message={statusError} onShown={() => setStatusError('')} />
       {loadError && (
         <Banner tone="danger">
           {loadError}{' '}
@@ -278,25 +279,21 @@ const AdminManagement: React.FC = () => {
         </Banner>
       )}
 
-      {loading ? (
-        <div className="loading-state">Loading admins...</div>
-      ) : (
-        <>
-          <Table columns={columns} data={admins} selectable={false} />
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            ariaLabel="Admin management pagination"
-            summary={`${total} admin${total !== 1 ? 's' : ''} total`}
-            pageSize={pageSizeChoice}
-            pageSizeLabel="admins"
-            onPageSizeChange={(size) => {
-              setPageSizeChoice(size);
-              setPage(1);
-            }}
-          />
-        </>
+      <Table columns={columns} data={admins} selectable={false} loading={loading} />
+      {(!loading || total > 0) && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          ariaLabel="Admin management pagination"
+          summary={`${total} admin${total !== 1 ? 's' : ''} total`}
+          pageSize={pageSizeChoice}
+          pageSizeLabel="admins"
+          onPageSizeChange={(size) => {
+            setPageSizeChoice(size);
+            setPage(1);
+          }}
+        />
       )}
 
       <UserDocumentsModal
@@ -374,7 +371,7 @@ const AdminManagement: React.FC = () => {
               )}
             </div>
 
-            {permError && <p className="admin-permission-error">{permError}</p>}
+            <Toast tone="error" message={permError} onShown={() => setPermError('')} />
 
             <div className="admin-permission-actions">
               <Button variant="secondary" onClick={() => setPermAdmin(null)} disabled={permSaving}>

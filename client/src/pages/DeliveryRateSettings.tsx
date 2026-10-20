@@ -13,6 +13,8 @@ import { listDeliveryRates, type DeliveryRate } from '../services/deliveryRates.
 import { getCurrentUserLocationId, getCurrentUserRoles, hasAdminPermission, isBranchWorkspaceUser } from '../utils/auth';
 import { apiErrorMessage } from '../utils/serverValidation';
 import './DeliveryRateSettings.css';
+import { SkeletonList } from '../components/Skeleton';
+import { FieldMarkerContext } from '../components/fieldMarkerContext';
 
 const DestinationsImport = lazy(() => import('./settings/DestinationsImport'));
 
@@ -151,7 +153,7 @@ const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
   };
 
   const controls = (
-    <>
+    <FieldMarkerContext.Provider value="none">
       <FormField
         label="Origin"
         type="searchable-select"
@@ -175,13 +177,13 @@ const DeliveryRateSettings: React.FC<Props> = ({ embedded = false }) => {
           {showImport ? <><X size={16} /> Close import</> : <><Upload size={16} /> Import</>}
         </Button>
       )}
-    </>
+    </FieldMarkerContext.Provider>
   );
 
   // Each origin imports its own shape: head office's per-destination rates, or
   // this branch's origin → destination route rows.
   const importPanel = !showImport ? undefined : isHeadOfficeView ? (
-    <Suspense fallback={<p className="rates-page-muted">Loading import…</p>}>
+    <Suspense fallback={<SkeletonList />}>
       <DestinationsImport />
     </Suspense>
   ) : (

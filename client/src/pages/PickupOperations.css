@@ -286,7 +286,7 @@
   border: 0;
   color: var(--color-text-caption);
   cursor: pointer;
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   height: 24px;
   line-height: 1;
   padding: 0;
@@ -338,7 +338,7 @@
 
 .pickup-status-option:focus-visible {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 18%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 18%);
   outline: none;
 }
 
@@ -385,10 +385,6 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-default);
-}
-
-.pickup-reason-required {
-  color: var(--color-danger-text);
 }
 
 .pickup-reason-textarea {

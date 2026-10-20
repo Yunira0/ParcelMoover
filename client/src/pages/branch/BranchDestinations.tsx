@@ -9,6 +9,7 @@ import StatusChip from '../../components/StatusChip';
 import { listManagedLocations, type Destination } from '../../services/locations.service';
 import '../settings/Settings.css';
 import '../settings/DestinationsSettings.css';
+import { SkeletonList } from '../../components/Skeleton';
 
 const ZONE_LABELS: Record<string, string> = {
   major_cities: 'Major cities',
@@ -74,7 +75,7 @@ const DestinationsList: React.FC = () => {
         {error && <p className="dest-error">{error}</p>}
 
         {loading ? (
-          <p className="dest-muted">Loading destinations…</p>
+          <SkeletonList />
         ) : filtered.length === 0 ? (
           <p className="dest-muted">
             {searchQuery ? `No destinations match "${searchQuery}".` : 'No destinations yet.'}
@@ -160,7 +161,7 @@ const BranchDestinations: React.FC = () => {
         {tab === 'destinations' ? (
           <DestinationsList />
         ) : (
-          <Suspense fallback={<p className="dest-muted">Loading rates…</p>}>
+          <Suspense fallback={<SkeletonList />}>
             <DeliveryRateSettings embedded />
           </Suspense>
         )}

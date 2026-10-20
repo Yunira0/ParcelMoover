@@ -3,6 +3,7 @@ import './Modal.css';
 import FormField from './FormField';
 import Button from './Button';
 import { registerUser, type RegisterUserInput } from '../services/users.service';
+import { Toast } from './toast';
 
 interface AddAdminModalProps {
   isOpen: boolean;
@@ -115,7 +116,7 @@ const AddAdminModal: React.FC<AddAdminModalProps> = ({ isOpen, onClose, onSucces
               error={fieldErrors.joinedAt}
             />
           </div>
-          {generalError && <p className="error-text">{generalError}</p>}
+          <Toast tone="error" message={generalError} onShown={() => setGeneralError('')} />
           <div className="modal-footer">
             <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={loading}>

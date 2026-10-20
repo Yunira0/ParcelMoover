@@ -136,8 +136,6 @@
   color: var(--color-text-caption);
   font-size: var(--font-size-xxs);
   font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .tly-key {
@@ -665,8 +663,6 @@
   margin: 0 0 var(--space-3);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-bold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--color-text-default);
 }
 
