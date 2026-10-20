@@ -339,7 +339,7 @@ export default function Vouchers() {
           <Button size="sm" variant="secondary" onClick={() => setRevision(v => v + 1)}>Retry</Button>
         </Banner>
       )}
-      {loading && <div className="billing-skeleton billing-skeleton-table" aria-busy="true" aria-label="Loading vouchers" />}
+      {loading && <div className="skeleton billing-skeleton billing-skeleton-table" aria-busy="true" aria-label="Loading vouchers" />}
 
       {!loading && !admin && <>
         {kycPrefill && !kycPrefill.hasApprovedKyc && (
@@ -485,7 +485,7 @@ export default function Vouchers() {
               </div>
               {campaignsError && <Banner tone="danger">{campaignsError}</Banner>}
               {campaignsLoading
-                ? <div className="billing-skeleton billing-skeleton-table" aria-busy="true" aria-label="Loading campaigns" />
+                ? <div className="skeleton billing-skeleton billing-skeleton-table" aria-busy="true" aria-label="Loading campaigns" />
                 : <CampaignDirectory
                   campaigns={campaigns}
                   page={campaignPage}
@@ -587,9 +587,6 @@ export default function Vouchers() {
                   <X size={18} />
                 </Button>
               </div>
-              <p className="modal-desc">
-                Live preview of the vendor voucher — download the PNG to share, or print a copy to hand over.
-              </p>
               <VoucherPromo offer={voucher} />
               <Toast tone="error" message={voucherError} onShown={() => setVoucherError('')} />
               <div className="modal-footer">

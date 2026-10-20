@@ -9,6 +9,7 @@ import { createBank, getBanks, updateBank, type Bank } from '../services/banks.s
 import { apiErrorMessage } from '../utils/serverValidation';
 import './BankManagement.css';
 import { useToast } from '../components/toast';
+import { Skeleton } from '../components/Skeleton';
 
 /**
  * The banks vendors can be paid through, with their bank codes. Feeds every
@@ -161,7 +162,7 @@ const BankManagement: React.FC = () => {
         pageSizeLabel="banks"
         summary={
           loading
-            ? 'Loading…'
+            ? <Skeleton width={140} className="skeleton-inline" />
             : banks.length === 0
               ? 'No banks'
               : `Showing ${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, banks.length)} of ${banks.length} banks`

@@ -685,7 +685,7 @@ const RiderFormPage: React.FC = () => {
                   </>
                 )}
               </div>
-              {!isEdit && <p className="rfp-hint">Minimum 8 characters. Rider can change password after logging in.</p>}
+              {!isEdit && <p className="rfp-hint">Minimum 8 characters.</p>}
             </section>
           </div>
         </div>

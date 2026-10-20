@@ -7,6 +7,7 @@ import {
 } from '../../services/vendorVolume.service';
 import './VendorVolumeLimitPanel.css';
 import { useToast } from '../toast';
+import { SkeletonForm } from '../Skeleton';
 
 // Super admin only - the daily-parcel threshold behind the "High volume
 // vendor" filter tab. A vendor qualifies once any single day's parcel count
@@ -67,7 +68,7 @@ const VendorVolumeLimitPanel: React.FC = () => {
       {error && <p className="vendor-volume-panel-error">{error}</p>}
 
       {loading ? (
-        <p className="vendor-volume-panel-hint">Loading…</p>
+        <SkeletonForm fields={1} />
       ) : (
         <div className="vendor-volume-panel-form">
           <FormField

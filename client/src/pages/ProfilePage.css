@@ -241,55 +241,24 @@
 
 /* ── Loading skeleton ───────────────────────────────────────────────────────── */
 
-@keyframes profile-shimmer {
-  0% { background-position: -200px 0; }
-  100% { background-position: 200px 0; }
-}
 
 .profile-skeleton-header {
   height: 140px;
-  background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-modal);
-  background-image: linear-gradient(
-    90deg,
-    var(--color-background-canvas) 0px,
-    var(--color-background-elevated) 80px,
-    var(--color-background-canvas) 160px
-  );
-  background-size: 400px;
-  animation: profile-shimmer 1.6s ease-in-out infinite;
 }
 
 .profile-skeleton-tabs {
   height: 36px;
   width: 240px;
-  background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-md);
-  background-image: linear-gradient(
-    90deg,
-    var(--color-background-canvas) 0px,
-    var(--color-background-elevated) 80px,
-    var(--color-background-canvas) 160px
-  );
-  background-size: 400px;
-  animation: profile-shimmer 1.6s ease-in-out infinite;
 }
 
 .profile-skeleton-body {
   height: 200px;
-  background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-modal);
-  background-image: linear-gradient(
-    90deg,
-    var(--color-background-canvas) 0px,
-    var(--color-background-elevated) 80px,
-    var(--color-background-canvas) 160px
-  );
-  background-size: 400px;
-  animation: profile-shimmer 1.6s ease-in-out infinite;
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
@@ -322,6 +291,5 @@
   .profile-skeleton-header,
   .profile-skeleton-tabs,
   .profile-skeleton-body {
-    animation: none;
   }
 }

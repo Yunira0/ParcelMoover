@@ -92,9 +92,9 @@ const TrackParcel: React.FC = () => {
 
         {state === 'loading' && (
           <div className="track-loading" aria-live="polite" aria-busy="true">
-            <div className="track-skeleton-line track-skeleton-wide" />
-            <div className="track-skeleton-line track-skeleton-narrow" />
-            <div className="track-skeleton-block" />
+            <div className="skeleton track-skeleton-line track-skeleton-wide" />
+            <div className="skeleton track-skeleton-line track-skeleton-narrow" />
+            <div className="skeleton track-skeleton-block" />
           </div>
         )}
 

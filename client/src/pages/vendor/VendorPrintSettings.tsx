@@ -10,6 +10,7 @@ import {
 import { apiErrorMessage } from '../../utils/serverValidation';
 import './VendorPrintSettings.css';
 import { Toast } from '../../components/toast';
+import { SkeletonForm } from '../../components/Skeleton';
 
 const DEFAULT_WIDTH_MM = 100;
 const DEFAULT_HEIGHT_MM = 75;
@@ -148,7 +149,7 @@ const VendorPrintSettings: React.FC = () => {
       />
 
       {loading ? (
-        <div className="loading-state">Loading print settings...</div>
+        <SkeletonForm fields={2} />
       ) : error ? (
         <p className="print-settings-error">{error}</p>
       ) : (
@@ -231,9 +232,6 @@ const VendorPrintSettings: React.FC = () => {
 
           <section className="print-settings-card print-settings-preview">
             <h3>Preview</h3>
-            <p className="print-settings-hint">
-              Roughly to scale — this is the boundary every shipping label prints inside.
-            </p>
             <div className="print-settings-preview-stage">
               {isDisplaySizeValid ? (
                 <div

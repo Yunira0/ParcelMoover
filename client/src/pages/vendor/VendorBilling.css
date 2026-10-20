@@ -293,14 +293,6 @@
 }
 
 .billing-skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--color-background-canvas) 25%,
-    var(--color-background-elevated) 50%,
-    var(--color-background-canvas) 75%
-  );
-  background-size: 200% 100%;
-  animation: billing-shimmer 1.5s infinite ease-in-out;
   border-radius: var(--border-radius-default);
 }
 
@@ -316,18 +308,9 @@
   height: 180px;
 }
 
-@keyframes billing-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .billing-skeleton {
-    animation: none;
   }
 
   .credit-usage-fill {

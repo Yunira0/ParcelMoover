@@ -222,9 +222,9 @@ const OrderDetailPage: React.FC = () => {
       <div className="od-page">
         <div className="od-container">
           <div className="od-loading">
-            <div className="od-skeleton od-skeleton-header" />
-            <div className="od-skeleton od-skeleton-card" />
-            <div className="od-skeleton od-skeleton-timeline" />
+            <div className="skeleton od-skeleton od-skeleton-header" />
+            <div className="skeleton od-skeleton od-skeleton-card" />
+            <div className="skeleton od-skeleton od-skeleton-timeline" />
           </div>
         </div>
       </div>

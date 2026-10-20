@@ -161,9 +161,9 @@ const ProfilePage: React.FC = () => {
   if (loading) {
     return (
       <div className="profile-page">
-        <div className="profile-skeleton-header" />
-        <div className="profile-skeleton-tabs" />
-        <div className="profile-skeleton-body" />
+        <div className="skeleton profile-skeleton-header" />
+        <div className="skeleton profile-skeleton-tabs" />
+        <div className="skeleton profile-skeleton-body" />
       </div>
     );
   }

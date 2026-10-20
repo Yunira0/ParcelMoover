@@ -21,6 +21,7 @@ import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, hasL
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { useHubLock } from '../hooks/useHubLock';
 import './VendorFormPage.css';
+import { Skeleton } from '../components/Skeleton';
 
 // API validation-error field → form field, for errors returned by the server.
 // Fields not listed here share the same name on both sides.
@@ -220,7 +221,7 @@ const ExistingDoc: React.FC<{ docs: ManagedUserDocument[] | null; slot: string }
   docs,
   slot,
 }) => {
-  if (docs === null) return <span className="vfp-doc-status">Checking…</span>;
+  if (docs === null) return <Skeleton width={72} height={12} className="skeleton-inline" />;
   const doc = docs.find((d) => d.key === slot);
   if (!doc) return <span className="vfp-doc-status vfp-doc-missing">Not uploaded</span>;
   return (
@@ -1016,7 +1017,7 @@ const VendorFormPage: React.FC = () => {
                   <span className="vfp-field-error">{fieldErrors.confirmPassword}</span>
                 )}
               </div>
-              <p className="vfp-hint">Minimum 8 characters. Vendor can change password after logging in.</p>
+              <p className="vfp-hint">Minimum 8 characters.</p>
             </section>
             )}
 

@@ -190,7 +190,6 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
                 (id) => !keptIds.has(id),
               )
             )}
-            <p className="esm-hint">Uncheck an order to remove it from the statement.</p>
           </div>
 
           <div className="esm-section">

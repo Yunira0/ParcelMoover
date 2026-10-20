@@ -328,16 +328,16 @@ const SettlementPayPage: React.FC = () => {
         <div className="mpp-ledger mpp-skeleton" role="status" aria-label="Loading settlement">
           <div className="mpp-bill">
             <div className="mpp-payee">
-              <span className="mpp-skeleton-bar mpp-skeleton-avatar" />
+              <span className="skeleton mpp-skeleton-bar mpp-skeleton-avatar" />
               <div className="mpp-payee-text">
-                <span className="mpp-skeleton-bar" style={{ width: '140px', height: '16px' }} />
-                <span className="mpp-skeleton-bar" style={{ width: '100px', height: '13px', marginTop: 'var(--space-2)' }} />
+                <span className="skeleton mpp-skeleton-bar" style={{ width: '140px', height: '16px' }} />
+                <span className="skeleton mpp-skeleton-bar" style={{ width: '100px', height: '13px', marginTop: 'var(--space-2)' }} />
               </div>
             </div>
-            <span className="mpp-skeleton-bar" style={{ width: '110px', height: '28px' }} />
+            <span className="skeleton mpp-skeleton-bar" style={{ width: '110px', height: '28px' }} />
           </div>
           <div className="mpp-zone">
-            <span className="mpp-skeleton-bar" style={{ width: '100%', height: '36px' }} />
+            <span className="skeleton mpp-skeleton-bar" style={{ width: '100%', height: '36px' }} />
           </div>
         </div>
       </div>

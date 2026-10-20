@@ -29,6 +29,7 @@ import {
 import CreateTransitManifestModal from './CreateTransitManifestModal';
 import '../pages/OOVOperations.css';
 import { useToast } from './toast';
+import { SkeletonText } from './Skeleton';
 
 const STATUS_TONE: Record<TransitManifestStatus, StatusChipTone> = {
   open: 'warning',
@@ -392,7 +393,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
     if (!detail) {
       return (
         <p className="oov-status-empty">
-          {detailLoadingId === manifest.id ? 'Loading parcels…' : 'Could not load the parcels on this manifest.'}
+          {detailLoadingId === manifest.id ? <SkeletonText lines={2} /> : 'Could not load the parcels on this manifest.'}
         </p>
       );
     }

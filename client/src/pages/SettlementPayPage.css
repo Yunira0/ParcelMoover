@@ -702,14 +702,6 @@
 .mpp-skeleton-bar {
   display: block;
   border-radius: var(--border-radius-default);
-  background: linear-gradient(
-    90deg,
-    var(--color-background-elevated) 25%,
-    var(--color-background-canvas) 37%,
-    var(--color-background-elevated) 63%
-  );
-  background-size: 400% 100%;
-  animation: mpp-skeleton-shimmer 1.4s ease infinite;
 }
 
 .mpp-skeleton-avatar {
@@ -719,19 +711,9 @@
   flex-shrink: 0;
 }
 
-@keyframes mpp-skeleton-shimmer {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: 0 0;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .mpp-skeleton-bar {
-    animation: none;
-    background: var(--color-background-elevated);
   }
 }
 

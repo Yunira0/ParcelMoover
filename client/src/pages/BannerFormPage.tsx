@@ -13,6 +13,7 @@ import {
 } from '../services/banners.service';
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import './BannerFormPage.css';
+import { SkeletonForm } from '../components/Skeleton';
 
 interface BannerFormState {
   name: string;
@@ -136,7 +137,7 @@ const BannerFormPage: React.FC = () => {
   if (loading) {
     return (
       <div className="bfp-page">
-        <p className="bfp-muted">Loading banner…</p>
+        <SkeletonForm />
       </div>
     );
   }

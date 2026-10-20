@@ -66,7 +66,7 @@ const VendorKycStartPage: React.FC = () => {
         subtitle={
           prefill
             ? `${prefill.profile.onlineBusinessName} · Review the on-file details, fill the gaps, and submit.`
-            : 'Loading vendor details…'
+            : undefined
         }
         onBack={() => navigate('/vendors')}
       />
@@ -74,13 +74,13 @@ const VendorKycStartPage: React.FC = () => {
       {loading && (
         <div className="kyc-start-loading" aria-busy="true" aria-label="Loading vendor details">
           <div className="kyc-surface" aria-hidden="true">
-            <div className="kyc-skeleton kyc-skeleton-line" />
-            <div className="kyc-skeleton kyc-skeleton-block" />
-            <div className="kyc-skeleton kyc-skeleton-block kyc-skeleton-short" />
+            <div className="skeleton kyc-skeleton kyc-skeleton-line" />
+            <div className="skeleton kyc-skeleton kyc-skeleton-block" />
+            <div className="skeleton kyc-skeleton kyc-skeleton-block kyc-skeleton-short" />
           </div>
           <div className="kyc-surface" aria-hidden="true">
-            <div className="kyc-skeleton kyc-skeleton-line" />
-            <div className="kyc-skeleton kyc-skeleton-block kyc-skeleton-short" />
+            <div className="skeleton kyc-skeleton kyc-skeleton-line" />
+            <div className="skeleton kyc-skeleton kyc-skeleton-block kyc-skeleton-short" />
           </div>
         </div>
       )}

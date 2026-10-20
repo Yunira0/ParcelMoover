@@ -80,14 +80,6 @@
 .track-skeleton-line,
 .track-skeleton-block {
   border-radius: var(--border-radius-default);
-  background: linear-gradient(
-    90deg,
-    var(--color-background-elevated) 25%,
-    var(--color-background-canvas) 50%,
-    var(--color-background-elevated) 75%
-  );
-  background-size: 200% 100%;
-  animation: track-shimmer 1.4s ease-in-out infinite;
 }
 
 .track-skeleton-line {
@@ -107,19 +99,10 @@
   margin-top: var(--space-2);
 }
 
-@keyframes track-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .track-skeleton-line,
   .track-skeleton-block {
-    animation: none;
   }
 }
 

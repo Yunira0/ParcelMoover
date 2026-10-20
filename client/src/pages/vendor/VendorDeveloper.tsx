@@ -30,6 +30,7 @@ import '../../components/Modal.css';
 import './VendorApiKeys.css';
 import './VendorWebhooks.css';
 import { Toast, useToast } from '../../components/toast';
+import { SkeletonList } from '../../components/Skeleton';
 
 const formatDate = (value: string | null) => (value ? toBsDateTime(value) : '—');
 
@@ -629,9 +630,6 @@ const VendorDeveloper: React.FC = () => {
               </>
             ) : (
               <form onSubmit={handleCreateKey}>
-                <p className="modal-desc">
-                  Name the key after the store or system that will use it.
-                </p>
                 <label className="api-key-name-field">
                   <span>Key name</span>
                   <input
@@ -733,7 +731,7 @@ const VendorDeveloper: React.FC = () => {
             {deliveriesError && <p className="webhooks-error">{deliveriesError}</p>}
 
             {deliveriesLoading ? (
-              <p className="modal-desc">Loading…</p>
+              <SkeletonList rows={3} />
             ) : deliveries.length === 0 ? (
               <p className="modal-desc">No deliveries yet.</p>
             ) : (

@@ -163,8 +163,6 @@
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semi-bold);
   line-height: var(--line-height-xs);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .vfp-rate-subhead + .vfp-rate-note {

@@ -180,7 +180,6 @@ const KycVerificationForm: React.FC<KycVerificationFormProps> = ({
 
       <Toast tone="error" message={formError || error} onShown={() => setFormError('')} />
       <div className="kyc-form-footer">
-        <p className="kyc-form-footer-hint">Submitting sends this to the KYC Applications queue for review.</p>
         <div className="kyc-form-footer-actions">
           <Button variant="secondary" type="button" onClick={onCancel} disabled={submitting}>Cancel</Button>
           <Button variant="primary" type="submit" disabled={submitting}>

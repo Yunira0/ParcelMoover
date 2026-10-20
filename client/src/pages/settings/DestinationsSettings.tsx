@@ -16,6 +16,7 @@ import { apiErrorMessage } from '../../utils/serverValidation';
 import '../../components/Modal.css';
 import './DestinationsSettings.css';
 import { useToast } from '../../components/toast';
+import { SkeletonList } from '../../components/Skeleton';
 
 const emptyDest = { name: '', code: '', province: '', district: '', municipality: '', ncmBranch: '', upayaAreaId: '' };
 
@@ -372,7 +373,7 @@ const DestinationsSettings: React.FC = () => {
       {error && <p className="dest-error">{error}</p>}
 
       {loading ? (
-        <p className="dest-muted">Loading destinations…</p>
+        <SkeletonList />
       ) : destinations.length === 0 ? (
         <p className="dest-muted">No destinations yet. Add one to get started.</p>
       ) : (

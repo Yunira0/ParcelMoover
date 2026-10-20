@@ -13,6 +13,7 @@ import {
 } from '../services/returnManifests.service';
 import type { Order } from '../services/orders.service';
 import { Toast } from './toast';
+import { SkeletonRegion, SkeletonText } from './Skeleton';
 
 interface AddToReturnManifestModalProps {
   isOpen: boolean;
@@ -168,7 +169,7 @@ const AddToReturnManifestModal: React.FC<AddToReturnManifestModalProps> = ({
               {parcelIds.length} parcel{parcelIds.length === 1 ? '' : 's'} for <strong>{singleVendor.vendorName}</strong>.
             </p>
 
-            {loading && <p className="modal-desc">Checking for an open manifest…</p>}
+            {loading && <SkeletonRegion><SkeletonText lines={2} /></SkeletonRegion>}
 
             {!loading && openManifest && (
               <div className="manifest-summary">

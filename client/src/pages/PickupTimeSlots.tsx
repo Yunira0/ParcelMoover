@@ -12,6 +12,7 @@ import {
 } from '../services/pickupTimeSlots.service';
 import './PickupTimeSlots.css';
 import { useToast } from '../components/toast';
+import { SkeletonList } from '../components/Skeleton';
 
 const toTimeInput = (mins: number) => {
   const h = Math.floor(mins / 60) % 24;
@@ -136,7 +137,7 @@ const PickupTimeSlots: React.FC = () => {
       {error && <p className="pickup-slots-error">{error}</p>}
 
       {loading ? (
-        <p className="pickup-slots-muted">Loading pickup time slots…</p>
+        <SkeletonList rows={4} />
       ) : (
         <div className="pickup-slots-card">
           <table className="pickup-slots-table">

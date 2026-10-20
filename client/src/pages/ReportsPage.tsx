@@ -12,6 +12,7 @@ import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
 import { downloadExcel } from '../utils/excel';
 import './ReportsPage.css';
 import { useToast } from '../components/toast';
+import { Skeleton } from '../components/Skeleton';
 
 type ReportKey = 'pickup' | 'dispatch' | 'transit' | 'return';
 type Bucket = 'pending' | 'completed';
@@ -225,7 +226,7 @@ const ReportsPage: React.FC = () => {
 
       <p className="reports-count">
         {loading
-          ? 'Loading…'
+          ? <Skeleton width={160} height={12} className="skeleton-inline" />
           : `${total.toLocaleString()} ${bucket} ${REPORTS[report].label.toLowerCase()} order${total === 1 ? '' : 's'}${
               total > orders.length ? ` (showing first ${orders.length.toLocaleString()} — download for all)` : ''
             }`}

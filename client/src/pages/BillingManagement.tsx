@@ -564,7 +564,6 @@ const BillingManagement: React.FC = () => {
 
           <section className="billing-card">
             <h3>Payment QR</h3>
-            <p className="billing-hint">Shown to every vendor on their billing page.</p>
 
             {settings?.paymentQrPath ? (
               <img className="billing-qr" src={paymentQrUrl(settings.paymentQrPath)} alt="Current payment QR" />

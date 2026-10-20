@@ -130,12 +130,12 @@ const VendorBilling: React.FC = () => {
 
       {loading ? (
         <div className="billing-skeleton-set" aria-busy="true" aria-label="Loading billing details">
-          <div className="billing-skeleton billing-skeleton-banner" />
+          <div className="skeleton billing-skeleton billing-skeleton-banner" />
           <div className="billing-grid">
-            <div className="billing-skeleton billing-skeleton-card" />
-            <div className="billing-skeleton billing-skeleton-card" />
+            <div className="skeleton billing-skeleton billing-skeleton-card" />
+            <div className="skeleton billing-skeleton billing-skeleton-card" />
           </div>
-          <div className="billing-skeleton billing-skeleton-table" />
+          <div className="skeleton billing-skeleton billing-skeleton-table" />
         </div>
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>

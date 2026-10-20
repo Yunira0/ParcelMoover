@@ -46,6 +46,7 @@ import { apiErrorMessage } from '../utils/serverValidation';
 import { addOrdersToBranchManifest } from '../services/transitManifests.service';
 import './ReturnOperations.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { SkeletonText } from '../components/Skeleton';
 
 // "manifests" sits between ready_to_return and sent_to_vendor because that is
 // where it sits physically: parcels are marked for return, gathered onto a
@@ -1024,7 +1025,7 @@ const ReturnOperations: React.FC = () => {
     if (!detail) {
       return (
         <p className="return-manifest-empty">
-          {detailLoadingId === manifest.id ? 'Loading parcels…' : 'Could not load the parcels on this manifest.'}
+          {detailLoadingId === manifest.id ? <SkeletonText lines={2} /> : 'Could not load the parcels on this manifest.'}
         </p>
       );
     }

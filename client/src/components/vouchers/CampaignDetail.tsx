@@ -176,7 +176,7 @@ export default function CampaignDetail({ campaignId, onBack, onChanged, onPrevie
       </div>
       <Toast tone="success" message={notice} onShown={() => setNotice('')} />
       {error && <Banner tone="danger">{error}</Banner>}
-      {loading && <div className="billing-skeleton billing-skeleton-table" aria-busy="true" aria-label="Loading campaign" />}
+      {loading && <div className="skeleton billing-skeleton billing-skeleton-table" aria-busy="true" aria-label="Loading campaign" />}
 
       {!loading && campaign && <>
         <div className="vouchers-detail-title">

@@ -216,8 +216,8 @@ const QuickRemarkPopup: React.FC<QuickRemarkPopupProps> = ({ orderId, trackingId
         <div className="qr-thread">
           {loading && (
             <div className="qr-loading">
-              <div className="qr-skeleton" />
-              <div className="qr-skeleton qr-skeleton-sm" />
+              <div className="skeleton qr-skeleton" />
+              <div className="skeleton qr-skeleton qr-skeleton-sm" />
             </div>
           )}
 

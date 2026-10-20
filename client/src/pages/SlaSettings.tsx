@@ -10,6 +10,7 @@ import {
 } from '../services/sla.service';
 import './SlaSettings.css';
 import { useToast } from '../components/toast';
+import { SkeletonForm } from '../components/Skeleton';
 
 // Form state keeps each hour value as a string so an empty field cleanly maps
 // to "SLA disabled" (null) on save.
@@ -86,7 +87,7 @@ const SlaSettings: React.FC = () => {
       {error && <p className="sla-error">{error}</p>}
 
       {loading ? (
-        <p className="sla-muted">Loading SLA settings…</p>
+        <SkeletonForm fields={3} />
       ) : (
         <>
           <div className="sla-groups">

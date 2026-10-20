@@ -77,10 +77,6 @@ export default function CampaignWizard({ onClose, onCreated }: CampaignWizardPro
         </div>
         {!created ? (
           <form onSubmit={submit}>
-            <p className="modal-desc">
-              One campaign, many unique single-claim codes — e.g. Dashain 20% off across 100 printed slips.
-              Terms cannot be edited after creation; pause instead.
-            </p>
             <fieldset disabled={saving} className="vouchers-fields">
               <FormField label="Campaign name" required minLength={3} error={fieldErrors.name} value={name} onChange={setName} placeholder="Dashain 2083" />
               <FormField

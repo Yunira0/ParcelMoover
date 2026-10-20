@@ -124,8 +124,6 @@
 .kyc-detail-section h4 {
   font-size: 0.78rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--color-text-caption, #6b7280);
   margin: 0 0 12px;
 }

@@ -798,7 +798,7 @@ const AdminFormPage: React.FC = () => {
                   </>
                 )}
               </div>
-              {!isEdit && <p className="afp-hint">Minimum 8 characters. Admin can change password after logging in.</p>}
+              {!isEdit && <p className="afp-hint">Minimum 8 characters.</p>}
             </section>
           </div>
         </div>

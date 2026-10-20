@@ -561,17 +561,17 @@ const SettlementDetailPage: React.FC = () => {
       {loading ? (
         <div className="sdp-bill sdp-skeleton" role="status" aria-label="Loading statement">
           <div className="sdp-bill-head">
-            <span className="sdp-skeleton-bar sdp-skeleton-avatar" />
+            <span className="skeleton sdp-skeleton-bar sdp-skeleton-avatar" />
             <div className="sdp-payee-text">
-              <span className="sdp-skeleton-bar" style={{ width: '160px', height: '18px' }} />
-              <span className="sdp-skeleton-bar" style={{ width: '110px', height: '13px', marginTop: 'var(--space-2)' }} />
+              <span className="skeleton sdp-skeleton-bar" style={{ width: '160px', height: '18px' }} />
+              <span className="skeleton sdp-skeleton-bar" style={{ width: '110px', height: '13px', marginTop: 'var(--space-2)' }} />
             </div>
           </div>
           <div className="sdp-meta">
-            <span className="sdp-skeleton-bar" style={{ width: '100%', height: '14px' }} />
-            <span className="sdp-skeleton-bar" style={{ width: '100%', height: '14px' }} />
+            <span className="skeleton sdp-skeleton-bar" style={{ width: '100%', height: '14px' }} />
+            <span className="skeleton sdp-skeleton-bar" style={{ width: '100%', height: '14px' }} />
           </div>
-          <span className="sdp-skeleton-bar" style={{ width: '100%', height: '160px' }} />
+          <span className="skeleton sdp-skeleton-bar" style={{ width: '100%', height: '160px' }} />
         </div>
       ) : error ? (
         <p className="vendor-finance-error">{error}</p>
