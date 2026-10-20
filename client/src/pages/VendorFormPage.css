@@ -271,7 +271,7 @@
 /* Field error */
 .vfp-field-error {
   color: var(--color-danger-text);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   line-height: 16px;
   margin-top: -8px;
 }
@@ -454,13 +454,13 @@
   align-items: center;
   gap: 6px;
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-caption);
 }
 
 .vfp-doc-onfile {
   color: var(--color-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   text-decoration: none;
 }
 

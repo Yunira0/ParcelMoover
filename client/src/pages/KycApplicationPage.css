@@ -22,7 +22,7 @@
   align-items: center;
   gap: 8px;
   font-size: 1.1rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-primary);
   text-decoration: none;
   margin-bottom: 16px;
@@ -37,7 +37,7 @@
 
 .kyc-header h1 {
   font-size: 1.6rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 8px;
 }
@@ -75,7 +75,7 @@
   align-items: center;
   justify-content: center;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-caption);
   transition: all 0.2s;
 }
@@ -94,14 +94,14 @@
 
 .kyc-step-label {
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-caption);
   white-space: nowrap;
 }
 
 .kyc-step.active .kyc-step-label {
   color: var(--color-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
 }
 
 .kyc-step.done .kyc-step-label {
@@ -125,13 +125,13 @@
 .kyc-form {
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: 12px;
+  border-radius: var(--border-radius-xl);
   padding: 32px;
 }
 
 .kyc-section h3 {
   font-size: 1.05rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 20px;
   padding-bottom: 12px;
@@ -155,13 +155,13 @@
 .kyc-review-group {
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: 8px;
+  border-radius: var(--border-radius-lg);
   padding: 16px;
 }
 
 .kyc-review-group h4 {
   font-size: 0.85rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-caption);
   margin: 0 0 12px;
 }
@@ -186,7 +186,7 @@
 
 .review-value {
   color: var(--color-text-default);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   word-break: break-word;
 }
 
@@ -206,7 +206,7 @@
 
 .kyc-file-label {
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-default);
 }
 
@@ -217,7 +217,7 @@
   gap: 8px;
   padding: 9px 12px;
   border: 1px dashed var(--color-border-default);
-  border-radius: 8px;
+  border-radius: var(--border-radius-lg);
   background: var(--color-background-surface);
   font-size: 0.85rem;
   cursor: pointer;
@@ -251,7 +251,7 @@
 .kyc-success {
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: 12px;
+  border-radius: var(--border-radius-xl);
   padding: 48px 40px;
   text-align: center;
   max-width: 480px;
@@ -265,7 +265,7 @@
 
 .kyc-success h2 {
   font-size: 1.4rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 12px;
 }

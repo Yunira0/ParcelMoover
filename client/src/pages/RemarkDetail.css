@@ -244,7 +244,7 @@
 
 .rd-chat-thread::-webkit-scrollbar { width: 4px; }
 .rd-chat-thread::-webkit-scrollbar-track { background: transparent; }
-.rd-chat-thread::-webkit-scrollbar-thumb { background: var(--color-border-default); border-radius: 4px; }
+.rd-chat-thread::-webkit-scrollbar-thumb { background: var(--color-border-default); border-radius: var(--border-radius-default); }
 
 .rd-chat-empty {
   display: flex;
@@ -291,7 +291,7 @@
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);
   flex-shrink: 0;
   font-family: var(--typography-font-family-default);
@@ -380,7 +380,7 @@
   padding: var(--space-2) var(--space-4);
   background: var(--color-background-primary-invert-default);
   border-left: 3px solid var(--color-background-primary-default);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
 }
 

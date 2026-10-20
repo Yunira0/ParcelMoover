@@ -192,7 +192,7 @@
 
 .scp-mono {
   font-family: monospace;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 /* Money columns line up digit-over-digit instead of drifting with the
@@ -256,7 +256,7 @@
    their name. */
 .scp-subtext {
   color: var(--color-text-caption);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .scp-hint {
@@ -313,7 +313,7 @@
 }
 
 .scp-credit-balance {
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
 }
 

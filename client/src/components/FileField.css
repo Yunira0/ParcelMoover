@@ -96,7 +96,7 @@
 
 .file-field-picked-size {
   color: var(--color-text-caption);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .file-field-remove {
@@ -119,5 +119,5 @@
 
 .file-field-hint {
   color: var(--color-text-caption);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }

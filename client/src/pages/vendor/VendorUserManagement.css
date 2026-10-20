@@ -116,7 +116,7 @@
 .staff-switch {
   background: var(--color-border-default);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--border-radius-full);
   cursor: pointer;
   flex-shrink: 0;
   height: 22px;

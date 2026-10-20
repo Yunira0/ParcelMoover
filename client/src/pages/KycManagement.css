@@ -7,7 +7,7 @@
 
 .kyc-cell-primary {
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-default);
 }
 
@@ -32,7 +32,7 @@
   display: flex;
   align-items: center;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-default);
   transition: color 0.15s, background 0.15s;
 }
 
@@ -55,7 +55,7 @@
 
 .kyc-modal {
   background: var(--color-background-surface);
-  border-radius: 12px;
+  border-radius: var(--border-radius-xl);
   width: 100%;
   max-width: 560px;
   max-height: 90vh;
@@ -75,7 +75,7 @@
 
 .kyc-modal-header h2 {
   font-size: 1.1rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 8px;
 }
@@ -88,7 +88,7 @@
   display: flex;
   align-items: center;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-default);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -117,13 +117,13 @@
 /* Detail sections */
 .kyc-detail-section {
   border: 1px solid var(--color-border-default);
-  border-radius: 8px;
+  border-radius: var(--border-radius-lg);
   padding: 16px;
 }
 
 .kyc-detail-section h4 {
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-caption);
   margin: 0 0 12px;
 }
@@ -148,7 +148,7 @@
 
 .kyc-detail-value {
   color: var(--color-text-default);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   word-break: break-word;
 }
 
@@ -206,12 +206,12 @@
   padding: 16px;
   background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: 8px;
+  border-radius: var(--border-radius-lg);
 }
 
 .kyc-action-form label {
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-default);
 }
 
@@ -219,7 +219,7 @@
   width: 100%;
   padding: 8px 12px;
   border: 1.5px solid var(--color-border-default);
-  border-radius: 6px;
+  border-radius: var(--border-radius-md);
   font-size: 0.875rem;
   resize: vertical;
   box-sizing: border-box;

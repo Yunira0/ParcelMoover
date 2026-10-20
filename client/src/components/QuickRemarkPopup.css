@@ -109,9 +109,9 @@
 
 /* The × close glyph — solid black so it stays clearly visible. */
 .qr-close-glyph {
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   line-height: 1;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: #000;
   margin-top: -2px;
 }
@@ -136,7 +136,7 @@
 
 .qr-thread::-webkit-scrollbar { width: 4px; }
 .qr-thread::-webkit-scrollbar-track { background: transparent; }
-.qr-thread::-webkit-scrollbar-thumb { background: var(--color-border-default); border-radius: 4px; }
+.qr-thread::-webkit-scrollbar-thumb { background: var(--color-border-default); border-radius: var(--border-radius-default); }
 
 /* Loading */
 .qr-loading {
@@ -283,7 +283,7 @@
   padding: var(--space-2) var(--space-4);
   background: var(--color-background-primary-invert-default);
   border-left: 3px solid var(--color-background-primary-default);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   flex-shrink: 0;
 }

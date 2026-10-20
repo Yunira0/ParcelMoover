@@ -60,7 +60,7 @@
   max-width: 100%;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--border-radius-default);
   background: none;
   /* The deeper rust: the brand rust is under 4:1 on white at this size;
      this one holds 4.5:1 even on the selected row's tint. */
