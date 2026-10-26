@@ -187,13 +187,15 @@ const matches = (pathname: string, prefixes: string[]) =>
 
 // Pages each workspace has by department. Order page includes create, bulk
 // create and an order's detail.
-const COMMON_DEPARTMENT_PATHS = ['/profile', '/orders', '/dashboard', '/overview'];
+// Reports are order exports, so whoever has the order page gets them too.
+const COMMON_DEPARTMENT_PATHS = ['/profile', '/orders', '/dashboard', '/overview', '/reports'];
 const DEPARTMENT_PATHS: Record<DepartmentWorkspace, string[]> = {
   operation: [
     // Operations: pickup, dispatch, run sheet, transit, return, hold, L&D.
     '/pickup', '/dispatch', '/rider-run-sheet', '/oov', '/return', '/hold', '/loss-and-damage',
-    // Rider COD and the rider settlements it opens.
-    '/accounting/transactions/rider-cod', '/finance/settlements',
+    // Rider COD, the rider settlements it opens, and the dashboard COD card's
+    // drill-down (view + download) that sits next to it.
+    '/accounting/transactions/rider-cod', '/finance/settlements', '/cod',
     '/rider-overview',
     '/riders',
   ],
