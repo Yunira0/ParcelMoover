@@ -10,6 +10,8 @@ import { CARRIER_CODES, type CarrierCode } from "./orders/carrier";
 //   sales-return    - vendor statements cancelled in the period
 //   purchase        - 3PL carrier statements dated in the period + purchase bills
 //   purchase-return - carrier statements and purchase bills cancelled in the period
+// A bill stays on its own month's register even once cancelled; the
+// cancellation is its reversal on the return register in the month it happened.
 // Every amount is VAT-inclusive, so VAT is taken out of it: value = amount / 1.13.
 
 export const REGISTER_KINDS = ["sales", "sales-return", "purchase", "purchase-return"] as const;
@@ -24,6 +26,8 @@ const HEAD_OFFICE_ONLY = "VAT registers are kept centrally at Imadol, not by a b
 export interface RegisterRow {
   id: string;
   source: "statement" | "carrier" | "bill";
+  /** Cancelled since; its reversal is on the return register. */
+  cancelled: boolean;
   /** BS date, `2083.05.01` as on the IRD form. */
   date: string;
   invoiceNo: string;
@@ -47,7 +51,7 @@ export interface RegisterResult {
   period: { year: number; month: number };
   taxpayer: { name: string; pan: string };
   rows: RegisterRow[];
-  totals: Omit<RegisterRow, "id" | "source" | "date" | "invoiceNo" | "customsNo" | "partyName" | "partyPan" | "description">;
+  totals: Omit<RegisterRow, "id" | "source" | "cancelled" | "date" | "invoiceNo" | "customsNo" | "partyName" | "partyPan" | "description">;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -71,8 +75,8 @@ async function vendorStatementRows(start: Date, end: Date, cancelled: boolean): 
       payee_type: "vendor",
       vendor_id: { not: null },
       ...(cancelled
-        ? { status: "cancelled", updated_at: { gte: start, lt: end } }
-        : { status: { not: "cancelled" }, created_at: { gte: start, lt: end } }),
+        ? { status: "cancelled", cancelled_at: { gte: start, lt: end } }
+        : { created_at: { gte: start, lt: end } }),
     },
     orderBy: [{ created_at: "asc" }, { statement_id: "asc" }],
     select: {
@@ -80,7 +84,8 @@ async function vendorStatementRows(start: Date, end: Date, cancelled: boolean): 
       statement_id: true,
       invoice_no: true,
       created_at: true,
-      updated_at: true,
+      cancelled_at: true,
+      status: true,
       amount: true,
       payable_amount: true,
       vendor_credit_applied: true,
@@ -98,7 +103,8 @@ async function vendorStatementRows(start: Date, end: Date, cancelled: boolean): 
     return [{
       id: s.id,
       source: "statement" as const,
-      date: bsDot(cancelled ? s.updated_at : s.created_at),
+      cancelled: s.status === "cancelled",
+      date: bsDot(cancelled && s.cancelled_at ? s.cancelled_at : s.created_at),
       // The invoice number recorded on the statement; the statement ID until one is.
       invoiceNo: s.invoice_no || s.statement_id,
       customsNo: null,
@@ -117,10 +123,10 @@ async function vendorStatementRows(start: Date, end: Date, cancelled: boolean): 
 async function carrierStatementRows(start: Date, end: Date, cancelled: boolean): Promise<RegisterRow[]> {
   const statements = await prisma.carrier_settlements.findMany({
     where: cancelled
-      ? { status: "cancelled", updated_at: { gte: start, lt: end } }
-      : { status: { not: "cancelled" }, settlement_date: { gte: start, lt: end } },
+      ? { status: "cancelled", cancelled_at: { gte: start, lt: end } }
+      : { settlement_date: { gte: start, lt: end } },
     orderBy: [{ settlement_date: "asc" }, { statement_no: "asc" }],
-    select: { id: true, statement_no: true, carrier_code: true, settlement_date: true, updated_at: true, carrier_charges: true },
+    select: { id: true, statement_no: true, carrier_code: true, settlement_date: true, cancelled_at: true, status: true, carrier_charges: true },
   });
 
   return statements.flatMap((s) => {
@@ -131,7 +137,8 @@ async function carrierStatementRows(start: Date, end: Date, cancelled: boolean):
     return [{
       id: s.id,
       source: "carrier" as const,
-      date: bsDot(cancelled ? s.updated_at : s.settlement_date),
+      cancelled: s.status === "cancelled",
+      date: bsDot(cancelled && s.cancelled_at ? s.cancelled_at : s.settlement_date),
       invoiceNo: s.statement_no,
       customsNo: null,
       partyName: code ? CARRIER_NAMES[code] : s.carrier_code.toUpperCase(),
@@ -150,7 +157,7 @@ async function purchaseBillRows(start: Date, end: Date, cancelled: boolean): Pro
   const bills = await prisma.purchase_bills.findMany({
     where: cancelled
       ? { status: "cancelled", cancelled_at: { gte: start, lt: end } }
-      : { status: "active", bill_date: { gte: start, lt: end } },
+      : { bill_date: { gte: start, lt: end } },
     orderBy: [{ bill_date: "asc" }, { created_at: "asc" }],
   });
 
@@ -161,6 +168,7 @@ async function purchaseBillRows(start: Date, end: Date, cancelled: boolean): Pro
     return {
       id: b.id,
       source: "bill" as const,
+      cancelled: b.status === "cancelled",
       date: bsDot(cancelled && b.cancelled_at ? b.cancelled_at : b.bill_date),
       invoiceNo: b.bill_no,
       customsNo: b.customs_no,
