@@ -23,6 +23,8 @@ const EMPTY_COD: DashboardSummary['codSettlement'] = {
   codFromBranches: 0,
   pendingDeliveryCharge: 0,
   deliveryCharge: 0,
+  insideValleyDeliveryCharge: 0,
+  outsideValleyDeliveryCharge: 0,
   progressPercent: 0,
   scopedToRider: false,
   lastAmount: 0,

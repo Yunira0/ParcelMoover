@@ -3,6 +3,7 @@ import {
   BRANCH_CLEARED_SQL,
   BRANCH_OWED_SQL,
   CARRIER_OWED_SQL,
+  DESTINATION_INSIDE_VALLEY_SQL,
   PART_PAID_FRACTIONS_SQL,
   pmRiderFilterSql,
 } from "./cod-detail";
@@ -17,6 +18,7 @@ export interface CodSummaryRow {
   cod_from_branches: string;
   pending_delivery_charge: string;
   total_delivery_charge: string;
+  inside_valley_delivery_charge: string;
 }
 
 /**
@@ -52,7 +54,9 @@ export function buildCodSummaryQuery(scope: Prisma.Sql, branchFilter: Prisma.Sql
         -- Cleared by the same fraction as the COD above, so the vendor card's
         -- net pending (COD - charge) drops by exactly what was paid out.
         COALESCE(SUM(p.delivery_charge * (1 - pp.vendor_frac)) FILTER (WHERE c.payment_status::text = 'pending'), 0) AS pending_delivery_charge,
-        COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge
+        COALESCE(SUM(p.delivery_charge), 0) AS total_delivery_charge,
+        -- Outside valley is the total less this, so nothing falls between them.
+        COALESCE(SUM(p.delivery_charge) FILTER (WHERE ${DESTINATION_INSIDE_VALLEY_SQL}), 0) AS inside_valley_delivery_charge
       FROM cod_collections c
       JOIN parcels p ON p.id = c.parcel_id
       LEFT JOIN riders r ON r.id = c.rider_id

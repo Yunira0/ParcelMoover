@@ -79,6 +79,19 @@ export const COD_BUCKET_META: Record<CodDetailBucket, CodBucketMeta> = {
     amountHeader: 'DELIVERY CHARGE',
     description: "The office's cut on the delivered orders behind the COD figures.",
   },
+  'delivery-charge-inside': {
+    label: 'Inside valley',
+    title: 'Delivery charge — inside valley',
+    amountHeader: 'DELIVERY CHARGE',
+    description: 'Delivery charge on delivered orders whose destination is inside the valley.',
+  },
+  'delivery-charge-outside': {
+    label: 'Outside valley',
+    title: 'Delivery charge — outside valley',
+    amountHeader: 'DELIVERY CHARGE',
+    description:
+      'Delivery charge on delivered orders whose destination is outside the valley, including destinations with no valley set.',
+  },
 };
 
 export const codBucketPath = (bucket: CodDetailBucket) => `/cod/${bucket}`;

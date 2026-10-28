@@ -410,6 +410,8 @@ async function computeDashboardSummary(
   // Total delivery charges (the office's cut) on the same delivered orders the
   // COD figures above are drawn from - shown as its own line on the COD card.
   const deliveryCharge = Number(codRow?.total_delivery_charge ?? 0);
+  const insideValleyDeliveryCharge = Number(codRow?.inside_valley_delivery_charge ?? 0);
+  const outsideValleyDeliveryCharge = deliveryCharge - insideValleyDeliveryCharge;
 
   const weeklyTrend = trendDayRanges.map(({ start }, index) => {
     const [dayTotalOrders, dayPickedUp, dayDelivered] = trendCounts[index] ?? [0, 0, 0];
@@ -652,6 +654,8 @@ async function computeDashboardSummary(
       codFromUpaya,
       codFromBranches,
       deliveryCharge,
+      insideValleyDeliveryCharge,
+      outsideValleyDeliveryCharge,
       pendingCodCount,
       pendingDeliveryCharge,
       progressPercent: totalCod > 0 ? (settledCod / totalCod) * 100 : 0,

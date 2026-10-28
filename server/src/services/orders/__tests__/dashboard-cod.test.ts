@@ -4,7 +4,13 @@ import { Prisma } from "../../../generated/prisma/client";
 
 vi.mock("../../../lib/prisma", () => ({ default: {} }));
 
-import { BRANCH_CLEARED_SQL, BRANCH_OWED_SQL, PART_PAID_FRACTIONS_SQL, branchCodFilterSql } from "../cod-detail";
+import {
+  BRANCH_CLEARED_SQL,
+  BRANCH_OWED_SQL,
+  DESTINATION_INSIDE_VALLEY_SQL,
+  PART_PAID_FRACTIONS_SQL,
+  branchCodFilterSql,
+} from "../cod-detail";
 import { buildCodSummaryQuery, type CodSummaryRow } from "../dashboard-cod";
 
 // Head office plus three branches, each with COD in a different state, run
@@ -87,10 +93,15 @@ beforeAll(async () => {
     CREATE TABLE branch_settlements (id integer PRIMARY KEY, status text, paid_amount numeric, net_payable numeric);
     CREATE TABLE branch_settlement_items (settlement_id integer, parcel_id integer UNIQUE);
     CREATE TABLE transit_manifest_parcels (parcel_id integer);
+    CREATE TABLE locations (id uuid PRIMARY KEY, parent_id uuid, valley text);
   `);
   for (const [rider, carrier] of [[IMADOL_RIDER, null], [POKHARA_RIDER, null], [BUTWAL_RIDER, null], [CHITWAN_RIDER, null], [NCM_RIDER, "ncm"]]) {
     await db.query("INSERT INTO riders VALUES ($1, $2)", [rider, carrier]);
   }
+  // Imadol is inside the valley; its area inherits that from its parent.
+  await db.query("INSERT INTO locations VALUES ($1, NULL, 'inside'), ($2, $1, NULL), ($3, NULL, 'outside'), ($4, NULL, NULL)", [
+    IMADOL, IMADOL_AREA, POKHARA, BUTWAL,
+  ]);
   for (const p of parcels) {
     await db.query("INSERT INTO parcels VALUES ($1, $2, $3, 100, $4)", [
       p.n, p.status ?? "delivered", p.deleted ? new Date() : null, p.dest,
@@ -197,5 +208,28 @@ describe("COD Settlement card - Branches", () => {
     // Parcel 3 (Imadol area, on a manifest) moves to Branches; nothing is lost.
     expect(Number(rows[0]!.cod_from_branches)).toBe(7400 + 700);
     expect(Number(rows[0]!.cod_from_pm_rider)).toBe(2000 - 700);
+  });
+});
+
+describe("COD Settlement card - delivery charge by valley", () => {
+  it("counts inside-valley destinations, including ones inheriting it from a parent", async () => {
+    const s = await summary();
+    // 11 live parcels at 100 each; Imadol (1) and its area (2, 3) are inside.
+    expect(s.total_delivery_charge).toBe(1100);
+    expect(s.inside_valley_delivery_charge).toBe(300);
+  });
+
+  it("drill-down rows split the total with nothing left over", async () => {
+    const rowsFor = async (filter: Prisma.Sql) => {
+      const query = Prisma.sql`
+        SELECT p.id FROM cod_collections c JOIN parcels p ON p.id = c.parcel_id
+        WHERE p.deleted_at IS NULL AND c.collected_at IS NOT NULL
+          AND p.status IN ('delivered', 'partially_delivered', 'returned_to_vendor') AND ${filter}
+        ORDER BY p.id`;
+      return (await db.query<{ id: number }>(query.text, query.values)).rows.map((r) => r.id);
+    };
+    expect(await rowsFor(DESTINATION_INSIDE_VALLEY_SQL)).toEqual([1, 2, 3]);
+    // Outside, unclassified, and no destination at all land outside.
+    expect(await rowsFor(Prisma.sql`NOT ${DESTINATION_INSIDE_VALLEY_SQL}`)).toEqual([4, 10, 11, 20, 21, 30, 31, 32]);
   });
 });
