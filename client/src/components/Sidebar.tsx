@@ -577,7 +577,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
         )}
         <SidebarItem to="/rider-overview" icon={Bike} label="Rider Overview" />
-        <SidebarItem to="/sales-overview" icon={TrendingUp} label="Sales Overview" />
+        {isSuperAdmin && <SidebarItem to="/sales-overview" icon={TrendingUp} label="Sales Overview" />}
 
         <SidebarSection label="Management" />
         {/* Three peers in one column. KYC used to be a fourth entry here; it is

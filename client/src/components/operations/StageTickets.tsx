@@ -65,10 +65,16 @@ interface StageTicketsPanelProps {
 
 export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }) => {
   const navigate = useNavigate();
-  const [status, setStatus] = useState<StatusFilter>('pending');
+  const [pickedStatus, setStatus] = useState<StatusFilter | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
-  const counts = useStageTicketCounts(category).data;
+  const countsQuery = useStageTicketCounts(category);
+  const counts = countsQuery.data;
+
+  // Until staff pick a filter, open on the first one with tickets in it, so a
+  // stage whose tickets are all Open doesn't land on an empty Pending list.
+  const status: StatusFilter = pickedStatus
+    ?? (!counts || counts.pending > 0 ? 'pending' : counts.open > 0 ? 'open' : 'all');
 
   useEffect(() => { setPage(1); }, [status, pageSize]);
 
@@ -77,6 +83,9 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
     queryKey: queryKeys.tickets.list(params),
     queryFn: () => getTickets(params),
     placeholderData: keepPreviousData,
+    // Wait for the counts that pick the default filter, so the list isn't
+    // fetched twice on open.
+    enabled: pickedStatus !== null || !countsQuery.isPending,
   });
   const tickets = useMemo(() => listQuery.data?.data ?? [], [listQuery.data]);
   const meta = listQuery.data?.meta;
@@ -151,7 +160,7 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
           loading={listQuery.isPending}
           loadingMessage="Loading tickets..."
           emptyMessage={status === 'all' ? 'No tickets for this stage yet.' : `No ${STATUS_FILTER_LABELS[status].toLowerCase()} tickets.`}
-          minWidth="1140px"
+          minWidth="1000px"
         />
       )}
 

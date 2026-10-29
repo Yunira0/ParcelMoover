@@ -171,10 +171,10 @@ function App() {
           />
           {/* Per-sales-rep read of the orders list — scoped to every vendor a
               sales rep owns (vendors.sales_user_id) instead of one vendor.
-              Admin-side only: a sales actor uses their own SalesDashboard. */}
+              Super admin only: a sales actor uses their own SalesDashboard. */}
           <Route
             path="/sales-overview"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><SalesOverview /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin']}><SalesOverview /></RoleGuard>}
           />
           <Route
             path="/branches/settlement"

@@ -281,13 +281,13 @@ orderRouter.get(
 );
 
 // GET /orders/sales-overview — server-side aggregated stats for the Sales
-// Overview page. Admin-side only: a sales actor uses their own SalesDashboard,
+// Overview page. Super admin only: a sales actor uses their own SalesDashboard,
 // so they're left off the role list entirely rather than trusted to send a
-// legitimate salesUserId.
+// legitimate salesUserId, and admins no longer get the page.
 orderRouter.get(
   "/sales-overview",
   authMiddleware,
-  authorizeRoles("super_admin", "admin"),
+  authorizeRoles("super_admin"),
   requireStaffPermission("DASHBOARD_ACCESS"),
   orderReadLimiter,
   salesOverviewController,
