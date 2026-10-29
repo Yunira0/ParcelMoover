@@ -1,0 +1,170 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { Eye } from 'lucide-react';
+import Table from '../Table';
+import Button from '../Button';
+import Pagination from '../Pagination';
+import SegmentedTabs, { type SegmentedTabOption } from '../SegmentedTabs';
+import StatusChip, { type StatusChipTone } from '../StatusChip';
+import {
+  getTickets,
+  TICKET_PRIORITY_LABELS,
+  TICKET_STATUS_LABELS,
+  type Ticket,
+  type TicketCategory,
+  type TicketPriority,
+  type TicketStatus,
+} from '../../services/tickets.service';
+import { queryKeys } from '../../queries/keys';
+import { toBsDate } from '../../utils/nepaliDate';
+import './StageTickets.css';
+
+// Each operations page offers its stage's tickets as one extra tab beside the
+// parcel-status tabs. The page keeps `?view=tickets` in its URL so coming back
+// from a ticket's detail page lands on the tickets again.
+export const TICKETS_TAB = 'tickets' as const;
+export type TicketsTab = typeof TICKETS_TAB;
+
+type StatusFilter = 'all' | TicketStatus;
+
+// Pending (not yet opened by staff) leads: it is the stage's work queue.
+const STATUS_FILTERS: StatusFilter[] = ['pending', 'open', 'closed', 'all'];
+const STATUS_FILTER_LABELS: Record<StatusFilter, string> = { all: 'All', ...TICKET_STATUS_LABELS };
+
+const PRIORITY_TONE: Record<TicketPriority, StatusChipTone> = {
+  urgent: 'danger',
+  high: 'warning',
+  medium: 'info',
+  low: 'neutral',
+};
+
+const STATUS_TONE: Record<TicketStatus, StatusChipTone> = {
+  pending: 'warning',
+  open: 'info',
+  closed: 'success',
+};
+
+const PAGE_SIZE = 10;
+
+const useStageTicketCounts = (category: TicketCategory) =>
+  useQuery({
+    queryKey: queryKeys.tickets.stageCounts(category),
+    queryFn: async () => (await getTickets({ category, pageSize: 1 })).meta.categoryStatusCounts ?? null,
+  });
+
+/** The stage tab's badge: tickets still waiting on staff (pending + open). */
+export const useStageTicketsTab = (category: TicketCategory): SegmentedTabOption<TicketsTab> => {
+  const counts = useStageTicketCounts(category).data;
+  return { value: TICKETS_TAB, label: 'Tickets', count: counts ? counts.pending + counts.open : undefined };
+};
+
+interface StageTicketsPanelProps {
+  category: TicketCategory;
+}
+
+export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }) => {
+  const navigate = useNavigate();
+  const [status, setStatus] = useState<StatusFilter>('pending');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const counts = useStageTicketCounts(category).data;
+
+  useEffect(() => { setPage(1); }, [status, pageSize]);
+
+  const params = { category, status: status === 'all' ? undefined : status, page, pageSize };
+  const listQuery = useQuery({
+    queryKey: queryKeys.tickets.list(params),
+    queryFn: () => getTickets(params),
+    placeholderData: keepPreviousData,
+  });
+  const tickets = useMemo(() => listQuery.data?.data ?? [], [listQuery.data]);
+  const meta = listQuery.data?.meta;
+
+  const columns = useMemo(() => [
+    { header: 'TICKET ID', accessor: (t: Ticket) => t.ticketId, width: '150px', className: 'stage-tickets-id-cell' },
+    {
+      header: 'VENDOR',
+      accessor: (t: Ticket) => (
+        <div className="stage-tickets-vendor-cell">
+          <span>{t.vendorName || t.customerName || '—'}</span>
+          <small>{t.vendorPhone || t.customerPhone}</small>
+        </div>
+      ),
+      width: '180px',
+    },
+    { header: 'SUBJECT', accessor: (t: Ticket) => t.subject, width: '240px', className: 'stage-tickets-subject-cell' },
+    {
+      header: 'TRACKING ID',
+      accessor: (t: Ticket) => t.trackingId
+        ? <Link to={`/orders/track/${t.trackingId}`} className="tracking-id-link">{t.trackingId}</Link>
+        : '—',
+      width: '140px',
+    },
+    {
+      header: 'PRIORITY',
+      accessor: (t: Ticket) => <StatusChip tone={PRIORITY_TONE[t.priority]}>{TICKET_PRIORITY_LABELS[t.priority]}</StatusChip>,
+      width: '110px',
+    },
+    {
+      header: 'STATUS',
+      accessor: (t: Ticket) => <StatusChip tone={STATUS_TONE[t.status]}>{TICKET_STATUS_LABELS[t.status]}</StatusChip>,
+      width: '110px',
+    },
+    { header: 'CREATED AT', accessor: (t: Ticket) => toBsDate(t.createdAt), width: '110px' },
+    {
+      header: 'ACTION',
+      accessor: (t: Ticket) => (
+        <Button variant="outline" size="sm" onClick={() => navigate(`/tickets/${t.id}`)}>
+          <Eye size={14} /> View
+        </Button>
+      ),
+      width: '100px',
+    },
+  ], [navigate]);
+
+  return (
+    <div className="stage-tickets">
+      <div className="stage-tickets-toolbar">
+        <SegmentedTabs
+          ariaLabel="Ticket status filters"
+          fullWidth={false}
+          value={status}
+          onChange={setStatus}
+          options={STATUS_FILTERS.map((s) => ({ value: s, label: STATUS_FILTER_LABELS[s], count: counts?.[s] }))}
+        />
+        <Link to={`/tickets?category=${category}`} className="stage-tickets-all-link">
+          Open in Tickets
+        </Link>
+      </div>
+
+      {listQuery.isError ? (
+        <div className="stage-tickets-error">
+          <span>Couldn't load tickets.</span>
+          <Button variant="outline" size="sm" onClick={() => listQuery.refetch()}>Try again</Button>
+        </div>
+      ) : (
+        <Table
+          columns={columns}
+          data={tickets}
+          selectable={false}
+          loading={listQuery.isPending}
+          loadingMessage="Loading tickets..."
+          emptyMessage={status === 'all' ? 'No tickets for this stage yet.' : `No ${STATUS_FILTER_LABELS[status].toLowerCase()} tickets.`}
+          minWidth="1140px"
+        />
+      )}
+
+      <Pagination
+        ariaLabel="Stage tickets pagination"
+        page={page}
+        totalPages={meta?.totalPages ?? 1}
+        onPageChange={setPage}
+        pageSize={pageSize}
+        pageSizeLabel="tickets"
+        onPageSizeChange={setPageSize}
+        summary={`${meta?.total ?? 0} ticket${(meta?.total ?? 0) === 1 ? '' : 's'}`}
+      />
+    </div>
+  );
+};

@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, Download, Printer, Search, X } from 'lucide-rea
 import Table from '../components/Table';
 import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
+import { StageTicketsPanel, TICKETS_TAB, useStageTicketsTab } from '../components/operations/StageTickets';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
@@ -186,6 +187,8 @@ const ReturnOperations: React.FC = () => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as ReturnTab) : 'follow_up';
   });
+  const [ticketsView, setTicketsView] = useState(() => searchParams.get('view') === TICKETS_TAB);
+  const ticketsTab = useStageTicketsTab('return_request');
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const pager = useCursorPagination();
@@ -395,8 +398,9 @@ const ReturnOperations: React.FC = () => {
     const next = new URLSearchParams();
     if (activeTab !== 'follow_up') next.set('tab', activeTab);
     if (debouncedSearch) next.set('search', debouncedSearch);
+    if (ticketsView) next.set('view', TICKETS_TAB);
     setSearchParams(next, { replace: true });
-  }, [activeTab, debouncedSearch, setSearchParams]);
+  }, [activeTab, debouncedSearch, ticketsView, setSearchParams]);
 
   // The server now returns exactly the active tab's, search-matched, single
   // page of rows - nothing left to re-filter client-side.
@@ -1112,11 +1116,20 @@ const ReturnOperations: React.FC = () => {
 
       <SegmentedTabs
         ariaLabel="Return operation filters"
-        value={activeTab}
-        onChange={setActiveTab}
-        options={(Object.keys(TAB_LABELS) as ReturnTab[]).map((tab) => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
+        value={ticketsView ? TICKETS_TAB : activeTab}
+        onChange={(tab) => {
+          setTicketsView(tab === TICKETS_TAB);
+          if (tab !== TICKETS_TAB) setActiveTab(tab);
+        }}
+        options={[
+          ...(Object.keys(TAB_LABELS) as ReturnTab[]).map((tab) => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] })),
+          ticketsTab,
+        ]}
       />
 
+      {ticketsView && <StageTicketsPanel category="return_request" />}
+
+      <div className="stage-orders-view" hidden={ticketsView}>
       {loadError && <p className="return-action-msg">{loadError}</p>}
 
       <div className="return-toolbar">
@@ -1340,6 +1353,7 @@ const ReturnOperations: React.FC = () => {
           onClose={() => setRemarkPopupOrder(null)}
         />
       )}
+      </div>
     </div>
   );
 };

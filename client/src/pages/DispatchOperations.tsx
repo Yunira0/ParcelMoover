@@ -13,6 +13,7 @@ import SearchableSelect from '../components/SearchableSelect';
 import SearchableSelectAsync from '../components/SearchableSelectAsync';
 import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
+import { StageTicketsPanel, TICKETS_TAB, useStageTicketsTab } from '../components/operations/StageTickets';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
@@ -140,6 +141,8 @@ const DispatchOperations: React.FC = () => {
     const fromUrl = searchParams.get('tab');
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as DispatchTab) : 'ready_to_deliver';
   });
+  const [ticketsView, setTicketsView] = useState(() => searchParams.get('view') === TICKETS_TAB);
+  const ticketsTab = useStageTicketsTab('delivery');
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
@@ -260,8 +263,9 @@ const DispatchOperations: React.FC = () => {
     if (debouncedSearch) next.set('search', debouncedSearch);
     if (riderFilter) next.set('rider', riderFilter);
     if (vendorFilter) next.set('vendor', vendorFilter);
+    if (ticketsView) next.set('view', TICKETS_TAB);
     setSearchParams(next, { replace: true });
-  }, [activeTab, debouncedSearch, riderFilter, vendorFilter, setSearchParams]);
+  }, [activeTab, debouncedSearch, riderFilter, vendorFilter, ticketsView, setSearchParams]);
 
   // A scanner builds up a comma-separated list of tracking ids - fetch
   // enough rows in one page to fit the whole scanned batch, instead of
@@ -613,17 +617,25 @@ const DispatchOperations: React.FC = () => {
 
       <SegmentedTabs
         ariaLabel="Dispatch operation filters"
-        value={activeTab}
+        value={ticketsView ? TICKETS_TAB : activeTab}
         onChange={(tab) => {
+          setTicketsView(tab === TICKETS_TAB);
+          if (tab === TICKETS_TAB) return;
           setActiveTab(tab);
           pager.reset();
           setIsActionOpen(false);
           setActionError('');
           setRiderId('');
         }}
-        options={(Object.keys(TAB_LABELS) as DispatchTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
+        options={[
+          ...(Object.keys(TAB_LABELS) as DispatchTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] })),
+          ticketsTab,
+        ]}
       />
 
+      {ticketsView && <StageTicketsPanel category="delivery" />}
+
+      <div className="stage-orders-view" hidden={ticketsView}>
       {loadError && <p className="dispatch-action-error">{loadError}</p>}
 
       <div className="dispatch-toolbar">
@@ -915,6 +927,7 @@ const DispatchOperations: React.FC = () => {
           onClose={() => setRemarkPopupOrder(null)}
         />
       )}
+      </div>
     </div>
   );
 };

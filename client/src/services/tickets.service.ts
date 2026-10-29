@@ -91,6 +91,8 @@ export interface TicketsListMeta {
   totalPages: number;
   /** Whole-dataset tab counts, unaffected by the active status/filters. */
   statusCounts?: { all: number; pending: number; open: number; closed: number };
+  /** Same tab counts narrowed to the requested category; sent only when one is given. */
+  categoryStatusCounts?: { all: number; pending: number; open: number; closed: number };
 }
 
 export interface TicketsListResponse {

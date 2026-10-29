@@ -73,7 +73,9 @@ export async function publicListTicketsController(req: Request, res: Response) {
       pageSize: query.pageSize ?? 20,
     };
 
-    const { data, meta } = await listTickets(actorFrom(req), params);
+    // categoryStatusCounts feeds the staff operations pages only; it is not
+    // part of the Partner API contract.
+    const { data, meta: { categoryStatusCounts: _staffOnly, ...meta } } = await listTickets(actorFrom(req), params);
 
     return res.status(200).json({ success: true, data, meta });
   } catch (error: any) {

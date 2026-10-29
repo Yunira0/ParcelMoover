@@ -62,4 +62,35 @@ describe("listTickets — branch-scoped admin", () => {
     expect(mocked.vendors.findMany).not.toHaveBeenCalled();
     expect(mocked.support_tickets.findMany.mock.calls[0]![0].where.created_by).toBeUndefined();
   });
+
+  it("counts one category's tickets within the branch scope for an operations page", async () => {
+    mockedScope.mockResolvedValue(["hub-hetauda"]);
+    mocked.admins.findMany.mockResolvedValue([]);
+    mocked.vendors.findMany.mockResolvedValue([{ user_id: "vendor-owner", vendor_staff: [] }]);
+    mocked.support_tickets.groupBy
+      .mockResolvedValueOnce([{ status: "pending", _count: { _all: 5 } }])
+      .mockResolvedValueOnce([
+        { status: "pending", _count: { _all: 2 } },
+        { status: "in_progress", _count: { _all: 1 } },
+        { status: "resolved", _count: { _all: 3 } },
+      ]);
+
+    const { meta } = await listTickets(BRANCH_ADMIN, { category: "pickup", status: "pending" });
+
+    const categoryWhere = mocked.support_tickets.groupBy.mock.calls[1]![0].where;
+    expect(categoryWhere.category).toBe("pickup");
+    expect(categoryWhere.status).toBeUndefined();
+    expect((categoryWhere.created_by.in as string[]).sort()).toEqual(["admin-self", "vendor-owner"]);
+    expect(meta.categoryStatusCounts).toEqual({ all: 6, pending: 2, open: 1, closed: 3 });
+    expect(meta.statusCounts).toEqual({ all: 5, pending: 5, open: 0, closed: 0 });
+  });
+
+  it("omits category counts when no category is requested", async () => {
+    mockedScope.mockResolvedValue(undefined);
+
+    const { meta } = await listTickets(BRANCH_ADMIN);
+
+    expect(mocked.support_tickets.groupBy).toHaveBeenCalledTimes(1);
+    expect(meta).not.toHaveProperty("categoryStatusCounts");
+  });
 });

@@ -21,6 +21,11 @@ export const queryKeys = {
     vendorSummary: (params: unknown) => ['orders', 'dashboard', 'vendor-summary', params] as const,
     topVendors: ['orders', 'dashboard', 'top-vendors'] as const,
   },
+  tickets: {
+    all: ['tickets'] as const,
+    list: (params: unknown) => ['tickets', 'list', params] as const,
+    stageCounts: (category: string) => ['tickets', 'stage-counts', category] as const,
+  },
   // Reference data for dropdowns and pickers. Cached much longer than order
   // data and invalidated by any write outside /orders (see queryClient.ts).
   lookups: {

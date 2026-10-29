@@ -354,13 +354,22 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
   // pills, so they must not shrink as the operator narrows the table.
   const countWhere = await scopeWhere(actor);
 
-  const [total, statusGroups, tickets] = await Promise.all([
+  const [total, statusGroups, categoryStatusGroups, tickets] = await Promise.all([
     prisma.support_tickets.count({ where }),
     prisma.support_tickets.groupBy({
       by: ["status"],
       where: countWhere,
       _count: { _all: true },
     }),
+    // Each operations page shows one category's tickets, so it needs the same
+    // pills narrowed to that category (still ignoring the other filters).
+    params.category
+      ? prisma.support_tickets.groupBy({
+          by: ["status"],
+          where: { ...countWhere, category: params.category },
+          _count: { _all: true },
+        })
+      : Promise.resolve(null),
     prisma.support_tickets.findMany({
       where,
       include: TICKET_INCLUDE,
@@ -372,12 +381,16 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
 
   // Fold the stored statuses (including legacy in_progress/resolved) into the
   // three workflow buckets the tabs offer.
-  const statusCounts = { all: 0, pending: 0, open: 0, closed: 0 };
-  statusGroups.forEach((group) => {
-    const count = group._count._all;
-    statusCounts.all += count;
-    statusCounts[normalizeStatus(group.status)] += count;
-  });
+  const foldStatusCounts = (groups: { status: string; _count: { _all: number } }[]) => {
+    const counts = { all: 0, pending: 0, open: 0, closed: 0 };
+    groups.forEach((group) => {
+      const count = group._count._all;
+      counts.all += count;
+      counts[normalizeStatus(group.status)] += count;
+    });
+    return counts;
+  };
+  const statusCounts = foldStatusCounts(statusGroups);
 
   const vendorByCreator = await resolveVendorsByCreators(
     tickets.map((t) => t.created_by).filter((x): x is string => !!x),
@@ -398,6 +411,7 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
       total,
       totalPages: Math.max(1, Math.ceil(total / take)),
       statusCounts,
+      ...(categoryStatusGroups ? { categoryStatusCounts: foldStatusCounts(categoryStatusGroups) } : {}),
     },
   };
 }

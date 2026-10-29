@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Download, Printer, Search } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
+import SegmentedTabs from '../components/SegmentedTabs';
+import { StageTicketsPanel, TICKETS_TAB, useStageTicketsTab } from '../components/operations/StageTickets';
 import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
 import {
@@ -34,6 +36,12 @@ const REVERT_STATUS_LABEL = 'Ready to deliver';
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const LossAndDamageOperations: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [ticketsView, setTicketsView] = useState(() => searchParams.get('view') === TICKETS_TAB);
+  const ticketsTab = useStageTicketsTab('loss_and_damage');
+  useEffect(() => {
+    setSearchParams(ticketsView ? { view: TICKETS_TAB } : {}, { replace: true });
+  }, [ticketsView, setSearchParams]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [meta, setMeta] = useState<OrdersPageMeta | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -233,6 +241,19 @@ const LossAndDamageOperations: React.FC = () => {
         title="Loss and damage"
       />
 
+      <SegmentedTabs
+        ariaLabel="Loss and damage views"
+        value={ticketsView ? TICKETS_TAB : 'parcels'}
+        onChange={(tab) => setTicketsView(tab === TICKETS_TAB)}
+        options={[
+          { value: 'parcels' as const, label: 'Parcels', count: meta ? totalCount : undefined },
+          ticketsTab,
+        ]}
+      />
+
+      {ticketsView && <StageTicketsPanel category="loss_and_damage" />}
+
+      <div className="stage-orders-view" hidden={ticketsView}>
       <div className="lossdamage-toolbar">
         <div />
         <div className="lossdamage-toolbar-actions">
@@ -293,6 +314,7 @@ const LossAndDamageOperations: React.FC = () => {
         }}
         summary={`${totalCount} order${totalCount === 1 ? '' : 's'}`}
       />
+      </div>
     </div>
   );
 };

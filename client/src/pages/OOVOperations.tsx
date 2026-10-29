@@ -11,6 +11,7 @@ import Table from '../components/Table';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
 import SegmentedTabs from '../components/SegmentedTabs';
+import { StageTicketsPanel, TICKETS_TAB, useStageTicketsTab, type TicketsTab } from '../components/operations/StageTickets';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
@@ -141,13 +142,15 @@ const OOVOperations: React.FC = () => {
   });
   // The tab bar carries two extra views for transit manifests, sitting between
   // the two parcel tabs. Only 'oov'/'dispatched' drive the parcel table below.
-  const [view, setView] = useState<'oov' | 'open_manifest' | 'received' | 'dispatched'>(() => {
+  const [view, setView] = useState<'oov' | 'open_manifest' | 'received' | 'dispatched' | TicketsTab>(() => {
+    if (searchParams.get('view') === TICKETS_TAB) return TICKETS_TAB;
     const fromUrl = searchParams.get('tab');
     return fromUrl === 'open_manifest' || fromUrl === 'received' || fromUrl === 'dispatched'
       ? fromUrl
       : 'oov';
   });
   const isManifestView = view === 'open_manifest' || view === 'received';
+  const ticketsTab = useStageTicketsTab('delivery');
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
@@ -225,8 +228,9 @@ const OOVOperations: React.FC = () => {
     const next = new URLSearchParams();
     if (activeTab !== 'oov') next.set('tab', activeTab);
     if (debouncedSearch) next.set('search', debouncedSearch);
+    if (view === TICKETS_TAB) next.set('view', TICKETS_TAB);
     setSearchParams(next, { replace: true });
-  }, [activeTab, debouncedSearch, setSearchParams]);
+  }, [activeTab, debouncedSearch, view, setSearchParams]);
 
   // Scanning several parcels in a row fires one debounced search per scan -
   // without this, a slower-to-resolve earlier request can land after a later
@@ -668,10 +672,13 @@ const OOVOperations: React.FC = () => {
           { value: 'open_manifest', label: 'Open Manifest' },
           { value: 'dispatched', label: TAB_LABELS.dispatched, count: tabCounts['dispatched'] },
           { value: 'received', label: 'Receive Manifest' },
+          ticketsTab,
         ]}
       />
 
-      {isManifestView ? (
+      {view === TICKETS_TAB ? (
+        <StageTicketsPanel category="delivery" />
+      ) : isManifestView ? (
         <TransitManifestPanel statusFilter={view === 'received' ? 'received' : 'active'} />
       ) : (
       <>
