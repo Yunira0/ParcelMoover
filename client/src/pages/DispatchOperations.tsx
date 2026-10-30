@@ -13,7 +13,7 @@ import SearchableSelect from '../components/SearchableSelect';
 import SearchableSelectAsync from '../components/SearchableSelectAsync';
 import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
-import { StageTicketsPanel, TICKETS_TAB, useStageTicketsTab } from '../components/operations/StageTickets';
+import { StageTicketsButton, StageTicketsPanel, TICKETS_TAB, type TicketsTab } from '../components/operations/StageTickets';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
@@ -143,7 +143,6 @@ const DispatchOperations: React.FC = () => {
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as DispatchTab) : 'ready_to_deliver';
   });
   const [ticketsView, setTicketsView] = useState(() => searchParams.get('view') === TICKETS_TAB);
-  const ticketsTab = useStageTicketsTab('delivery');
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
@@ -608,13 +607,16 @@ const DispatchOperations: React.FC = () => {
   return (
     <div className="dispatch-operations-container">
       <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
-      <PageHeader title="Local Dispatch" />
+      <PageHeader title="Local Dispatch">
+        <StageTicketsButton category="delivery" active={ticketsView} onClick={() => setTicketsView(v => !v)} />
+      </PageHeader>
 
-      <SegmentedTabs
+      {/* No parcel tab is selected while the tickets list is showing. */}
+      <SegmentedTabs<DispatchTab | TicketsTab>
         ariaLabel="Dispatch operation filters"
         value={ticketsView ? TICKETS_TAB : activeTab}
         onChange={(tab) => {
-          setTicketsView(tab === TICKETS_TAB);
+          setTicketsView(false);
           if (tab === TICKETS_TAB) return;
           setActiveTab(tab);
           pager.reset();
@@ -622,10 +624,7 @@ const DispatchOperations: React.FC = () => {
           setActionError('');
           setRiderId('');
         }}
-        options={[
-          ...(Object.keys(TAB_LABELS) as DispatchTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] })),
-          ticketsTab,
-        ]}
+        options={(Object.keys(TAB_LABELS) as DispatchTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
       />
 
       {ticketsView && <StageTicketsPanel category="delivery" />}

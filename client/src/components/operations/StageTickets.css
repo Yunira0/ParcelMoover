@@ -14,6 +14,37 @@
   display: none;
 }
 
+/* Header toggle, styled like the top bar's Unclosed cmt button. */
+.stage-tickets-btn {
+  overflow: visible;
+  position: relative;
+}
+
+.stage-tickets-btn.is-active {
+  background: var(--color-background-primary-invert-default);
+  color: var(--color-text-primary);
+}
+
+.stage-tickets-badge {
+  align-items: center;
+  background-color: var(--color-background-primary-default);
+  border-radius: 9px;
+  box-shadow: 0 0 0 2px var(--color-background-surface);
+  color: var(--color-background-surface);
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: var(--font-weight-semi-bold);
+  height: 18px;
+  justify-content: center;
+  line-height: 1;
+  min-width: 18px;
+  padding: 0 5px;
+  pointer-events: none;
+  position: absolute;
+  right: -8px;
+  top: -8px;
+}
+
 .stage-tickets-toolbar {
   align-items: center;
   display: flex;

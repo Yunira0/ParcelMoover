@@ -11,7 +11,7 @@ import Table from '../components/Table';
 import Button from '../components/Button';
 import StatusChip from '../components/StatusChip';
 import SegmentedTabs from '../components/SegmentedTabs';
-import { StageTicketsPanel, TICKETS_TAB, useStageTicketsTab, type TicketsTab } from '../components/operations/StageTickets';
+import { StageTicketsButton, StageTicketsPanel, TICKETS_TAB, type TicketsTab } from '../components/operations/StageTickets';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
@@ -151,7 +151,6 @@ const OOVOperations: React.FC = () => {
       : 'oov';
   });
   const isManifestView = view === 'open_manifest' || view === 'received';
-  const ticketsTab = useStageTicketsTab('delivery');
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
@@ -652,8 +651,15 @@ const OOVOperations: React.FC = () => {
   return (
     <div className="oov-operations-container">
       <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
-      <PageHeader title="Transit Operations" />
+      <PageHeader title="Transit Operations">
+        <StageTicketsButton
+          category="delivery"
+          active={view === TICKETS_TAB}
+          onClick={() => setView(view === TICKETS_TAB ? activeTab : TICKETS_TAB)}
+        />
+      </PageHeader>
 
+      {/* No tab is selected while the tickets list is showing. */}
       <SegmentedTabs
         ariaLabel="Order operation filters"
         value={view}
@@ -666,7 +672,6 @@ const OOVOperations: React.FC = () => {
           { value: 'open_manifest', label: 'Open Manifest' },
           { value: 'dispatched', label: TAB_LABELS.dispatched, count: tabCounts['dispatched'] },
           { value: 'received', label: 'Receive Manifest' },
-          ticketsTab,
         ]}
       />
 

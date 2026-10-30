@@ -4,8 +4,7 @@ import { Download, Printer, Search } from 'lucide-react';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import PageHeader from '../components/PageHeader';
-import SegmentedTabs from '../components/SegmentedTabs';
-import { StageTicketsPanel, TICKETS_TAB, useStageTicketsTab } from '../components/operations/StageTickets';
+import { StageTicketsButton, StageTicketsPanel, TICKETS_TAB } from '../components/operations/StageTickets';
 import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
 import {
@@ -39,7 +38,6 @@ const formatMoney = (value: number) => value.toLocaleString(undefined, { maximum
 const LossAndDamageOperations: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [ticketsView, setTicketsView] = useState(() => searchParams.get('view') === TICKETS_TAB);
-  const ticketsTab = useStageTicketsTab('loss_and_damage');
   useEffect(() => {
     setSearchParams(ticketsView ? { view: TICKETS_TAB } : {}, { replace: true });
   }, [ticketsView, setSearchParams]);
@@ -235,17 +233,9 @@ const LossAndDamageOperations: React.FC = () => {
       <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
       <PageHeader
         title="Loss and damage"
-      />
-
-      <SegmentedTabs
-        ariaLabel="Loss and damage views"
-        value={ticketsView ? TICKETS_TAB : 'parcels'}
-        onChange={(tab) => setTicketsView(tab === TICKETS_TAB)}
-        options={[
-          { value: 'parcels' as const, label: 'Parcels', count: meta ? totalCount : undefined },
-          ticketsTab,
-        ]}
-      />
+      >
+        <StageTicketsButton category="loss_and_damage" active={ticketsView} onClick={() => setTicketsView((v) => !v)} />
+      </PageHeader>
 
       {ticketsView && <StageTicketsPanel category="loss_and_damage" />}
 

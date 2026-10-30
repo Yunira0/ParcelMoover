@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp, Download, Printer, Search, X } from 'lucide-rea
 import Table from '../components/Table';
 import Button from '../components/Button';
 import SegmentedTabs from '../components/SegmentedTabs';
-import { StageTicketsPanel, TICKETS_TAB, useStageTicketsTab } from '../components/operations/StageTickets';
+import { StageTicketsButton, StageTicketsPanel, TICKETS_TAB, type TicketsTab } from '../components/operations/StageTickets';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import StatusChip from '../components/StatusChip';
@@ -184,7 +184,6 @@ const ReturnOperations: React.FC = () => {
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as ReturnTab) : 'follow_up';
   });
   const [ticketsView, setTicketsView] = useState(() => searchParams.get('view') === TICKETS_TAB);
-  const ticketsTab = useStageTicketsTab('return_request');
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get('search') || '');
   const pager = useCursorPagination();
@@ -1088,19 +1087,19 @@ const ReturnOperations: React.FC = () => {
 
   return (
     <div className="return-operations-container">
-      <PageHeader title="Return" />
+      <PageHeader title="Return">
+        <StageTicketsButton category="return_request" active={ticketsView} onClick={() => setTicketsView((v) => !v)} />
+      </PageHeader>
 
-      <SegmentedTabs
+      {/* No parcel tab is selected while the tickets list is showing. */}
+      <SegmentedTabs<ReturnTab | TicketsTab>
         ariaLabel="Return operation filters"
         value={ticketsView ? TICKETS_TAB : activeTab}
         onChange={(tab) => {
-          setTicketsView(tab === TICKETS_TAB);
+          setTicketsView(false);
           if (tab !== TICKETS_TAB) setActiveTab(tab);
         }}
-        options={[
-          ...(Object.keys(TAB_LABELS) as ReturnTab[]).map((tab) => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] })),
-          ticketsTab,
-        ]}
+        options={(Object.keys(TAB_LABELS) as ReturnTab[]).map((tab) => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
       />
 
       {ticketsView && <StageTicketsPanel category="return_request" />}

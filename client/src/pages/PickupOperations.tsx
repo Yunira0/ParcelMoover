@@ -15,7 +15,7 @@ import SearchableSelect from '../components/SearchableSelect';
 import Button from '../components/Button';
 import QuickRemarkPopup from '../components/QuickRemarkPopup';
 import SegmentedTabs from '../components/SegmentedTabs';
-import { StageTicketsPanel, TICKETS_TAB, useStageTicketsTab } from '../components/operations/StageTickets';
+import { StageTicketsButton, StageTicketsPanel, TICKETS_TAB, type TicketsTab } from '../components/operations/StageTickets';
 import PageHeader from '../components/PageHeader';
 import Pagination from '../components/Pagination';
 import {
@@ -366,7 +366,6 @@ const PickupOperations: React.FC = () => {
     return fromUrl && fromUrl in TAB_LABELS ? (fromUrl as PickupTab) : 'pickup_ordered';
   });
   const [ticketsView, setTicketsView] = useState(() => searchParams.get('view') === TICKETS_TAB);
-  const ticketsTab = useStageTicketsTab('pickup');
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('search') || '');
   // Tracking ids confirmed by pressing Enter (typically a barcode scanner) -
   // kept separate from the live input buffer so rapid scans never race each
@@ -797,19 +796,19 @@ const PickupOperations: React.FC = () => {
   return (
     <div className="pickup-operations-container">
       <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
-      <PageHeader title="Pickup Operations" />
+      <PageHeader title="Pickup Operations">
+        <StageTicketsButton category="pickup" active={ticketsView} onClick={() => setTicketsView(v => !v)} />
+      </PageHeader>
 
-      <SegmentedTabs
+      {/* No parcel tab is selected while the tickets list is showing. */}
+      <SegmentedTabs<PickupTab | TicketsTab>
         ariaLabel="Pickup operation filters"
         value={ticketsView ? TICKETS_TAB : activeTab}
         onChange={tab => {
-          setTicketsView(tab === TICKETS_TAB);
+          setTicketsView(false);
           if (tab !== TICKETS_TAB) setActiveTab(tab);
         }}
-        options={[
-          ...(Object.keys(TAB_LABELS) as PickupTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] })),
-          ticketsTab,
-        ]}
+        options={(Object.keys(TAB_LABELS) as PickupTab[]).map(tab => ({ value: tab, label: TAB_LABELS[tab], count: tabCounts[tab] }))}
       />
 
       {ticketsView && <StageTicketsPanel category="pickup" />}

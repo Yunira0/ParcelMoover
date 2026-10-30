@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { Eye } from 'lucide-react';
+import { Eye, Ticket as TicketIcon } from 'lucide-react';
 import Table from '../Table';
 import Button from '../Button';
 import Pagination from '../Pagination';
-import SegmentedTabs, { type SegmentedTabOption } from '../SegmentedTabs';
+import SegmentedTabs from '../SegmentedTabs';
 import StatusChip, { type StatusChipTone } from '../StatusChip';
 import {
   getTickets,
@@ -18,11 +18,13 @@ import {
 } from '../../services/tickets.service';
 import { queryKeys } from '../../queries/keys';
 import { toBsDate } from '../../utils/nepaliDate';
+import { canOpenPath } from '../../utils/auth';
 import './StageTickets.css';
 
-// Each operations page offers its stage's tickets as one extra tab beside the
-// parcel-status tabs. The page keeps `?view=tickets` in its URL so coming back
-// from a ticket's detail page lands on the tickets again.
+// Each operations page offers its stage's tickets through a Tickets button in
+// its header, which swaps the parcel table for the tickets list; picking a
+// parcel tab swaps back. The page keeps `?view=tickets` in its URL so coming
+// back from a ticket's detail page lands on the tickets again.
 export const TICKETS_TAB = 'tickets' as const;
 export type TicketsTab = typeof TICKETS_TAB;
 
@@ -53,10 +55,30 @@ const useStageTicketCounts = (category: TicketCategory) =>
     queryFn: async () => (await getTickets({ category, pageSize: 1 })).meta.categoryStatusCounts ?? null,
   });
 
-/** The stage tab's badge: tickets still waiting on staff (pending + open). */
-export const useStageTicketsTab = (category: TicketCategory): SegmentedTabOption<TicketsTab> => {
+interface StageTicketsButtonProps {
+  category: TicketCategory;
+  active: boolean;
+  onClick: () => void;
+}
+
+/** The page header's Tickets toggle, badged with what still waits on staff (pending + open). */
+export const StageTicketsButton: React.FC<StageTicketsButtonProps> = ({ category, active, onClick }) => {
   const counts = useStageTicketCounts(category).data;
-  return { value: TICKETS_TAB, label: 'Tickets', count: counts ? counts.pending + counts.open : undefined };
+  const waiting = counts ? counts.pending + counts.open : 0;
+  const badge = waiting > 99 ? '99+' : String(waiting);
+  return (
+    <Button
+      variant="outline"
+      className={`stage-tickets-btn${active ? ' is-active' : ''}`}
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={`Tickets${waiting > 0 ? `, ${badge} waiting` : ''}`}
+    >
+      <TicketIcon size={16} />
+      Tickets
+      {waiting > 0 && <span className="stage-tickets-badge" aria-hidden="true">{badge}</span>}
+    </Button>
+  );
 };
 
 interface StageTicketsPanelProps {
@@ -142,9 +164,11 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
           onChange={setStatus}
           options={STATUS_FILTERS.map((s) => ({ value: s, label: STATUS_FILTER_LABELS[s], count: counts?.[s] }))}
         />
-        <Link to={`/tickets?category=${category}`} className="stage-tickets-all-link">
-          Open in Tickets
-        </Link>
+        {canOpenPath('/tickets') && (
+          <Link to={`/tickets?category=${category}`} className="stage-tickets-all-link">
+            Open in Tickets
+          </Link>
+        )}
       </div>
 
       {listQuery.isError ? (

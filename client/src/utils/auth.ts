@@ -224,6 +224,9 @@ export function isDepartmentPathAllowed(workspace: DepartmentWorkspace, pathname
   if (pathname === '/branches') return true;
   // Restoring / permanently deleting trashed orders is not part of the order page.
   if (matches(pathname, ['/orders/trash'])) return false;
+  // Operation opens a ticket from its stage's Tickets tab on the operations
+  // pages; the ticket queue itself stays with Customer Experience.
+  if (workspace === 'operation' && pathname.startsWith('/tickets/')) return true;
   if (matches(pathname, COMMON_DEPARTMENT_PATHS) || matches(pathname, DEPARTMENT_PATHS[workspace])) return true;
   return Object.entries(PERMISSION_PATHS).some(
     ([permission, paths]) => hasAdminPermission(permission) && matches(pathname, paths),
