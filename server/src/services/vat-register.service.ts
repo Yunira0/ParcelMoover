@@ -28,8 +28,6 @@ export interface RegisterRow {
   date: string;
   invoiceNo: string;
   customsNo: string | null;
-  /** Vendor id on the sales registers, so the page can group and filter by vendor; null otherwise. */
-  partyId: string | null;
   partyName: string;
   partyPan: string | null;
   description: string | null;
@@ -49,7 +47,7 @@ export interface RegisterResult {
   period: { year: number; month: number };
   taxpayer: { name: string; pan: string };
   rows: RegisterRow[];
-  totals: Omit<RegisterRow, "id" | "source" | "date" | "invoiceNo" | "customsNo" | "partyId" | "partyName" | "partyPan" | "description">;
+  totals: Omit<RegisterRow, "id" | "source" | "date" | "invoiceNo" | "customsNo" | "partyName" | "partyPan" | "description">;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -87,7 +85,6 @@ async function vendorStatementRows(start: Date, end: Date, cancelled: boolean): 
       payable_amount: true,
       vendor_credit_applied: true,
       vat_rate: true,
-      vendor_id: true,
       vendors: { select: { client_name: true, business_name: true, billing_business_name: true, pan_vat_no: true } },
     },
   });
@@ -105,7 +102,6 @@ async function vendorStatementRows(start: Date, end: Date, cancelled: boolean): 
       // The invoice number recorded on the statement; the statement ID until one is.
       invoiceNo: s.invoice_no || s.statement_id,
       customsNo: null,
-      partyId: s.vendor_id,
       partyName: v?.billing_business_name || v?.business_name || v?.client_name || "",
       partyPan: v?.pan_vat_no || null,
       description: cancelled ? "Delivery service" : null,
@@ -138,7 +134,6 @@ async function carrierStatementRows(start: Date, end: Date, cancelled: boolean):
       date: bsDot(cancelled ? s.updated_at : s.settlement_date),
       invoiceNo: s.statement_no,
       customsNo: null,
-      partyId: null,
       partyName: code ? CARRIER_NAMES[code] : s.carrier_code.toUpperCase(),
       partyPan: code ? carrierPan(code) : null,
       description: cancelled ? "Delivery service" : null,
@@ -169,7 +164,6 @@ async function purchaseBillRows(start: Date, end: Date, cancelled: boolean): Pro
       date: bsDot(cancelled && b.cancelled_at ? b.cancelled_at : b.bill_date),
       invoiceNo: b.bill_no,
       customsNo: b.customs_no,
-      partyId: null,
       partyName: b.supplier_name,
       partyPan: b.supplier_pan,
       description: b.description,
