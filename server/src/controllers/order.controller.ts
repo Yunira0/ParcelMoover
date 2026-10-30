@@ -822,6 +822,8 @@ export async function dashboardSummaryController(req: Request, res: Response) {
         codFromBranches: 0,
         pendingDeliveryCharge: 0,
         deliveryCharge: 0,
+        insideValleyDeliveryCharge: 0,
+        outsideValleyDeliveryCharge: 0,
         progressPercent: 0,
         lastAmount: 0,
         lastSettledAt: null,

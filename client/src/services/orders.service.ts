@@ -355,6 +355,10 @@ export interface DashboardSummary {
     pendingDeliveryCharge: number;
     /** Total delivery charges (office cut) on the delivered orders in the COD window. */
     deliveryCharge: number;
+    /** deliveryCharge on parcels whose destination is inside the valley. */
+    insideValleyDeliveryCharge: number;
+    /** deliveryCharge on every other parcel, unclassified destinations included. */
+    outsideValleyDeliveryCharge: number;
     progressPercent: number;
     scopedToRider: boolean;
     /** Net amount actually paid to the vendor in the last settlement (COD minus delivery charge). */
@@ -546,6 +550,8 @@ export const COD_DETAIL_BUCKETS = [
   'upaya',
   'branches',
   'delivery-charge',
+  'delivery-charge-inside',
+  'delivery-charge-outside',
 ] as const;
 export type CodDetailBucket = (typeof COD_DETAIL_BUCKETS)[number];
 

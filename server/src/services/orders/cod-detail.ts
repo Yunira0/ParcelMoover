@@ -83,6 +83,15 @@ export const pmRiderFilterSql = (branchFilter: Prisma.Sql | null): Prisma.Sql =>
     branchFilter ? Prisma.sql` AND NOT ${branchFilter}` : Prisma.empty
   }`;
 
+/**
+ * The parcel's destination is inside the valley (needs `p`). A location's
+ * valley falls back to its parent's, as in pricing; anything not explicitly
+ * inside - unclassified included - counts as outside.
+ */
+export const DESTINATION_INSIDE_VALLEY_SQL = Prisma.sql`EXISTS (
+  SELECT 1 FROM locations dl LEFT JOIN locations dpl ON dpl.id = dl.parent_id
+  WHERE dl.id = p.destination_location_id AND COALESCE(dl.valley, dpl.valley) = 'inside')`;
+
 import type { OrderActor } from "./types";
 
 // ── COD settlement detail (drill-down from the dashboard card) ──────────────
@@ -96,6 +105,8 @@ export const COD_DETAIL_BUCKETS = [
   "upaya",
   "branches",
   "delivery-charge",
+  "delivery-charge-inside",
+  "delivery-charge-outside",
 ] as const;
 export type CodDetailBucket = (typeof COD_DETAIL_BUCKETS)[number];
 
@@ -179,7 +190,11 @@ export async function getCodSettlementDetail(
             ? Prisma.sql`AND c.carrier_code = ${bucket} AND (${CARRIER_OWED_SQL}) > 0`
             : bucket === "branches"
               ? Prisma.sql`AND ${branchFilter!} AND ${BRANCH_OWED_SQL} > 0`
-              : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
+              : bucket === "delivery-charge-inside"
+                ? Prisma.sql`AND ${DESTINATION_INSIDE_VALLEY_SQL}`
+                : bucket === "delivery-charge-outside"
+                  ? Prisma.sql`AND NOT ${DESTINATION_INSIDE_VALLEY_SQL}`
+                  : Prisma.empty; // 'total' and 'delivery-charge': every in-scope row
 
   // Each bucket's rows must add up to the exact figure on the card, so the
   // per-row amount is the bucket's own measure - the gross collection for
@@ -196,7 +211,7 @@ export async function getCodSettlementDetail(
             ? CARRIER_OWED_SQL
             : bucket === "branches"
               ? BRANCH_OWED_SQL
-              : bucket === "delivery-charge"
+              : bucket === "delivery-charge" || bucket === "delivery-charge-inside" || bucket === "delivery-charge-outside"
               ? Prisma.sql`p.delivery_charge`
               : pendingNetSql;
 

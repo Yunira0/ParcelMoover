@@ -129,6 +129,21 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
           amount={data.deliveryCharge}
           loading={loading}
         />
+        {/* `?? 0`: a summary cached just before these fields existed lacks them. */}
+        <RowLink
+          bucket="delivery-charge-inside"
+          dot="delivery"
+          amount={data.insideValleyDeliveryCharge ?? 0}
+          loading={loading}
+          nested
+        />
+        <RowLink
+          bucket="delivery-charge-outside"
+          dot="delivery"
+          amount={data.outsideValleyDeliveryCharge ?? 0}
+          loading={loading}
+          nested
+        />
       </div>
     </div>
   );
