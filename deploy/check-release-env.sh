@@ -5,10 +5,10 @@
 # ships pointing at an API that is switched off. Changes nothing; safe to run by
 # hand:  sudo bash /var/www/express-app/deploy/check-release-env.sh
 #
-# Required:
-#   VAT_REGISTERS_ENABLED=true  The client shows Finance > Report > VAT registers;
-#                               the API answers 404 without this.
-# Advisory (warns only):
+# Advisory (warns only) while the VAT registers are hidden
+# (client/src/constants/features.ts); make VAT_REGISTERS_ENABLED a fail() again
+# in the same change that shows them:
+#   VAT_REGISTERS_ENABLED=true  The VAT register API answers 404 without this.
 #   COMPANY_NAME, COMPANY_PAN   Taxpayer line on every VAT register (IRD form);
 #                               left blank, the register prints a dotted line.
 #                               A COMPANY_PAN that is set must be 9 digits.
@@ -30,7 +30,7 @@ fail() { echo "::error title=Release env check::$1"; failed=1; }
 warn() { echo "::warning title=Release env check::$1"; }
 
 [[ "$(value VAT_REGISTERS_ENABLED)" == true ]] \
-  || fail "Set VAT_REGISTERS_ENABLED=true in $ENV_FILE; the VAT register screens are released."
+  || warn "VAT_REGISTERS_ENABLED is not true; set it before the VAT register screens are shown."
 [[ -n "$(value COMPANY_NAME)" ]] \
   || warn "COMPANY_NAME is not set; the VAT registers print a blank taxpayer name."
 pan=$(value COMPANY_PAN)

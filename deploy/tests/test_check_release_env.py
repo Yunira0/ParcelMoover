@@ -21,9 +21,9 @@ class ReleaseEnvCheckTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn('::warning', result.stdout)
 
-    def test_vat_flag_off_blocks_release(self):
+    def test_vat_flag_off_only_warns_while_registers_are_hidden(self):
         result = self.run_check(GOOD.replace('VAT_REGISTERS_ENABLED=true', 'VAT_REGISTERS_ENABLED=false'))
-        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('VAT_REGISTERS_ENABLED', result.stdout)
 
     def test_missing_company_details_only_warn(self):
@@ -38,7 +38,7 @@ class ReleaseEnvCheckTest(unittest.TestCase):
         self.assertIn('9-digit', result.stdout)
 
     def test_last_assignment_wins(self):
-        result = self.run_check(GOOD + 'VAT_REGISTERS_ENABLED=false\n')
+        result = self.run_check(GOOD + 'COMPANY_PAN=12345\n')
         self.assertEqual(result.returncode, 1)
 
     def test_missing_carrier_pan_only_warns(self):
