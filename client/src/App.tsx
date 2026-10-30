@@ -258,6 +258,10 @@ function App() {
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorFormPage /></RoleGuard>}
           />
           <Route
+            path="/vendors/:id/view"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><VendorFormPage viewOnly /></RoleGuard>}
+          />
+          <Route
             path="/vendors/:id/edit"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorFormPage /></RoleGuard>}
           />

@@ -151,8 +151,10 @@ export function isAccountantPathAllowed(pathname: string): boolean {
     pathname.startsWith('/orders/track/') ||
     pathname === '/merchant-overview' ||
     pathname === '/branches' ||
-    // Vendor Management, read-only: the list only, never /vendors/new or edit.
-    pathname === '/vendors'
+    // Vendor Management, read-only: the list and a vendor's view page, never
+    // /vendors/new or edit.
+    pathname === '/vendors' ||
+    /^\/vendors\/[^/]+\/view$/.test(pathname)
   );
 }
 

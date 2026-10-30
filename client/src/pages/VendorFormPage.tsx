@@ -252,7 +252,12 @@ const SectionHeader: React.FC<{
   </div>
 );
 
-const VendorFormPage: React.FC = () => {
+interface VendorFormPageProps {
+  /** /vendors/:id/view - the edit page with every field locked and no save (accountants). */
+  viewOnly?: boolean;
+}
+
+const VendorFormPage: React.FC<VendorFormPageProps> = ({ viewOnly = false }) => {
   const navigate = useNavigate();
   const { id: editId } = useParams();
   const isEdit = !!editId;
@@ -299,7 +304,7 @@ const VendorFormPage: React.FC = () => {
         const [res, me, adminsRes] = await Promise.all([
           getLocations(),
           getCurrentUser().catch(() => null),
-          getAllAdmins().catch(() => null),
+          viewOnly ? null : getAllAdmins().catch(() => null),
         ]);
         let hubs: Array<{ value: string; label: string; code: string | null; isMasterHub: boolean }> = [];
         if (res && res.success && Array.isArray(res.data)) {
@@ -361,13 +366,15 @@ const VendorFormPage: React.FC = () => {
     // list they may not even have permission to fetch - show their own name
     // regardless so the locked, disabled field doesn't render blank.
     if (isSalesUser) return salesName ? [{ value: ownSalesUserId, label: salesName }] : [];
+    // A viewer can't fetch the admins list either; show the saved rep.
+    if (viewOnly) return form.salesUserId ? [{ value: form.salesUserId, label: form.sales || 'Assigned' }] : [];
     return salesAdmins
       // Only active sales can be assigned; an already-assigned one stays
       // listed so editing a vendor doesn't blank its current selection.
       .filter((a) => a.active || a.userId === form.salesUserId)
       .filter((a) => a.locationId && a.locationId === form.pickupLocation)
       .map((a) => ({ value: a.userId, label: a.name }));
-  }, [salesAdmins, form.pickupLocation, form.salesUserId, isSalesUser, salesName, ownSalesUserId]);
+  }, [salesAdmins, form.pickupLocation, form.salesUserId, form.sales, isSalesUser, salesName, ownSalesUserId, viewOnly]);
 
   // The vendor's own branch, for labelling its branch-delivery rates as
   // "inside / outside <branch>" instead of "inside / outside valley".
@@ -832,11 +839,17 @@ const VendorFormPage: React.FC = () => {
       </button>
 
       <div className="vfp-header">
-        <h1>{isEdit ? 'Edit Vendor' : 'Add New Vendor'}</h1>
-        <p>{isEdit ? 'Update this vendor’s details below.' : 'Complete the registration form below to create a new vendor account.'}</p>
+        <h1>{viewOnly ? 'View Vendor' : isEdit ? 'Edit Vendor' : 'Add New Vendor'}</h1>
+        <p>
+          {viewOnly
+            ? 'This vendor’s details. Read only.'
+            : isEdit ? 'Update this vendor’s details below.' : 'Complete the registration form below to create a new vendor account.'}
+        </p>
       </div>
 
-      <form className="vfp-form" onSubmit={handleSubmit} noValidate>
+      <form className="vfp-form" onSubmit={viewOnly ? (e) => e.preventDefault() : handleSubmit} noValidate>
+        {/* A disabled fieldset locks every input, select and button inside it. */}
+        <fieldset className="vfp-fieldset" disabled={viewOnly}>
         <div className="vfp-body">
           {/* Left Column - Main Fields */}
           <div className="vfp-left">
@@ -1286,6 +1299,7 @@ const VendorFormPage: React.FC = () => {
             </section>
           </div>
         </div>
+        </fieldset>
 
         {error && (
           <div className="vfp-error" role="alert">
@@ -1295,11 +1309,13 @@ const VendorFormPage: React.FC = () => {
 
         <div className="vfp-actions">
           <Button type="button" variant="secondary" onClick={() => navigate('/vendors')} disabled={loading}>
-            Cancel
+            {viewOnly ? 'Back' : 'Cancel'}
           </Button>
-          <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Vendor'}
-          </Button>
+          {!viewOnly && (
+            <Button type="submit" variant="primary" disabled={loading}>
+              {loading ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Vendor'}
+            </Button>
+          )}
         </div>
       </form>
     </div>

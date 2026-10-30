@@ -55,6 +55,14 @@
   gap: var(--space-4);
 }
 
+/* Only there to lock every field on the read-only view page. */
+.vfp-fieldset {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
 /* Two-column body */
 .vfp-body {
   align-items: stretch;
