@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, ChevronDown, FolderOpen, ShieldCheck } from 'lucide-react';
+import { Plus, Search, ChevronDown, Eye, FolderOpen, ShieldCheck } from 'lucide-react';
 import Table, { TableRowActions } from '../components/Table';
 import { toBsDate } from '../utils/nepaliDate';
 import UserActionModal from '../components/UserActionModal';
@@ -11,10 +11,11 @@ import StatusChip from '../components/StatusChip';
 import ToggleSwitch from '../components/ToggleSwitch';
 import Button from '../components/Button';
 import UserDocumentsModal from '../components/UserDocumentsModal';
+import VendorDetailsModal from '../components/VendorDetailsModal';
 import VendorVolumeLimitPanel from '../components/vendor/VendorVolumeLimitPanel';
 import KycManagement from './KycManagement';
 import { getVendors, updateUserStatus } from '../services/users.service';
-import { isAdminSide, isSalesUser, hasAnyRole, getCurrentUser, hasAdminPermission } from '../utils/auth';
+import { isAdminSide, isSalesUser, isAccountantUser, hasAnyRole, getCurrentUser, hasAdminPermission } from '../utils/auth';
 import './VendorManagement.css';
 import { Toast } from '../components/toast';
 
@@ -64,6 +65,8 @@ const VendorManagement: React.FC = () => {
   // Registration documents are PII; the /uploads route only serves them to
   // super_admin/admin, so sales never sees the column.
   const canViewDocuments = isAdmin;
+  // Accountants can't edit a vendor; View opens their details read-only.
+  const isAccountant = isAccountantUser();
   // KYC is the application a vendor account starts life as, so it lives here
   // as a second view rather than as a section of its own. Sales never sees it.
   const canReviewKyc = hasAdminPermission('KYC_ACCESS');
@@ -94,6 +97,7 @@ const VendorManagement: React.FC = () => {
   const [actionMode, setActionMode] = useState<'edit' | 'password'>('edit');
   const [activeVendor, setActiveVendor] = useState<VendorUser | null>(null);
   const [documentsVendor, setDocumentsVendor] = useState<VendorUser | null>(null);
+  const [detailsVendor, setDetailsVendor] = useState<VendorUser | null>(null);
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
@@ -231,6 +235,17 @@ const VendorManagement: React.FC = () => {
           ),
         }]
       : []),
+    ...(isAccountant
+      ? [{
+          header: 'ACTION',
+          accessor: (item: VendorUser) => (
+            <Button variant="outline" size="sm" onClick={() => setDetailsVendor(item)}>
+              <Eye size={14} />
+              View
+            </Button>
+          ),
+        }]
+      : []),
     ...(canEdit
       ? [{
           header: 'ACTION',
@@ -357,6 +372,12 @@ const VendorManagement: React.FC = () => {
           }}
         />
       )}
+
+      <VendorDetailsModal
+        isOpen={Boolean(detailsVendor)}
+        target={detailsVendor ? { id: detailsVendor.id, name: vendorDisplayName(detailsVendor) } : null}
+        onClose={() => setDetailsVendor(null)}
+      />
 
       <UserDocumentsModal
         isOpen={Boolean(documentsVendor)}

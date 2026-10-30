@@ -580,8 +580,21 @@ export async function updateManagedUserProfile(
 
 // Full editable profile for the edit form, mapped to the create-form field names.
 // Contains bank/PAN/citizenship-level PII, so only admins may fetch it.
+// Accountants read a vendor's details (bank account, billing, rates) from
+// Vendor Management's View action. Read-only: every write path still goes
+// through assertCanManageUsers, which refuses them.
+async function detailReaderRoles(actorUserId: string, type: ManagedUserType) {
+  if (type === "vendor") {
+    const roles = (
+      await prisma.user_roles.findMany({ where: { user_id: actorUserId }, select: { roles: { select: { code: true } } } })
+    ).map((r) => r.roles.code);
+    if (roles.includes("accountant")) return roles;
+  }
+  return (await assertCanManageUsers(actorUserId, type)).roles;
+}
+
 export async function getManagedUserDetail(actorUserId: string, type: ManagedUserType, id: string) {
-  const { roles: actorRoles } = await assertCanManageUsers(actorUserId, type);
+  const actorRoles = await detailReaderRoles(actorUserId, type);
   if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
   if (type === "vendor") await assertBranchAdminOwnsVendor(actorUserId, actorRoles, id);
   if (type === "rider") await assertBranchAdminOwnsRider(actorUserId, actorRoles, id);
