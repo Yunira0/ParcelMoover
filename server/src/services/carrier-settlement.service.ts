@@ -394,7 +394,7 @@ export async function cancelCarrierSettlement(actor: Actor, id: string, remark: 
       throw new AppError(409, "Only a statement with no payment recorded can be cancelled");
     }
     await tx.carrier_settlement_items.deleteMany({ where: { settlement_id: id } });
-    const updated = await tx.carrier_settlements.update({ where: { id }, data: { status: "cancelled", remark: remark.trim() } });
+    const updated = await tx.carrier_settlements.update({ where: { id }, data: { status: "cancelled", cancelled_at: new Date(), remark: remark.trim() } });
     await tx.audit_logs.create({ data: {
       actor_id: actor.id,
       entity_type: "carrier_settlement",

@@ -6,6 +6,7 @@ import {
   requiredEmailSchema,
   passwordSchema,
   optionalUuidSchema,
+  uuidSchema,
 } from "./common";
 import { ADMIN_PERMISSIONS } from "../types/adminPermission.type";
 
@@ -217,7 +218,9 @@ export const updateManagedUserSchema = z.object({
   address: optionalAuthString(255),
   businessName: optionalAuthString(100),
   sales: optionalAuthString(100),
-  salesUserId: optionalUuidSchema,
+  // "" is kept (not collapsed to undefined like optionalUuidSchema) so picking
+  // "Unassigned" clears the rep instead of silently keeping the old one.
+  salesUserId: z.union([z.literal(""), uuidSchema]).optional(),
   rateType: optionalAuthString(30),
   flatInsideValley: optionalAuthString(20),
   flatOutsideValley: optionalAuthString(20),

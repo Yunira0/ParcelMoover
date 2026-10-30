@@ -51,13 +51,7 @@ const VatRegisterPage: React.FC<{ kind: RegisterKind }> = ({ kind }) => {
 
   return (
     <div className="acc-page">
-      <PageHeader
-        title={layout.title}
-        actionLabel="Download Excel"
-        actionIcon={<Download size={16} />}
-        onAction={() => register && downloadVatRegister(register).catch(() => setError('Could not download the Excel file. Try again.'))}
-        actionDisabled={!register || loading}
-      >
+      <PageHeader title={layout.title}>
         {kind === 'purchase' && (
           <Button variant="outline" onClick={() => setAdding(true)}>
             <Plus size={16} />
@@ -89,6 +83,13 @@ const VatRegisterPage: React.FC<{ kind: RegisterKind }> = ({ kind }) => {
             />
           </label>
         </div>
+        <Button
+          onClick={() => register && downloadVatRegister(register).catch(() => setError('Could not download the Excel file. Try again.'))}
+          disabled={!register || loading}
+        >
+          <Download size={16} />
+          Download Excel
+        </Button>
       </div>
 
       {error && <Banner tone="danger">{error}</Banner>}
@@ -112,7 +113,7 @@ const VatRegisterPage: React.FC<{ kind: RegisterKind }> = ({ kind }) => {
             ? [{
                 header: '',
                 accessor: (row: RegisterRow) =>
-                  row.source === 'bill' ? (
+                  row.cancelled ? 'Cancelled' : row.source === 'bill' ? (
                     <Button size="sm" variant="ghost" onClick={() => setCancelling(row)}>
                       Cancel
                     </Button>

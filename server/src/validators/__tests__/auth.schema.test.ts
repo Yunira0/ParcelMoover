@@ -59,6 +59,24 @@ describe("updateManagedUserSchema - vendor branch/return rate overrides", () => 
 // rather than a real employee - it's the field the finance dashboard's
 // cod_from_ncm/cod_from_upaya buckets read, so it must round-trip exactly and
 // reject anything outside the two known carriers.
+describe("updateManagedUserSchema - vendor salesUserId", () => {
+  const rep = "3f1c2a9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b";
+
+  it("keeps a new sales rep id", () => {
+    const result = updateManagedUserSchema.safeParse({ type: "vendor", salesUserId: rep });
+    expect(result.success && result.data.salesUserId).toBe(rep);
+  });
+
+  it("keeps '' so Unassigned clears the rep", () => {
+    const result = updateManagedUserSchema.safeParse({ type: "vendor", salesUserId: "" });
+    expect(result.success && result.data.salesUserId).toBe("");
+  });
+
+  it("rejects a non-uuid", () => {
+    expect(updateManagedUserSchema.safeParse({ type: "vendor", salesUserId: "abc" }).success).toBe(false);
+  });
+});
+
 describe("carrierCode - rider 3PL placeholder flag", () => {
   it("accepts 'ncm' and 'upaya' on register and update", () => {
     for (const carrierCode of ["ncm", "upaya"] as const) {

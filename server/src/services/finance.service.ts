@@ -2220,7 +2220,7 @@ export async function cancelSettlement(
 
     const result = await tx.settlements.update({
       where: { id: settlementId },
-      data: { status: "cancelled", remark: remark.trim() },
+      data: { status: "cancelled", cancelled_at: new Date(), remark: remark.trim() },
     });
 
     await tx.audit_logs.create({

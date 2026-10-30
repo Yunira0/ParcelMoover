@@ -17,6 +17,8 @@ export interface RegisterAmounts {
 export interface RegisterRow extends RegisterAmounts {
   id: string;
   source: 'statement' | 'carrier' | 'bill';
+  /** Cancelled since; its reversal is on the return register. */
+  cancelled: boolean;
   /** BS date, `2083.05.01`. */
   date: string;
   invoiceNo: string;

@@ -38,7 +38,7 @@ describe("splitVat", () => {
 describe("getVatRegister", () => {
   it("lists vendor statements' delivery charges as sales, split into value and VAT", async () => {
     vi.mocked(prisma.settlements.findMany).mockResolvedValue([{
-      id: "s1", statement_id: "STM-V-1", invoice_no: "INV-2083-0142", created_at: inBhadra, updated_at: inBhadra,
+      id: "s1", statement_id: "STM-V-1", invoice_no: "INV-2083-0142", created_at: inBhadra, cancelled_at: null, status: "settled",
       amount: 5000, payable_amount: 4774, vendor_credit_applied: 0, vat_rate: 13,
       vendors: { client_name: "Ram", business_name: "Ram Store", billing_business_name: null, pan_vat_no: "609862489" },
     }] as any);
@@ -49,35 +49,53 @@ describe("getVatRegister", () => {
       invoiceNo: "INV-2083-0142", partyName: "Ram Store", partyPan: "609862489", date: "2083.05.10", total: 226, taxable: 200, vat: 26,
     })]);
     expect(result.totals).toMatchObject({ total: 226, taxable: 200, vat: 26 });
-    // Sales are non-cancelled statements drawn up inside the period.
+    // Sales are every statement drawn up inside the period, cancelled since or not.
     const where = vi.mocked(prisma.settlements.findMany).mock.calls[0]![0]!.where as any;
-    expect(where.status).toEqual({ not: "cancelled" });
+    expect(where.status).toBeUndefined();
     expect(where.created_at.gte).toBeInstanceOf(Date);
   });
 
-  it("puts cancelled vendor statements on the sales return register", async () => {
-    await getVatRegister(staff, "sales-return", 2083, 5);
+  it("puts vendor statements on the sales return register in the month they were cancelled", async () => {
+    const cancelledAt = new Date("2026-09-20T06:00:00Z");
+    vi.mocked(prisma.settlements.findMany).mockResolvedValue([{
+      id: "s1", statement_id: "STM-V-1", invoice_no: null, created_at: inBhadra, cancelled_at: cancelledAt, status: "cancelled",
+      amount: 5000, payable_amount: 4774, vendor_credit_applied: 0, vat_rate: 13, vendors: null,
+    }] as any);
+
+    const { rows } = await getVatRegister(staff, "sales-return", 2083, 6);
     const where = vi.mocked(prisma.settlements.findMany).mock.calls[0]![0]!.where as any;
     expect(where.status).toBe("cancelled");
-    expect(where.updated_at.gte).toBeInstanceOf(Date);
+    expect(where.cancelled_at.gte).toBeInstanceOf(Date);
+    expect(rows[0]).toMatchObject({ invoiceNo: "STM-V-1", date: "2083.06.04", total: 226, cancelled: true });
+  });
+
+  it("dates carrier and bill reversals by their cancellation", async () => {
+    await getVatRegister(staff, "purchase-return", 2083, 5);
+    const carrierWhere = vi.mocked(prisma.carrier_settlements.findMany).mock.calls[0]![0]!.where as any;
+    const billWhere = vi.mocked(prisma.purchase_bills.findMany).mock.calls[0]![0]!.where as any;
+    expect(carrierWhere.cancelled_at.gte).toBeInstanceOf(Date);
+    expect(billWhere.cancelled_at.gte).toBeInstanceOf(Date);
   });
 
   it("combines carrier statements and purchase bills, placing each bill in its type's columns", async () => {
     process.env.NCM_PAN = "301234567";
     vi.mocked(prisma.carrier_settlements.findMany).mockResolvedValue([{
-      id: "c1", statement_no: "CS-1", carrier_code: "ncm", settlement_date: inBhadra, updated_at: inBhadra, carrier_charges: 1130,
+      id: "c1", statement_no: "CS-1", carrier_code: "ncm", settlement_date: inBhadra, cancelled_at: null, status: "settled", carrier_charges: 1130,
     }] as any);
     vi.mocked(prisma.purchase_bills.findMany).mockResolvedValue([{
       id: "b1", bill_no: "77", customs_no: null, supplier_name: "Kathmandu Motors", supplier_pan: "123456789",
-      description: "Delivery bike", purchase_type: "capital", bill_date: inBhadra, cancelled_at: null,
+      description: "Delivery bike", purchase_type: "capital", bill_date: inBhadra, cancelled_at: inBhadra, status: "cancelled",
       total_amount: 226000, exempt_amount: 0, taxable_amount: 200000, vat_amount: 26000,
     }] as any);
 
     const { rows, totals } = await getVatRegister(staff, "purchase", 2083, 5);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ partyName: "Nepal Can Move (NCM)", partyPan: "301234567", taxable: 1000, vat: 130 });
-    expect(rows[1]).toMatchObject({ taxable: 0, vat: 0, capitalTaxable: 200000, capitalVat: 26000 });
+    // A bill cancelled since still counts here; its reversal is on the return register.
+    expect(rows[1]).toMatchObject({ taxable: 0, vat: 0, capitalTaxable: 200000, capitalVat: 26000, cancelled: true });
     expect(totals).toMatchObject({ total: 227130, taxable: 1000, vat: 130, capitalTaxable: 200000 });
+    const billWhere = vi.mocked(prisma.purchase_bills.findMany).mock.calls[0]![0]!.where as any;
+    expect(billWhere.status).toBeUndefined();
   });
 
   it("refuses a branch-scoped admin", async () => {
