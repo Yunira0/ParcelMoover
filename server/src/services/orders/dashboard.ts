@@ -25,7 +25,7 @@ import {
   AWAITING_PICKUP_STATUSES,
   IN_DELIVERY_STATUSES,
 } from "./status-shared";
-import { branchCodFilter } from "./cod-detail";
+import { branchCodFilter, destinationInsideValleySql } from "./cod-detail";
 import { buildCodSummaryQuery, type CodSummaryRow } from "./dashboard-cod";
 import type { OrderActor } from "./types";
 import { buildReturnedTodayQuery, buildReturnedTrendQuery } from "./dashboard-returns";
@@ -218,6 +218,7 @@ async function computeDashboardSummary(
       total_returned_to_vendor: bigint;
       todays_orders: bigint;
       todays_delivered: bigint;
+      todays_delivered_inside_valley: bigint;
       todays_returns: bigint;
       total_order_amount: string;
       pending_pickups_amount: string;
@@ -246,6 +247,8 @@ async function computeDashboardSummary(
       COUNT(*) FILTER (WHERE status::text = 'returned_to_vendor') AS total_returned_to_vendor,
       COUNT(*) FILTER (WHERE created_at >= ${todayStart}) AS todays_orders,
       COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql}) AS todays_delivered,
+      -- Of those, the ones whose destination is inside the valley; the rest are outside.
+      COUNT(*) FILTER (WHERE status::text = ANY(ARRAY['delivered','partially_delivered']) AND delivered_at >= ${todayStart} ${riderDeliveredSql} AND ${destinationInsideValleySql(Prisma.raw("parcels.destination_location_id"))}) AS todays_delivered_inside_valley,
       COUNT(*) FILTER (WHERE order_type::text = 'return' AND created_at >= ${todayStart}) AS todays_returns,
       COALESCE(SUM(cod_amount), 0) AS total_order_amount,
       COALESCE(SUM(cod_amount) FILTER (WHERE status::text = ANY(${PICKUP_PENDING_STATUSES})), 0) AS pending_pickups_amount,
@@ -277,6 +280,7 @@ async function computeDashboardSummary(
   const totalReturnedToVendor = Number(overviewRow!.total_returned_to_vendor);
   const todaysOrders = Number(overviewRow!.todays_orders);
   const todaysDelivered = Number(overviewRow!.todays_delivered);
+  const todaysDeliveredInsideValley = Number(overviewRow!.todays_delivered_inside_valley);
   const todaysReturns = Number(overviewRow!.todays_returns);
   const totalOrderAmount = Number(overviewRow!.total_order_amount);
   const pendingPickupsAmount = Number(overviewRow!.pending_pickups_amount);
@@ -637,6 +641,8 @@ async function computeDashboardSummary(
     today: {
       totalOrders: todaysOrders,
       delivered: todaysDelivered,
+      deliveredInsideValley: todaysDeliveredInsideValley,
+      deliveredOutsideValley: todaysDelivered - todaysDeliveredInsideValley,
       deliveredAmount: todaysDeliveredAmount,
       inTransit,
       returns: todaysReturns,

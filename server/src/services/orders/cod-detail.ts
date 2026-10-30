@@ -84,13 +84,17 @@ export const pmRiderFilterSql = (branchFilter: Prisma.Sql | null): Prisma.Sql =>
   }`;
 
 /**
- * The parcel's destination is inside the valley (needs `p`). A location's
- * valley falls back to its parent's, as in pricing; anything not explicitly
- * inside - unclassified included - counts as outside.
+ * The parcel's destination is inside the valley. A location's valley falls back
+ * to its parent's, as in pricing; anything not explicitly inside - unclassified
+ * included - counts as outside. `destination` is the parcel's
+ * destination_location_id column, qualified for the caller's query.
  */
-export const DESTINATION_INSIDE_VALLEY_SQL = Prisma.sql`EXISTS (
+export const destinationInsideValleySql = (destination: Prisma.Sql) => Prisma.sql`EXISTS (
   SELECT 1 FROM locations dl LEFT JOIN locations dpl ON dpl.id = dl.parent_id
-  WHERE dl.id = p.destination_location_id AND COALESCE(dl.valley, dpl.valley) = 'inside')`;
+  WHERE dl.id = ${destination} AND COALESCE(dl.valley, dpl.valley) = 'inside')`;
+
+/** destinationInsideValleySql for queries that alias parcels as `p`. */
+export const DESTINATION_INSIDE_VALLEY_SQL = destinationInsideValleySql(Prisma.raw("p.destination_location_id"));
 
 import type { OrderActor } from "./types";
 

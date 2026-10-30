@@ -299,6 +299,9 @@ export interface DashboardSummary {
   today: {
     totalOrders: number;
     delivered: number;
+    /** `delivered` split by destination; the two always add up to it. */
+    deliveredInsideValley: number;
+    deliveredOutsideValley: number;
     /** COD value of the parcels delivered today. */
     deliveredAmount: number;
     inTransit: number;

@@ -10,6 +10,7 @@ import {
   DESTINATION_INSIDE_VALLEY_SQL,
   PART_PAID_FRACTIONS_SQL,
   branchCodFilterSql,
+  destinationInsideValleySql,
 } from "../cod-detail";
 import { buildCodSummaryQuery, type CodSummaryRow } from "../dashboard-cod";
 
@@ -231,5 +232,12 @@ describe("COD Settlement card - delivery charge by valley", () => {
     expect(await rowsFor(DESTINATION_INSIDE_VALLEY_SQL)).toEqual([1, 2, 3]);
     // Outside, unclassified, and no destination at all land outside.
     expect(await rowsFor(Prisma.sql`NOT ${DESTINATION_INSIDE_VALLEY_SQL}`)).toEqual([4, 10, 11, 20, 21, 30, 31, 32]);
+  });
+
+  it("works on an unaliased parcels table, as the Delivered today split uses it", async () => {
+    const inside = destinationInsideValleySql(Prisma.raw("parcels.destination_location_id"));
+    const query = Prisma.sql`SELECT id FROM parcels WHERE deleted_at IS NULL AND ${inside} ORDER BY id`;
+    const rows = (await db.query<{ id: number }>(query.text, query.values)).rows.map((r) => r.id);
+    expect(rows).toEqual([1, 2, 3]);
   });
 });

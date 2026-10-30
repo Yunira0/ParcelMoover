@@ -40,6 +40,8 @@ const EMPTY_SUMMARY: DashboardSummary = {
   today: {
     totalOrders: 0,
     delivered: 0,
+    deliveredInsideValley: 0,
+    deliveredOutsideValley: 0,
     deliveredAmount: 0,
     inTransit: 0,
     returns: 0,

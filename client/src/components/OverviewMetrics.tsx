@@ -43,6 +43,8 @@ interface Metric {
   color: string;
   label: string;
   value: number;
+  /** Small split under the value, e.g. inside / outside valley. */
+  breakdown?: { label: string; value: number }[];
 }
 
 // Flat metric strip (matches the dashboard concept): the pending pipeline plus
@@ -54,12 +56,23 @@ const OverviewMetrics: React.FC<OverviewMetricsProps> = ({ overview, today, load
     { key: 'pendingReturns', icon: RotateCcw, color: 'var(--color-danger-default)', label: 'Pending returns', value: overview.pendingReturns },
     { key: 'inTransit', icon: Truck, color: 'var(--color-info-text)', label: 'In transit', value: overview.inTransit },
     { key: 'pendingDeliveries', icon: Package, color: 'var(--color-background-warning-default)', label: 'Pending deliveries', value: overview.pendingDeliveries },
-    { key: 'deliveredToday', icon: PackageCheck, color: 'var(--color-success-default)', label: 'Delivered today', value: today.delivered },
+    {
+      key: 'deliveredToday',
+      icon: PackageCheck,
+      color: 'var(--color-success-default)',
+      label: 'Delivered today',
+      value: today.delivered,
+      // A summary cached by the previous release (30s) has no split yet.
+      breakdown: today.deliveredInsideValley === undefined ? undefined : [
+        { label: 'Inside valley', value: today.deliveredInsideValley },
+        { label: 'Outside valley', value: today.deliveredOutsideValley },
+      ],
+    },
   ];
 
   return (
     <div className="overview-metrics">
-      {metrics.map(({ key, icon: Icon, color, label, value }) => {
+      {metrics.map(({ key, icon: Icon, color, label, value, breakdown }) => {
         const delta = deltas?.[key];
         const hasDelta = !loading && delta !== undefined && delta !== null;
         const up = (delta ?? 0) >= 0;
@@ -75,6 +88,15 @@ const OverviewMetrics: React.FC<OverviewMetricsProps> = ({ overview, today, load
               <span className="overview-metric-label">{label}</span>
             </span>
             <span className="overview-metric-value">{loading ? '…' : value.toLocaleString()}</span>
+            {breakdown && !loading && (
+              <span className="overview-metric-breakdown">
+                {breakdown.map((part) => (
+                  <span key={part.label}>
+                    {part.label} <strong>{part.value.toLocaleString()}</strong>
+                  </span>
+                ))}
+              </span>
+            )}
             {hasDelta && (
               <span className={`overview-metric-delta ${up ? 'is-up' : 'is-down'}`}>
                 {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
