@@ -52,8 +52,11 @@
   margin: 0;
 }
 
+/* Small screens: actions stay beside the title, wrapping below only when
+   there's no room. */
 @media (max-width: 768px) {
   .page-header {
-    flex-direction: column;
+    align-items: center;
+    flex-wrap: wrap;
   }
 }

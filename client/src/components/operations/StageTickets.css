@@ -64,7 +64,7 @@
   text-decoration: underline;
 }
 
-.stage-tickets-id-cell {
+.stage-tickets .stage-tickets-id-cell {
   font-weight: var(--font-weight-semi-bold);
   white-space: nowrap;
 }
@@ -82,6 +82,60 @@
 
 .stage-tickets-subject-cell {
   overflow-wrap: anywhere;
+}
+
+/* Few enough columns to fit the page: wrap text rather than scroll sideways. */
+.stage-tickets .custom-table {
+  min-width: 0;
+}
+
+/* Phones: each ticket becomes a card - ID and status, then subject, vendor
+   and actions. The columns staff can find on the ticket itself are dropped. */
+@media (max-width: 768px) {
+  .stage-tickets thead,
+  .stage-tickets .stage-tickets-optional {
+    display: none;
+  }
+
+  .stage-tickets .custom-table,
+  .stage-tickets tbody {
+    display: block;
+  }
+
+  .stage-tickets tbody tr {
+    border-bottom: 1px solid var(--color-border-default);
+    display: grid;
+    gap: var(--space-2) var(--space-3);
+    grid-template-areas:
+      "id status"
+      "subject subject"
+      "vendor vendor"
+      "action action";
+    grid-template-columns: 1fr auto;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .stage-tickets tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .stage-tickets tbody td {
+    border: 0;
+    min-height: 0;
+    min-width: 0;
+    padding: 0;
+  }
+
+  /* Loading and empty-state rows span the whole card. */
+  .stage-tickets tbody td[colspan] {
+    grid-column: 1 / -1;
+  }
+
+  .stage-tickets .stage-tickets-id-cell { grid-area: id; }
+  .stage-tickets .stage-tickets-status { grid-area: status; }
+  .stage-tickets .stage-tickets-subject-cell { grid-area: subject; }
+  .stage-tickets .stage-tickets-vendor { grid-area: vendor; }
+  .stage-tickets .stage-tickets-action { grid-area: action; }
 }
 
 .stage-tickets-error {

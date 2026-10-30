@@ -66,13 +66,18 @@
   color: inherit;
 }
 
+/* Narrow screens: tabs wrap onto extra rows rather than scrolling sideways,
+   so every tab and its count stays in view. */
 @media (max-width: 900px) {
   .segmented-tabs-full {
     display: flex;
-    overflow-x: auto;
+    flex-wrap: wrap;
+    overflow: hidden;
   }
 
   .segmented-tabs-full .segmented-tab {
-    min-width: 150px;
+    border-bottom: 1px solid var(--color-border-default);
+    flex: 1 1 150px;
+    margin-bottom: -1px;
   }
 }

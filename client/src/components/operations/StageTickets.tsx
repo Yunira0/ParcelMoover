@@ -1,14 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { Eye, Ticket as TicketIcon } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { CheckCircle2, Eye, Ticket as TicketIcon } from 'lucide-react';
 import Table from '../Table';
 import Button from '../Button';
 import Pagination from '../Pagination';
 import SegmentedTabs from '../SegmentedTabs';
 import StatusChip, { type StatusChipTone } from '../StatusChip';
+import { Toast } from '../toast';
 import {
   getTickets,
+  setTicketStatus,
   TICKET_PRIORITY_LABELS,
   type Ticket,
   type TicketCategory,
@@ -99,6 +101,15 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
   const tickets = useMemo(() => listQuery.data?.data ?? [], [listQuery.data]);
   const meta = listQuery.data?.meta;
 
+  // Closing refreshes this list, the filter counts and the header badge.
+  const queryClient = useQueryClient();
+  const [closeError, setCloseError] = useState('');
+  const closeTicket = useMutation({
+    mutationFn: (id: string) => setTicketStatus(id, 'closed'),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.tickets.all }),
+    onError: () => setCloseError("Couldn't close the ticket. Try again."),
+  });
+
   const columns = useMemo(() => [
     { header: 'TICKET ID', accessor: (t: Ticket) => t.ticketId, width: '150px', className: 'stage-tickets-id-cell' },
     {
@@ -110,6 +121,7 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
         </div>
       ),
       width: '180px',
+      className: 'stage-tickets-vendor',
     },
     { header: 'SUBJECT', accessor: (t: Ticket) => t.subject, width: '240px', className: 'stage-tickets-subject-cell' },
     {
@@ -118,11 +130,13 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
         ? <Link to={`/orders/track/${t.trackingId}`} className="tracking-id-link">{t.trackingId}</Link>
         : '—',
       width: '140px',
+      className: 'stage-tickets-optional',
     },
     {
       header: 'PRIORITY',
       accessor: (t: Ticket) => <StatusChip tone={PRIORITY_TONE[t.priority]}>{TICKET_PRIORITY_LABELS[t.priority]}</StatusChip>,
       width: '110px',
+      className: 'stage-tickets-optional',
     },
     {
       header: 'STATUS',
@@ -130,21 +144,36 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
         ? <StatusChip tone="success">Closed</StatusChip>
         : <StatusChip tone="info">Open</StatusChip>,
       width: '110px',
+      className: 'stage-tickets-status',
     },
-    { header: 'CREATED AT', accessor: (t: Ticket) => toBsDate(t.createdAt), width: '110px' },
+    { header: 'CREATED AT', accessor: (t: Ticket) => toBsDate(t.createdAt), width: '110px', className: 'stage-tickets-optional' },
     {
       header: 'ACTION',
       accessor: (t: Ticket) => (
-        <Button variant="outline" size="sm" onClick={() => navigate(`/tickets/${t.id}`)}>
-          <Eye size={14} /> View
-        </Button>
+        <div className="action-buttons">
+          <Button variant="outline" size="sm" onClick={() => navigate(`/tickets/${t.id}`)}>
+            <Eye size={14} /> View
+          </Button>
+          {t.status !== 'closed' && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={closeTicket.isPending && closeTicket.variables === t.id}
+              onClick={() => closeTicket.mutate(t.id)}
+            >
+              <CheckCircle2 size={14} /> Close
+            </Button>
+          )}
+        </div>
       ),
-      width: '100px',
+      width: '180px',
+      className: 'stage-tickets-action',
     },
-  ], [navigate]);
+  ], [navigate, closeTicket]);
 
   return (
     <div className="stage-tickets">
+      <Toast tone="error" message={closeError} onShown={() => setCloseError('')} />
       <div className="stage-tickets-toolbar">
         <SegmentedTabs
           ariaLabel="Ticket status filters"
@@ -173,7 +202,6 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
           loading={listQuery.isPending}
           loadingMessage="Loading tickets..."
           emptyMessage={`No ${STATUS_FILTER_LABELS[status].toLowerCase()} tickets.`}
-          minWidth="1000px"
         />
       )}
 
