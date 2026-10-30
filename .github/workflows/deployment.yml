@@ -196,6 +196,13 @@ jobs:
             /tmp/release/ \
             ubuntu@"$SSH_HOST":/var/www/parcelmoover-staging/
 
+      # Stops here, before any snapshot or switch, if deploy/.env.production is
+      # missing a setting this release depends on (see the script's header).
+      - name: Check the release environment
+        run: |
+          ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" \
+            "sudo APP_DIR=/var/www/express-app bash /var/www/parcelmoover-staging/deploy/check-release-env.sh"
+
       - name: Pre-deploy safety net (DB snapshot + record rollback image)
         run: |
           ssh -i ~/.ssh/deploy_key ubuntu@"$SSH_HOST" bash -s <<'EOF'

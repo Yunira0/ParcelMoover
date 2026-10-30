@@ -115,3 +115,19 @@ by Express at `portal.parcelmoover.com/rider`. No separate deployment step —
   `--env-file` substitutes `${POSTGRES_PASSWORD}` in the YAML, `env_file:`
   injects vars into the app container. No `.env` file exists inside containers.
 - Committed template: `server/.env.example` only.
+
+### Release env check
+
+Before any snapshot or traffic switch, CI runs `deploy/check-release-env.sh`
+on the host against `deploy/.env.production` and stops the deploy (the current
+release keeps serving) if a setting the release needs is missing:
+
+| Setting | Why |
+| --- | --- |
+| `VAT_REGISTERS_ENABLED=true` | Finance > Report shows the VAT registers; the API is 404 without it. |
+| `COMPANY_NAME` | Taxpayer name on every VAT register (IRD Rule 23(1)(h) form). |
+| `COMPANY_PAN` (9 digits) | Taxpayer PAN on every VAT register. |
+| `NCM_PAN`, `UPAYA_PAN` | Warning only: carrier PAN on the Purchase Register. |
+
+Add the values to `.env.production` on the host, then re-run the workflow.
+Check by hand with `sudo bash /var/www/express-app/deploy/check-release-env.sh`.
