@@ -30,7 +30,8 @@ const VatRegisterPage: React.FC<{ kind: RegisterKind }> = ({ kind }) => {
     let active = true;
     getVatRegister(kind, year, month)
       .then((data) => { if (active) { setRegister(data); setError(''); } })
-      .catch((err) => { if (active) setError(apiErrorMessage(err, 'Could not load the register.')); })
+      // Clear the old register so its rows, totals and Excel aren't passed off as this period's.
+      .catch((err) => { if (active) { setRegister(null); setError(apiErrorMessage(err, 'Could not load the register.')); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [kind, year, month, reloadKey]);
@@ -54,7 +55,7 @@ const VatRegisterPage: React.FC<{ kind: RegisterKind }> = ({ kind }) => {
         title={layout.title}
         actionLabel="Download Excel"
         actionIcon={<Download size={16} />}
-        onAction={() => register && void downloadVatRegister(register)}
+        onAction={() => register && downloadVatRegister(register).catch(() => setError('Could not download the Excel file. Try again.'))}
         actionDisabled={!register || loading}
       >
         {kind === 'purchase' && (

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { CheckCircle2, Eye, Ticket as TicketIcon } from 'lucide-react';
@@ -8,6 +8,7 @@ import Pagination from '../Pagination';
 import SegmentedTabs from '../SegmentedTabs';
 import StatusChip, { type StatusChipTone } from '../StatusChip';
 import { Toast } from '../toast';
+import ConfirmDialog from '../ConfirmDialog';
 import {
   getTickets,
   setTicketStatus,
@@ -90,7 +91,6 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
     ? { unresolved: counts.pending + counts.open, closed: counts.closed }
     : undefined;
 
-  useEffect(() => { setPage(1); }, [status, pageSize]);
 
   const params = { category, status, page, pageSize };
   const listQuery = useQuery({
@@ -103,11 +103,13 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
 
   // Closing refreshes this list, the filter counts and the header badge.
   const queryClient = useQueryClient();
+  const [closing, setClosing] = useState<Ticket | null>(null);
   const [closeError, setCloseError] = useState('');
   const closeTicket = useMutation({
     mutationFn: (id: string) => setTicketStatus(id, 'closed'),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.tickets.all }),
     onError: () => setCloseError("Couldn't close the ticket. Try again."),
+    onSettled: () => setClosing(null),
   });
 
   const columns = useMemo(() => [
@@ -155,12 +157,7 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
             <Eye size={14} /> View
           </Button>
           {t.status !== 'closed' && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={closeTicket.isPending && closeTicket.variables === t.id}
-              onClick={() => closeTicket.mutate(t.id)}
-            >
+            <Button variant="outline" size="sm" onClick={() => setClosing(t)}>
               <CheckCircle2 size={14} /> Close
             </Button>
           )}
@@ -169,17 +166,26 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
       width: '180px',
       className: 'stage-tickets-action',
     },
-  ], [navigate, closeTicket]);
+  ], [navigate]);
 
   return (
     <div className="stage-tickets">
       <Toast tone="error" message={closeError} onShown={() => setCloseError('')} />
+      <ConfirmDialog
+        isOpen={closing !== null}
+        title={`Close ticket ${closing?.ticketId ?? ''}?`}
+        message="It moves to Closed. It can be reopened from the ticket."
+        confirmLabel="Close ticket"
+        busy={closeTicket.isPending}
+        onConfirm={() => closing && closeTicket.mutate(closing.id)}
+        onCancel={() => setClosing(null)}
+      />
       <div className="stage-tickets-toolbar">
         <SegmentedTabs
           ariaLabel="Ticket status filters"
           fullWidth={false}
           value={status}
-          onChange={setStatus}
+          onChange={(next) => { setStatus(next); setPage(1); }}
           options={STATUS_FILTERS.map((s) => ({ value: s, label: STATUS_FILTER_LABELS[s], count: filterCounts?.[s] }))}
         />
         {canOpenPath('/tickets') && (
@@ -212,7 +218,7 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
         onPageChange={setPage}
         pageSize={pageSize}
         pageSizeLabel="tickets"
-        onPageSizeChange={setPageSize}
+        onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
         summary={`${meta?.total ?? 0} ticket${(meta?.total ?? 0) === 1 ? '' : 's'}`}
       />
     </div>

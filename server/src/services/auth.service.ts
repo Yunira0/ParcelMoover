@@ -578,11 +578,9 @@ export async function updateManagedUserProfile(
   });
 }
 
-// Full editable profile for the edit form, mapped to the create-form field names.
-// Contains bank/PAN/citizenship-level PII, so only admins may fetch it.
-// Accountants read a vendor's details (bank account, billing, rates) from
-// Vendor Management's View action. Read-only: every write path still goes
-// through assertCanManageUsers, which refuses them.
+// Accountants may read a vendor's profile (bank account, billing, rates) for
+// Vendor Management's read-only View page. Every write path still goes through
+// assertCanManageUsers, which refuses them, and other account types stay closed.
 async function detailReaderRoles(actorUserId: string, type: ManagedUserType) {
   if (type === "vendor") {
     const roles = (
@@ -593,6 +591,9 @@ async function detailReaderRoles(actorUserId: string, type: ManagedUserType) {
   return (await assertCanManageUsers(actorUserId, type)).roles;
 }
 
+// Full editable profile for the edit form, mapped to the create-form field names.
+// Contains bank/PAN/citizenship-level PII: admins (and sales for their own
+// vendors) may fetch it, plus accountants for vendors (see detailReaderRoles).
 export async function getManagedUserDetail(actorUserId: string, type: ManagedUserType, id: string) {
   const actorRoles = await detailReaderRoles(actorUserId, type);
   if (type === "vendor") await assertSalesOwnsVendor(actorRoles, actorUserId, id);
