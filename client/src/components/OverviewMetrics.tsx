@@ -64,8 +64,9 @@ const OverviewMetrics: React.FC<OverviewMetricsProps> = ({ overview, today, load
       value: today.delivered,
       // A summary cached by the previous release (30s) has no split yet.
       breakdown: today.deliveredInsideValley === undefined ? undefined : [
-        { label: 'Inside valley', value: today.deliveredInsideValley },
-        { label: 'Outside valley', value: today.deliveredOutsideValley },
+        // LD = local dispatch (inside the valley), OOV = out of valley.
+        { label: 'LD', value: today.deliveredInsideValley },
+        { label: 'OOV', value: today.deliveredOutsideValley },
       ],
     },
   ];
@@ -90,11 +91,7 @@ const OverviewMetrics: React.FC<OverviewMetricsProps> = ({ overview, today, load
             <span className="overview-metric-value">{loading ? '…' : value.toLocaleString()}</span>
             {breakdown && !loading && (
               <span className="overview-metric-breakdown">
-                {breakdown.map((part) => (
-                  <span key={part.label}>
-                    {part.label} <strong>{part.value.toLocaleString()}</strong>
-                  </span>
-                ))}
+                {breakdown.map((part) => `${part.label} - ${part.value.toLocaleString()}`).join(' · ')}
               </span>
             )}
             {hasDelta && (

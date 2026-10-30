@@ -58,19 +58,12 @@
   line-height: 1.1;
 }
 
-/* Split under a value (Delivered today: inside / outside valley). */
+/* One short line under a value (Delivered today: LD · OOV). */
 .overview-metric-breakdown {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
   color: var(--color-text-caption);
   font-size: var(--font-size-xs);
-}
-
-.overview-metric-breakdown strong {
-  color: var(--color-text-default);
   font-variant-numeric: tabular-nums;
-  font-weight: var(--font-weight-semi-bold);
+  white-space: nowrap;
 }
 
 .overview-metric-delta {
