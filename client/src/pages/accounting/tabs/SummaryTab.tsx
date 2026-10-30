@@ -10,6 +10,7 @@ import { defaultRange, rangeParams, type RangeSelection } from '../range';
 import { getOverview, type AccountingOverview as Overview } from '../../../services/accounting.service';
 import { apiErrorMessage } from '../../../utils/serverValidation';
 import '../Accounting.css';
+import { SkeletonPage } from '../../../components/Skeleton';
 
 // The landing tab for the whole section, built to answer the four questions an
 // owner actually asks: how much money do we have, who is holding the rest of it,
@@ -55,7 +56,7 @@ const SummaryTab: React.FC = () => {
       </div>
 
       {error && <Banner tone="danger">{error}</Banner>}
-      {loading && !data && <Banner tone="info">Loading the books…</Banner>}
+      {loading && !data && <SkeletonPage heading={false} />}
 
       {data && (
         <>
@@ -207,14 +208,13 @@ const SummaryTab: React.FC = () => {
               columns={[
                 {
                   header: 'Entry',
-                  width: '130px',
                   accessor: (entry) => (
                     <Link className="acc-entry-no acc-link" to={`/accounting/transactions/journal?search=${entry.entryNo}`}>
                       {entry.entryNo}
                     </Link>
                   ),
                 },
-                { header: 'Date (BS)', width: '110px', accessor: 'bsDate' },
+                { header: 'Date (BS)', accessor: 'bsDate' },
                 {
                   header: 'Description',
                   accessor: (entry) => (
@@ -228,7 +228,6 @@ const SummaryTab: React.FC = () => {
                 },
                 {
                   header: 'Amount',
-                  width: '130px',
                   className: 'acc-num',
                   accessor: (entry) => <span className="acc-num">{money(entry.totalAmount)}</span>,
                 },

@@ -109,9 +109,9 @@
 
 /* The × close glyph — solid black so it stays clearly visible. */
 .qr-close-glyph {
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   line-height: 1;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: #000;
   margin-top: -2px;
 }
@@ -136,7 +136,7 @@
 
 .qr-thread::-webkit-scrollbar { width: 4px; }
 .qr-thread::-webkit-scrollbar-track { background: transparent; }
-.qr-thread::-webkit-scrollbar-thumb { background: var(--color-border-default); border-radius: 4px; }
+.qr-thread::-webkit-scrollbar-thumb { background: var(--color-border-default); border-radius: var(--border-radius-default); }
 
 /* Loading */
 .qr-loading {
@@ -149,17 +149,10 @@
 .qr-skeleton {
   height: 60px;
   border-radius: var(--border-radius-default);
-  background: linear-gradient(90deg, var(--color-background-elevated) 25%, var(--color-border-default) 50%, var(--color-background-elevated) 75%);
-  background-size: 200% 100%;
-  animation: qr-shimmer 1.5s infinite;
 }
 
 .qr-skeleton-sm { height: 40px; }
 
-@keyframes qr-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
 
 /* Empty */
 .qr-empty {
@@ -290,7 +283,7 @@
   padding: var(--space-2) var(--space-4);
   background: var(--color-background-primary-invert-default);
   border-left: 3px solid var(--color-background-primary-default);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   flex-shrink: 0;
 }
@@ -332,7 +325,7 @@
   flex-shrink: 0;
 }
 
-.qr-replying-close:hover { background: rgb(226 76 0 / 0.15); color: var(--color-text-primary); }
+.qr-replying-close:hover { background: rgb(242 101 34 / 0.15); color: var(--color-text-primary); }
 
 /* Compose */
 .qr-compose {
@@ -383,12 +376,6 @@
 .qr-hint {
   font-size: var(--font-size-xxs);
   color: var(--color-text-caption);
-}
-
-.qr-error {
-  font-size: var(--font-size-sm);
-  color: var(--color-danger-default);
-  margin: 0;
 }
 
 /* Responsive */

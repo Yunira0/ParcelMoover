@@ -12,7 +12,7 @@ All requests and responses are JSON (`Content-Type: application/json`), with thr
 
 **Database read optimizations:** dashboard and Partner API order/settlement lists use the same services. Order reads select the relation fields needed by the response; settlement `orderCount` uses an exact database relation count. Both retain exact `meta.total` and `meta.totalPages`. Settlement lists sort by newest `createdAt`, then descending ID when timestamps tie. API-key authentication, vendor ownership, write idempotency, validation and rate limits are unchanged. Operator logs can also include numeric connection-pool snapshots at request start/finish; those snapshots are not included in API responses. Index deployment and pool capacity settings are operator tasks. Settlement approval/payment remains staff-only; the vendor COD request workflow is unchanged.
 
-**Staff and system boundaries:** voucher campaign administration and code exports, KYC approval/rejection and document-retention maintenance, and delivery-status corrections are not Partner API actions. Continuing a partial delivery through staff follow-up or return handling preserves the cash already collected, including settlement-linked cash. Reversing a completed delivery still requires staff authority and is blocked when its cash has been settled or included in a settlement statement. Document-retention maintenance keeps files referenced by a vendor or another KYC application. Vendors continue to read their order and finance results through the shared, vendor-scoped services.
+**Staff and system boundaries:** voucher campaign administration and code exports, KYC approval/rejection and document-retention maintenance, and delivery-status corrections are not Partner API actions. Continuing a partial delivery through staff follow-up or return handling preserves the cash already collected, including settlement-linked cash. Reversing a completed delivery still requires staff authority and is blocked when its cash has been settled or included in a settlement statement. Document-retention maintenance keeps files referenced by a vendor or another KYC application. Vendors continue to read their order and finance results through the shared, vendor-scoped services. The VAT registers (sales, purchase and their returns), purchase bills, and the taxable-value / VAT split of a statement's delivery charges are staff finance views and are not returned by the Partner API.
 
 ---
 
@@ -933,6 +933,8 @@ GET /api/v1/finance/settlements/{id}                    — line-item detail of 
 GET /api/v1/finance/settlements/{id}/documents/{kind}   — payment receipt / tax invoice (kind: receipt | tax-invoice)
 GET /api/v1/finance/unsettled-orders                    — orders with COD collected but not yet settled
 ```
+
+> **`invoiceNo`** on a settlement (list and detail) is your invoice number for that payout. Staff record it with the payment proof, so it is `null` until then, and it is cleared if the payment is reverted. Setting it is a staff action; there is no Partner API endpoint to write it.
 
 > **`/documents/{kind}` returns the file itself, not JSON.** It is the only way to fetch the `paymentReceiptPath` / `taxInvoicePath` values that appear on a settlement detail — those are internal paths you cannot request directly. Available once the statement has been paid with the document attached; `404` otherwise.
 >

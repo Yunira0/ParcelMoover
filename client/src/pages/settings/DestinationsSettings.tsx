@@ -15,6 +15,8 @@ import { listUpayaDeliveryAreas, type UpayaDeliveryArea } from '../../services/u
 import { apiErrorMessage } from '../../utils/serverValidation';
 import '../../components/Modal.css';
 import './DestinationsSettings.css';
+import { useToast } from '../../components/toast';
+import { SkeletonList } from '../../components/Skeleton';
 
 const emptyDest = { name: '', code: '', province: '', district: '', municipality: '', ncmBranch: '', upayaAreaId: '' };
 
@@ -85,6 +87,7 @@ const DestinationsSettings: React.FC = () => {
   // first time the form opens.
   const [upayaAreas, setUpayaAreas] = useState<UpayaDeliveryArea[] | null>(null);
   const [upayaAreasError, setUpayaAreasError] = useState(false);
+  const toast = useToast();
   useEffect(() => {
     if (!showDestForm || upayaAreas) return;
     listUpayaDeliveryAreas()
@@ -137,7 +140,7 @@ const DestinationsSettings: React.FC = () => {
   const addDestination = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!destForm.name.trim()) { setError('Destination name is required.'); return; }
+    if (!destForm.name.trim()) { toast.error('Destination name is required.'); return; }
     setSavingDest(true);
     try {
       const payload = {
@@ -163,7 +166,7 @@ const DestinationsSettings: React.FC = () => {
       cancelDestForm();
       await load();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save destination.');
+      toast.error(err.response?.data?.message || 'Failed to save destination.');
     } finally {
       setSavingDest(false);
     }
@@ -184,7 +187,7 @@ const DestinationsSettings: React.FC = () => {
 
     const failed = names.filter((_, i) => results[i].status === 'rejected');
     if (failed.length > 0) {
-      setError(`Failed to add: ${failed.join(', ')}`);
+      toast.error(`Failed to add: ${failed.join(', ')}`);
       setAreaInputs((prev) => ({ ...prev, [destId]: failed.join(', ') }));
     } else {
       setAreaInputs((prev) => ({ ...prev, [destId]: '' }));
@@ -204,7 +207,7 @@ const DestinationsSettings: React.FC = () => {
       setEditArea(null);
       await load();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to rename area.');
+      toast.error(err.response?.data?.message || 'Failed to rename area.');
     } finally {
       setSavingEdit(false);
     }
@@ -225,7 +228,7 @@ const DestinationsSettings: React.FC = () => {
       await updateLocation(dest.id, patch);
     } catch (err) {
       setDestinations((prev) => prev.map((d) => (d.id === dest.id ? dest : d)));
-      setError(apiErrorMessage(err, `Failed to update ${dest.name}.`));
+      toast.error(apiErrorMessage(err, `Failed to update ${dest.name}.`));
     } finally {
       setSavingClassId(null);
     }
@@ -237,7 +240,7 @@ const DestinationsSettings: React.FC = () => {
       await updateLocation(id, { isActive: !isActive });
       await load();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update.');
+      toast.error(err.response?.data?.message || 'Failed to update.');
     }
   };
 
@@ -249,7 +252,7 @@ const DestinationsSettings: React.FC = () => {
       setConfirmDelete(null);
       await load();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to delete.');
+      toast.error(err.response?.data?.message || 'Failed to delete.');
       setConfirmDelete(null);
     } finally {
       setDeleting(false);
@@ -370,7 +373,7 @@ const DestinationsSettings: React.FC = () => {
       {error && <p className="dest-error">{error}</p>}
 
       {loading ? (
-        <p className="dest-muted">Loading destinations…</p>
+        <SkeletonList />
       ) : destinations.length === 0 ? (
         <p className="dest-muted">No destinations yet. Add one to get started.</p>
       ) : (

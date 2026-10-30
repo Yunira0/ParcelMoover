@@ -20,8 +20,6 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .vendor-today-panel-date {

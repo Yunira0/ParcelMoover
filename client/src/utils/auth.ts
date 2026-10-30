@@ -20,6 +20,8 @@ export interface CurrentUser {
    * their assigned branch instead of receiving the full head-office shell.
    */
   branchScoped?: boolean;
+  /** An admins-profile account's department ("Operation", "Customer Experience", ...). */
+  department?: string | null;
 }
 
 export function getCurrentUser(): CurrentUser | null {
@@ -113,26 +115,28 @@ export function isBranchWorkspacePathAllowed(pathname: string): boolean {
 
 /**
  * True for a finance-only accountant account (the "Accountant" department). The
- * server gives it the whole Finance section plus branch COD settlement, and
- * read-only views of orders and the overviews - no operations, users or settings.
+ * server gives it the whole Finance section plus branch COD settlement, order
+ * editing, and the vendor and branch overviews - no other operations, users or settings.
  */
 export function isAccountantUser(): boolean {
   return hasAnyRole(['accountant']) && !isAdminSide();
 }
 
 /** Where an accountant lands, and where any non-finance URL sends them back to. */
-export const ACCOUNTANT_HOME = '/accounting';
+export const ACCOUNTANT_HOME = '/dashboard';
 
 /** Routes that belong to the accountant's finance-only workspace. */
 export function isAccountantPathAllowed(pathname: string): boolean {
   return (
     pathname === '/profile' ||
-    pathname === '/accounting' ||
+    pathname === '/dashboard' ||
+    // The order lists behind the dashboard's Realtime Overview cards.
+    pathname.startsWith('/overview/') ||
     pathname.startsWith('/accounting/') ||
     pathname === '/finance' ||
     pathname.startsWith('/finance/') ||
     pathname === '/billing' ||
-    // Drill-downs behind the COD Settlement card on the finance overview.
+    // Drill-downs behind the dashboard's COD Settlement card.
     pathname.startsWith('/cod/') ||
     pathname === '/cod-settlement-requests' ||
     pathname.startsWith('/cod-settlement-requests/') ||
@@ -141,14 +145,102 @@ export function isAccountantPathAllowed(pathname: string): boolean {
     pathname === '/branches/settlement' ||
     pathname.startsWith('/branches/settlement/') ||
     pathname === '/branches/billing' ||
-    // Read-only views to check the money against: the order list and an
-    // order's detail (never create/bulk-create), and the three overviews.
+    // The order list and an order's detail, where an order can be corrected
+    // (never created or bulk-created), and the vendor and branch overviews.
     pathname === '/orders' ||
     pathname.startsWith('/orders/track/') ||
     pathname === '/merchant-overview' ||
-    pathname === '/rider-overview' ||
-    pathname === '/branches'
+    pathname === '/branches' ||
+    // Vendor Management, read-only: the list only, never /vendors/new or edit.
+    pathname === '/vendors'
   );
+}
+
+/**
+ * Department workspaces for head-office admins. Operation and Customer
+ * Experience keep the plain `admin` role (unlike Sales/Accountant, which get
+ * their own role), so the server already serves every page they work; the
+ * department only narrows the shell to those pages. It is read live from /me,
+ * so changing the department on Edit Admin moves the account to the new
+ * workspace on its next refresh. Super admins and branch workspace accounts
+ * are never narrowed by department.
+ */
+export type DepartmentWorkspace = 'operation' | 'customer_experience';
+
+const DEPARTMENT_WORKSPACES: Record<string, DepartmentWorkspace> = {
+  operation: 'operation',
+  'customer experience': 'customer_experience',
+};
+
+export function getDepartmentWorkspace(): DepartmentWorkspace | null {
+  const user = getCurrentUser();
+  if (!user || !user.roles.includes('admin') || user.roles.includes('super_admin')) return null;
+  if (user.branchScoped === true) return null;
+  return DEPARTMENT_WORKSPACES[(user.department ?? '').trim().toLowerCase()] ?? null;
+}
+
+/** Where a department workspace lands, and where any other URL sends it back to. */
+export const DEPARTMENT_HOME = '/dashboard';
+
+const matches = (pathname: string, prefixes: string[]) =>
+  prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
+// Pages each workspace has by department. Order page includes create, bulk
+// create and an order's detail.
+// Reports are order exports, so whoever has the order page gets them too.
+const COMMON_DEPARTMENT_PATHS = ['/profile', '/orders', '/dashboard', '/overview', '/reports'];
+const DEPARTMENT_PATHS: Record<DepartmentWorkspace, string[]> = {
+  operation: [
+    // Operations: pickup, dispatch, run sheet, transit, return, hold, L&D.
+    '/pickup', '/dispatch', '/rider-run-sheet', '/oov', '/return', '/hold', '/loss-and-damage',
+    // Rider COD, the rider settlements it opens, and the dashboard COD card's
+    // drill-down (view + download) that sits next to it.
+    '/accounting/transactions/rider-cod', '/finance/settlements', '/cod',
+    '/rider-overview',
+    '/riders',
+  ],
+  customer_experience: [
+    '/vendors',
+    '/tickets',
+    '/remarks', '/unclosed-remarks', '/rider-remarks',
+  ],
+};
+
+// Screens a super admin can still open up for one account through the
+// delegated permissions on Edit Admin.
+const PERMISSION_PATHS: Record<string, string[]> = {
+  MANAGE_USERS: ['/admin', '/vendors', '/riders'],
+  SETTINGS_ACCESS: ['/settings', '/banners', '/announcements'],
+  SYSTEM_LOGS_ACCESS: ['/system-logs'],
+  KYC_ACCESS: ['/vendors'],
+  // The whole Finance menu, Branch COD included.
+  ACCOUNTING_ACCESS: [
+    '/accounting', '/finance', '/billing', '/cod-settlement-requests', '/branches/settlement', '/branches/billing',
+  ],
+};
+
+export function isDepartmentPathAllowed(workspace: DepartmentWorkspace, pathname: string): boolean {
+  // Branch Overview (exact path - not branch settlement/billing/destinations).
+  if (pathname === '/branches') return true;
+  // Restoring / permanently deleting trashed orders is not part of the order page.
+  if (matches(pathname, ['/orders/trash'])) return false;
+  if (matches(pathname, COMMON_DEPARTMENT_PATHS) || matches(pathname, DEPARTMENT_PATHS[workspace])) return true;
+  return Object.entries(PERMISSION_PATHS).some(
+    ([permission, paths]) => hasAdminPermission(permission) && matches(pathname, paths),
+  );
+}
+
+/**
+ * Whether the signed-in user may open a page - the same workspace rules
+ * ProtectedRoute enforces, so shared screens can hide links that would only
+ * bounce back. Query strings are ignored.
+ */
+export function canOpenPath(to: string): boolean {
+  const pathname = to.split('?')[0];
+  if (isBranchWorkspaceUser()) return isBranchWorkspacePathAllowed(pathname);
+  if (isAccountantUser()) return isAccountantPathAllowed(pathname);
+  const workspace = getDepartmentWorkspace();
+  return workspace ? isDepartmentPathAllowed(workspace, pathname) : true;
 }
 
 /** True for a pure sales account — excludes admin/super_admin, who also carry the 'sales' role code when department = Sales but use the admin views. */
@@ -198,6 +290,9 @@ export function hasAdminPermission(permission: string): boolean {
   if (roles.includes('super_admin')) return true;
   if (roles.includes('accountant') && ACCOUNTANT_PERMISSIONS.includes(permission)) return true;
   if (!roles.includes('admin')) return false;
+  // Both department workspaces list Branch Overview; the server grants the same
+  // read-only level by department (server utils/departmentWorkspace.ts).
+  if (permission === 'BRANCH_TRACKING_READ' && getDepartmentWorkspace()) return true;
   const p = getCurrentUser()?.permissions;
   return Array.isArray(p) && p.includes(permission);
 }

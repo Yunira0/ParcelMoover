@@ -143,7 +143,7 @@
 /* Field error */
 .rfp-field-error {
   color: var(--color-danger-text);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   line-height: 16px;
   margin-top: -8px;
 }
@@ -163,12 +163,8 @@
 
 .rfp-file-label {
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-default);
-}
-
-.rfp-required {
-  color: var(--color-danger-default);
 }
 
 .rfp-file-btn {
@@ -223,14 +219,14 @@
 }
 
 .rfp-file-hint {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-caption);
 }
 
 /* Hint */
 .rfp-hint {
   color: var(--color-text-caption);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   line-height: 16px;
   margin: 0;
 }
@@ -271,7 +267,7 @@
 
 .rfp-success-card h3 {
   font-size: 1.4rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 var(--space-3) 0;
 }

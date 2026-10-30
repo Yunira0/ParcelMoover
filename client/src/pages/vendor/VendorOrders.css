@@ -103,7 +103,7 @@
 
 .vo-date-range-inputs:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 12%);
 }
 
 /* Create / bulk toolbar -------------------------------------------------- */
@@ -141,7 +141,7 @@
 
 .vo-search-box:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 12%);
 }
 
 .vo-search-box input {

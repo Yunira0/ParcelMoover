@@ -36,6 +36,7 @@ import { STATUS_TIMELINE_HEADERS, statusTimelineCells } from '../utils/orderStat
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './DispatchOperations.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Toast } from '../components/toast';
 
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
@@ -536,15 +537,13 @@ const DispatchOperations: React.FC = () => {
     {
       header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '70px',
     },
-    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-', width: '95px' },
+    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-' },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
         <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
       ),
-      width: '140px',
       className: 'dispatch-tracking-cell',
     },
     {
@@ -555,7 +554,6 @@ const DispatchOperations: React.FC = () => {
           {order.orderType}
         </span>
       ),
-      width: '130px',
     },
     {
       header: 'SENDER',
@@ -565,7 +563,6 @@ const DispatchOperations: React.FC = () => {
           <small>{order.senderPhone}</small>
         </div>
       ),
-      width: '170px',
     },
     {
       header: 'RECEIVER',
@@ -575,7 +572,6 @@ const DispatchOperations: React.FC = () => {
           <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
-      width: '170px',
     },
     {
       header: 'LOCATION',
@@ -587,13 +583,12 @@ const DispatchOperations: React.FC = () => {
           {order.receiverAddress && <small title={order.receiverAddress}>{order.receiverAddress}</small>}
         </div>
       ),
-      width: '190px',
     },
-    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '90px' },
-    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '100px' },
-    { header: 'ATTEMPT', accessor: (order: Order) => order.attemptCount, width: '90px' },
-    { header: 'DELIVERY RIDER', accessor: (order: Order) => order.riderName || '-', width: '150px' },
-    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDateTime(order.lastUpdatedAt) || '-', width: '160px' },
+    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-') },
+    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount) },
+    { header: 'ATTEMPT', accessor: (order: Order) => order.attemptCount },
+    { header: 'DELIVERY RIDER', accessor: (order: Order) => order.riderName || '-' },
+    { header: 'LAST UPDATED', accessor: (order: Order) => toBsDateTime(order.lastUpdatedAt) || '-' },
     {
       header: 'REMARKS',
       accessor: (order: Order) => (
@@ -606,13 +601,13 @@ const DispatchOperations: React.FC = () => {
           {order.remarks || '-'}
         </button>
       ),
-      width: '160px',
       className: 'dispatch-remarks-cell',
     },
   ];
 
   return (
     <div className="dispatch-operations-container">
+      <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
       <PageHeader title="Local Dispatch" />
 
       <SegmentedTabs
@@ -734,7 +729,7 @@ const DispatchOperations: React.FC = () => {
                   <div className="dispatch-partial-form">
                     <div className="dispatch-partial-field">
                       <label className="dispatch-partial-label">
-                        Remarks <span className="dispatch-partial-required">*</span>
+                        Remarks
                       </label>
                       <textarea
                         rows={2}
@@ -747,7 +742,7 @@ const DispatchOperations: React.FC = () => {
                     </div>
                     <div className="dispatch-partial-field">
                       <label className="dispatch-partial-label">
-                        COD Collected <span className="dispatch-partial-required">*</span>
+                        COD Collected
                       </label>
                       <input
                         type="number"
@@ -766,7 +761,7 @@ const DispatchOperations: React.FC = () => {
                   <div className="dispatch-partial-form">
                     <div className="dispatch-partial-field">
                       <label className="dispatch-partial-label">
-                        Reason <span className="dispatch-partial-required">*</span>
+                        Reason
                       </label>
                       <textarea
                         rows={2}
@@ -779,7 +774,6 @@ const DispatchOperations: React.FC = () => {
                     </div>
                   </div>
                 )}
-                {actionError && <p className="dispatch-action-error">{actionError}</p>}
                 <div className="dispatch-status-submit-row">
                   <Button variant="secondary" className="dispatch-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); setReasonRemarks(''); }}>
                     Cancel
@@ -902,7 +896,6 @@ const DispatchOperations: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading dispatch orders..."
         emptyMessage="No dispatch orders found."
-        minWidth="1730px"
         tableClassName="dispatch-table"
       />
 

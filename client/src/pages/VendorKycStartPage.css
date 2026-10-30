@@ -175,14 +175,6 @@
 }
 
 .kyc-skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--color-background-canvas) 25%,
-    var(--color-background-elevated) 50%,
-    var(--color-background-canvas) 75%
-  );
-  background-size: 200% 100%;
-  animation: kyc-shimmer 1.5s infinite ease-in-out;
   border-radius: var(--border-radius-default);
 }
 
@@ -198,18 +190,9 @@
   height: 140px;
 }
 
-@keyframes kyc-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .kyc-skeleton {
-    animation: none;
   }
 }
 

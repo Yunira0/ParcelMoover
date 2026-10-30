@@ -19,6 +19,7 @@ import {
   ReportsRedirect,
   SearchRedirect,
 } from './pages/accounting/legacyRedirects'
+import { VAT_REGISTERS_ENABLED } from './constants/features'
 import './App.css'
 
 // Keep public entry points independent of the authenticated workspace and
@@ -66,11 +67,14 @@ const CashBankPage = lazy(() => import('./pages/finance/CashBankPage'))
 const CashBankVoucherPage = lazy(() => import('./pages/finance/CashBankVoucherPage'))
 const JournalEntryPage = lazy(() => import('./pages/finance/JournalEntryPage'))
 const MastersPage = lazy(() => import('./pages/finance/MastersPage'))
+const BankTransferPage = lazy(() => import('./pages/finance/BankTransferPage'))
+const VatRegisterPage = lazy(() => import('./pages/finance/VatRegisterPage'))
 const SettlementPayPage = lazy(() => import('./pages/SettlementPayPage'))
 const DeliveryRateSettings = lazy(() => import('./pages/DeliveryRateSettings'))
 const BranchDestinations = lazy(() => import('./pages/branch/BranchDestinations'))
 const Settings = lazy(() => import('./pages/settings/Settings'))
 const SlaSettings = lazy(() => import('./pages/SlaSettings'))
+const BankManagement = lazy(() => import('./pages/BankManagement'))
 const PickupTimeSlots = lazy(() => import('./pages/PickupTimeSlots'))
 const PickupOperations = lazy(() => import('./pages/PickupOperations'))
 const DispatchOperations = lazy(() => import('./pages/DispatchOperations'))
@@ -146,7 +150,7 @@ function App() {
           />
           <Route
             path="/overview/:metric"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><OverviewOrdersPage /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><OverviewOrdersPage /></RoleGuard>}
           />
           {/* Per-merchant read of the orders list: the ten roll-up figures plus
               the waybill table, scoped by a merchant picker and date range. */}
@@ -167,7 +171,7 @@ function App() {
               picker and date range instead of a vendor. */}
           <Route
             path="/rider-overview"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><RiderOverview /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin']}><RiderOverview /></RoleGuard>}
           />
           {/* Per-sales-rep read of the orders list — scoped to every vendor a
               sales rep owns (vendors.sales_user_id) instead of one vendor.
@@ -247,7 +251,7 @@ function App() {
           />
           <Route
             path="/vendors"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'sales']}><VendorManagement /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant', 'sales']}><VendorManagement /></RoleGuard>}
           />
           <Route
             path="/vendors/new"
@@ -344,6 +348,10 @@ function App() {
             element={<RoleGuard allowedRoles={['super_admin']}><SlaSettings /></RoleGuard>}
           />
           <Route
+            path="/banks"
+            element={<RoleGuard allowedRoles={['super_admin']}><BankManagement /></RoleGuard>}
+          />
+          <Route
             path="/pickup-time-slots"
             element={<RoleGuard allowedRoles={['super_admin']}><PickupTimeSlots /></RoleGuard>}
           />
@@ -402,16 +410,12 @@ function App() {
             path="/remarks"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><Remarks /></RoleGuard>}
           />
-          {/* Same page, one route per author group. The `key` forces a remount so
-              search/page state from one queue doesn't carry into the other. */}
           <Route
             path="/unclosed-remarks"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks key="vendor" author="vendor" /></RoleGuard>}
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks /></RoleGuard>}
           />
-          <Route
-            path="/rider-remarks"
-            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><UnclosedRemarks key="rider" author="rider" /></RoleGuard>}
-          />
+          {/* Rider comments merged into Unclosed Remarks; keeps old links working. */}
+          <Route path="/rider-remarks" element={<Navigate to="/unclosed-remarks?from=rider" replace />} />
           <Route
             path="/remarks/:id"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'vendor', 'vendor_staff', 'sales']}><RemarkDetail /></RoleGuard>}
@@ -449,6 +453,20 @@ function App() {
             path="/finance/carrier-cod/:id/pay"
             element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><CarrierSettlementPayPage /></RoleGuard>}
           />
+          {/* CIPS bulk transfer sheet for the vendor statements still owed. Same
+              staff as Vendor COD; the API refuses branch admins. */}
+          <Route
+            path="/finance/bank-transfer"
+            element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']}><BankTransferPage /></RoleGuard>}
+          />
+          {/* VAT registers: books grant, like the API (head office only, enforced there). */}
+          {VAT_REGISTERS_ENABLED && (['sales', 'sales-return', 'purchase', 'purchase-return'] as const).map((kind) => (
+            <Route
+              key={kind}
+              path={`/finance/reports/${kind}-register`}
+              element={<RoleGuard allowedRoles={['super_admin', 'admin', 'accountant']} adminPermission="ACCOUNTING_ACCESS"><VatRegisterPage kind={kind} /></RoleGuard>}
+            />
+          ))}
           <Route
             path="/finance/pending-cod"
             element={<RoleGuard allowedRoles={['vendor', 'vendor_staff']} requiredPermission="FINANCE_ACCESS"><VendorPendingCod /></RoleGuard>}

@@ -16,7 +16,7 @@
 
   font-family: var(--sans);
   line-height: 1.5;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
 
   color-scheme: light;
   color: var(--app-color-text);
@@ -63,7 +63,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 a {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--app-color-accent);
   text-decoration: inherit;
 }
@@ -73,7 +73,7 @@ button {
   border: 1px solid transparent;
   padding: 0.6em 1.2em;
   font-size: 1em;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-family: inherit;
   background-color: var(--app-color-accent);
   color: var(--app-color-accent-contrast);

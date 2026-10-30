@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
@@ -29,6 +29,7 @@ import { useCursorPagination } from '../../hooks/useCursorPagination';
 import '../OrderManagement.css';
 import '../MerchantOverview.css';
 import './SalesOverview.css';
+import { Skeleton } from '../../components/Skeleton';
 
 const PAGE_SIZE = 10;
 
@@ -62,16 +63,6 @@ const SalesOverview: React.FC = () => {
 
   // With a rep picked, orders wait until one of their vendors is clicked.
   const showOrders = !salesUserId || selectedVendor !== null;
-
-  // Picking a vendor brings its orders into view - they open below the
-  // vendor table, usually past the bottom of the screen.
-  const ordersRef = useRef<HTMLDivElement>(null);
-  const selectedVendorId = selectedVendor?.id;
-  useEffect(() => {
-    if (!selectedVendorId) return;
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    ordersRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
-  }, [selectedVendorId]);
 
   const filters: SalesOverviewFilters = useMemo(
     () => ({
@@ -164,7 +155,7 @@ const SalesOverview: React.FC = () => {
 
   const columns = useMemo(
     () => [
-      { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}`, width: '70px' },
+      { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}` },
       {
         header: 'TRACKING ID',
         accessor: (o: Order) => (
@@ -172,19 +163,17 @@ const SalesOverview: React.FC = () => {
             {o.trackingId}
           </Link>
         ),
-        width: '170px',
         className: 'tracking-cell',
       },
-      { header: 'CREATED', accessor: (o: Order) => toBsDate(o.createdAt) || '-', width: '110px' },
-      { header: 'VENDOR', accessor: (o: Order) => o.vendorName || '-', width: '150px' },
+      { header: 'CREATED', accessor: (o: Order) => toBsDate(o.createdAt) || '-' },
+      { header: 'VENDOR', accessor: (o: Order) => o.vendorName || '-' },
       {
         header: 'RECEIVER',
         accessor: (o: Order) => (
           <div className="party-cell"><span>{o.receiverName}</span><small>{o.receiverPhone}</small></div>
         ),
-        width: '160px',
       },
-      { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-', width: '130px' },
+      { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-' },
       {
         header: 'FINANCE',
         accessor: (o: Order) => (
@@ -194,15 +183,13 @@ const SalesOverview: React.FC = () => {
             <span>Collected: {formatMoney(o.collectedAmount)}</span>
           </div>
         ),
-        width: '140px',
       },
-      { header: 'WEIGHT', accessor: (o: Order) => (o.weightKg ? `${o.weightKg} Kg` : '-'), width: '90px' },
+      { header: 'WEIGHT', accessor: (o: Order) => (o.weightKg ? `${o.weightKg} Kg` : '-') },
       {
         header: 'STATUS',
         accessor: (o: Order) => (
           <StatusChip tone={getStatusTone(o.status)}>{ORDER_STATUS_LABELS[o.status]}</StatusChip>
         ),
-        width: '150px',
       },
     ],
     [],
@@ -281,10 +268,10 @@ const SalesOverview: React.FC = () => {
         <>
           {error && <p className="order-load-error">{error}</p>}
 
-          <div className="order-toolbar sales-orders-anchor" ref={ordersRef}>
+          <div className="order-toolbar sales-orders-anchor">
             <div className="order-toolbar-left">
               <span className="vendor-overview-count">
-                {loading ? 'Loading…' : `${totalCount} order${totalCount === 1 ? '' : 's'}`}
+                {loading ? <Skeleton width={64} height={12} className="skeleton-inline" /> : `${totalCount} order${totalCount === 1 ? '' : 's'}`}
                 {selectedVendor && <> · {salesVendorName(selectedVendor)}</>}
                 {selectedIds.size > 0 && <> · {selectedIds.size} selected</>}
               </span>
@@ -307,7 +294,6 @@ const SalesOverview: React.FC = () => {
             loading={loading && orders.length === 0}
             loadingMessage="Loading orders..."
             emptyMessage={selectedVendor ? 'No orders found for this vendor and range.' : 'No orders found for this sales rep and range.'}
-            minWidth="1500px"
             tableClassName="orders-table merchant-overview-table"
           />
 

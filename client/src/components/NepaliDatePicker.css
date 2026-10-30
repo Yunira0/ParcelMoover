@@ -60,7 +60,7 @@
 
 .ndp-title {
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-default);
 }
 
@@ -91,7 +91,7 @@
 .ndp-weekday {
   padding: 4px 0;
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   text-align: center;
   color: var(--color-text-caption);
 }
@@ -120,7 +120,7 @@
 
 .ndp-day--today {
   border-color: var(--color-border-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
 }
 
 .ndp-day--selected,

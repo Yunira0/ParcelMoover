@@ -7,6 +7,7 @@ import {
   type BulkImportResult,
 } from '../../services/locations.service';
 import './DestinationsImport.css';
+import { Toast } from '../../components/toast';
 
 // ── Column definitions ────────────────────────────────────────────────────────
 
@@ -334,7 +335,7 @@ const DestinationsImport: React.FC = () => {
 
     return (
       <div className="di-result">
-        {error && <p role="alert" className="di-error">{error}</p>}
+        <Toast tone="error" message={error} onShown={() => setError('')} />
         <div className="di-result-counts">
           <div className="di-stat di-stat--success">
             <CheckCircle2 size={26} />
@@ -539,7 +540,7 @@ const DestinationsImport: React.FC = () => {
         </div>
       )}
 
-      {error && <p role="alert" className="di-error">{error}</p>}
+      <Toast tone="error" message={error} onShown={() => setError('')} />
 
       <div className="di-actions">
         <Button

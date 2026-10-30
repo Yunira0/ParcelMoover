@@ -40,6 +40,7 @@ import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import { useCursorPagination } from '../hooks/useCursorPagination';
 import './OOVOperations.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Toast } from '../components/toast';
 
 type OOVTab = 'oov' | 'dispatched';
 
@@ -577,22 +578,19 @@ const OOVOperations: React.FC = () => {
     {
       header: 'ORDER ID',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '70px',
       className: 'oov-sn-cell',
     },
-    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-', width: '100px' },
+    { header: 'DATE', accessor: (order: Order) => toBsDate(order.createdAt) || '-' },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
         <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
       ),
-      width: '124px',
       className: 'oov-tracking-cell',
     },
     {
       header: 'ORDER TYPE',
       accessor: (order: Order) => <span className="oov-order-type">{order.orderType}</span>,
-      width: '131px',
     },
     {
       header: 'SENDER',
@@ -602,7 +600,6 @@ const OOVOperations: React.FC = () => {
           <small>{order.senderPhone}</small>
         </div>
       ),
-      width: '239px',
     },
     {
       header: 'RECEIVER',
@@ -612,7 +609,6 @@ const OOVOperations: React.FC = () => {
           <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
-      width: '238px',
     },
     {
       header: 'LOCATION',
@@ -624,16 +620,14 @@ const OOVOperations: React.FC = () => {
           {order.receiverAddress && <small title={order.receiverAddress}>{order.receiverAddress}</small>}
         </div>
       ),
-      width: '180px',
     },
     {
       header: 'CARRIER',
       accessor: (order: Order) =>
         order.carrierLabel ? <StatusChip tone="info">{order.carrierLabel}</StatusChip> : '-',
-      width: '96px',
     },
-    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-'), width: '80px' },
-    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount), width: '113px' },
+    { header: 'WEIGHT', accessor: (order: Order) => (order.weightKg ? `${order.weightKg} Kg` : '-') },
+    { header: 'COD', accessor: (order: Order) => formatMoney(order.codAmount) },
     {
       header: 'LAST UPDATED',
       accessor: (order: Order) => (
@@ -642,7 +636,6 @@ const OOVOperations: React.FC = () => {
           <span>{toBsDateTimeCell(order.lastUpdatedAt) || '-'}</span>
         </div>
       ),
-      width: '155px',
     },
     { header: 'REMARKS', accessor: (order: Order) => (
       <button
@@ -653,11 +646,12 @@ const OOVOperations: React.FC = () => {
       >
         {order.remarks || '-'}
       </button>
-    ), width: '160px', className: 'oov-remarks-cell' },
+    ), className: 'oov-remarks-cell' },
   ];
 
   return (
     <div className="oov-operations-container">
+      <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
       <PageHeader title="Transit Operations" />
 
       <SegmentedTabs
@@ -803,7 +797,7 @@ const OOVOperations: React.FC = () => {
                 {isReasonRequiredAction && (
                   <div className="oov-reason-field">
                     <label className="oov-reason-label">
-                      Reason <span className="oov-reason-required">*</span>
+                      Reason
                     </label>
                     <textarea
                       rows={2}
@@ -815,7 +809,6 @@ const OOVOperations: React.FC = () => {
                     />
                   </div>
                 )}
-                {actionError && <p className="oov-action-error">{actionError}</p>}
                 {statusUpdateProgress && (
                   <p className="oov-status-empty" aria-live="polite">
                     Processing {statusUpdateProgress.completed} of {statusUpdateProgress.total} orders…
@@ -942,7 +935,6 @@ const OOVOperations: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders found."
-        minWidth="1530px"
         tableClassName="oov-table"
       />
 

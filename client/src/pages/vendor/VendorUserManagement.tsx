@@ -30,6 +30,7 @@ import {
 } from '../../services/staff.service';
 import '../../components/Modal.css';
 import './VendorUserManagement.css';
+import { Toast, useToast } from '../../components/toast';
 
 const PERMISSION_ICONS: Record<StaffPermission, LucideIcon> = {
   DASHBOARD_ACCESS: LayoutDashboard,
@@ -71,6 +72,7 @@ const VendorUserManagement: React.FC = () => {
   const [pwdErrors, setPwdErrors] = useState<{ password?: string; confirmPassword?: string }>({});
   const [pwdGeneralError, setPwdGeneralError] = useState('');
   const [pwdSubmitting, setPwdSubmitting] = useState(false);
+  const toast = useToast();
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -150,7 +152,7 @@ const VendorUserManagement: React.FC = () => {
       await setStaffEnabled(member.id, !member.enabled);
       await loadStaff();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to update staff status.');
+      toast.error(err?.response?.data?.message || 'Failed to update staff status.');
     } finally {
       setTogglingId(null);
     }
@@ -161,7 +163,6 @@ const VendorUserManagement: React.FC = () => {
       {
         header: 'SN',
         accessor: (member: Staff) => visibleStaff.findIndex((s) => s.id === member.id) + 1,
-        width: '50px',
       },
       {
         header: 'STAFF NAME',
@@ -171,7 +172,6 @@ const VendorUserManagement: React.FC = () => {
             <span className="staff-name">{member.name}</span>
           </div>
         ),
-        width: '220px',
       },
       {
         header: 'EMAIL',
@@ -181,7 +181,6 @@ const VendorUserManagement: React.FC = () => {
             {member.email}
           </span>
         ),
-        width: '230px',
       },
       {
         header: 'PERMISSIONS',
@@ -223,7 +222,6 @@ const VendorUserManagement: React.FC = () => {
             </span>
           </div>
         ),
-        width: '150px',
       },
       {
         header: 'ACTIONS',
@@ -251,7 +249,6 @@ const VendorUserManagement: React.FC = () => {
             </button>
           </div>
         ),
-        width: '230px',
       },
     ],
     [visibleStaff, togglingId],
@@ -287,7 +284,6 @@ const VendorUserManagement: React.FC = () => {
         loading={loading}
         loadingMessage="Loading staff..."
         emptyMessage="No staff found."
-        minWidth="1080px"
       />
 
       {visibleStaff.length > 0 && (
@@ -337,7 +333,7 @@ const VendorUserManagement: React.FC = () => {
                   error={pwdErrors.confirmPassword}
                 />
               </div>
-              {pwdGeneralError && <p className="error-text">{pwdGeneralError}</p>}
+              <Toast tone="error" message={pwdGeneralError} onShown={() => setPwdGeneralError('')} />
               <div className="modal-footer">
                 <Button type="button" variant="secondary" onClick={closePassword}>Cancel</Button>
                 <Button type="submit" variant="primary" disabled={pwdSubmitting}>

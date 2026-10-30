@@ -9,6 +9,7 @@ import Table from '../Table';
 import { toBsDate } from '../../utils/nepaliDate';
 import { apiErrorMessage } from '../../utils/serverValidation';
 import { printCampaignSlips } from '../../utils/voucherSlips';
+import { Toast, useToast } from '../toast';
 import {
   campaignCsvUrl, getCampaign, listCampaignCodes, setCampaignStatus, setVoucherActive,
   type CampaignCodeRow, type CampaignCodeState, type VoucherCampaign, type VoucherOffer,
@@ -53,6 +54,7 @@ export default function CampaignDetail({ campaignId, onBack, onChanged, onPrevie
   const [selected, setSelected] = useState<Set<string | number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const toast = useToast();
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [printing, setPrinting] = useState(false);
@@ -118,7 +120,7 @@ export default function CampaignDetail({ campaignId, onBack, onChanged, onPrevie
       onChanged();
       setRevision(v => v + 1);
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not update the campaign.'));
+      toast.error(apiErrorMessage(err, 'Could not update the campaign.'));
     } finally {
       setBusy(false);
     }
@@ -130,7 +132,7 @@ export default function CampaignDetail({ campaignId, onBack, onChanged, onPrevie
       await setVoucherActive(row.id, !row.isActive);
       setRevision(v => v + 1);
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not update the code.'));
+      toast.error(apiErrorMessage(err, 'Could not update the code.'));
     }
   }
 
@@ -172,9 +174,9 @@ export default function CampaignDetail({ campaignId, onBack, onChanged, onPrevie
       <div className="vouchers-detail-head">
         <Button variant="secondary" size="sm" onClick={onBack}>← Back to campaigns</Button>
       </div>
-      {notice && <Banner tone="success">{notice}</Banner>}
+      <Toast tone="success" message={notice} onShown={() => setNotice('')} />
       {error && <Banner tone="danger">{error}</Banner>}
-      {loading && <div className="billing-skeleton billing-skeleton-table" aria-busy="true" aria-label="Loading campaign" />}
+      {loading && <div className="skeleton billing-skeleton billing-skeleton-table" aria-busy="true" aria-label="Loading campaign" />}
 
       {!loading && campaign && <>
         <div className="vouchers-detail-title">
@@ -235,7 +237,6 @@ export default function CampaignDetail({ campaignId, onBack, onChanged, onPrevie
                   {r.isActive ? 'Pause' : 'Resume'}
                 </Button>
               ),
-              width: '110px',
             },
           ]}
           data={codes}

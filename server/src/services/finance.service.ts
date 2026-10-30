@@ -14,6 +14,7 @@ import { getActivePaymentMethodNames } from "./payment-method.service";
 import { adminBranchScopeIds, assertHeadOfficeOnly } from "../lib/branchScope";
 import { isFinanceStaff } from "../utils/financeRoles";
 import { DELIVERY_CHARGE_VAT_RATE } from "./money-rules";
+import { splitVat } from "./vat-register.service";
 import {
   AttachSettlementDocumentsInput,
   CodPaymentFilter,
@@ -28,6 +29,7 @@ import {
   PendingCodBill,
   PendingCodItem,
   SettlementDetailItem,
+  SettlementBillingPaymentsResult,
   SettlementDetailResult,
   SettlementListItem,
   SettlementsListResult,
@@ -435,6 +437,13 @@ export async function listOrderCod(
   return result;
 }
 
+/** A vendor statement's delivery charges (collected - payable + credit), split into taxable value and VAT. */
+function vatSplitOf(s: { amount: Prisma.Decimal; payable_amount: Prisma.Decimal | null; vendor_credit_applied: Prisma.Decimal; vat_rate: Prisma.Decimal | null }) {
+  const charges = round2(Number(s.amount) - Number(s.payable_amount ?? s.amount) + Number(s.vendor_credit_applied));
+  const { taxable, vat } = splitVat(charges, s.vat_rate === null ? DELIVERY_CHARGE_VAT_RATE : Number(s.vat_rate));
+  return { taxableAmount: taxable, vatAmount: vat };
+}
+
 export async function listSettlements(
   actor: Actor,
   payeeType: "rider" | "vendor",
@@ -635,6 +644,8 @@ export async function listSettlements(
       paidAmount: Number(s.paid_amount),
       paymentBreakdown: sumByMethod(s.payments),
       remark: s.remark,
+      invoiceNo: s.invoice_no,
+      ...(isStaff && payeeType === "vendor" ? vatSplitOf(s) : {}),
     };
   });
 
@@ -1065,6 +1076,49 @@ export async function availableVendorCredit(db: Prisma.TransactionClient | typeo
         WHERE vendor_id = ${vendorId}::uuid AND payee_type = 'vendor' AND status::text <> 'cancelled') AS applied
   `;
   return Math.max(0, round2(Number(row?.paid ?? 0) - Number(row?.applied ?? 0)));
+}
+
+/**
+ * Billing money the vendor has sent that no statement has absorbed yet. The
+ * Make Payment page shows it before a payment is recorded by hand, because the
+ * two paths are not linked: an admin recording a vendor's transfer here while
+ * the same transfer sits in Billing counts it twice (once on the statement,
+ * once as credit handed back on a later one). Staff only - the route is
+ * restricted to the roles that can record payments.
+ */
+export async function getSettlementBillingPayments(
+  actor: Actor,
+  settlementId: string,
+): Promise<SettlementBillingPaymentsResult> {
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
+  const settlement = await prisma.settlements.findUnique({
+    where: { id: settlementId },
+    select: { payee_type: true, vendor_id: true },
+  });
+  if (!settlement) throw new AppError(404, "Settlement not found");
+  if (settlement.payee_type !== "vendor" || !settlement.vendor_id) {
+    return { availableCredit: 0, pendingPayments: [] };
+  }
+
+  const [availableCredit, pending] = await Promise.all([
+    availableVendorCredit(prisma, settlement.vendor_id),
+    prisma.vendor_payments.findMany({
+      where: { vendor_id: settlement.vendor_id, status: "pending" },
+      orderBy: { created_at: "asc" },
+      select: { id: true, amount: true, method: true, reference: true, created_at: true },
+    }),
+  ]);
+
+  return {
+    availableCredit,
+    pendingPayments: pending.map((p) => ({
+      id: p.id,
+      amount: Number(p.amount),
+      method: p.method,
+      reference: p.reference,
+      submittedAt: p.created_at.toISOString(),
+    })),
+  };
 }
 
 /** What payForSettlement does to a vendor statement's collections once it is fully paid. */
@@ -1627,6 +1681,49 @@ export async function deleteSettlementDocument(
   return { id: settlementId, documents: documents.map(toDocumentResult) };
 }
 
+/**
+ * Records (or clears, with null) the vendor's invoice number on a statement.
+ * Same audience and state rule as attaching proof: head-office finance staff,
+ * vendor statements, and only once a payment is on record.
+ */
+export async function setSettlementInvoiceNo(
+  actor: Actor,
+  settlementId: string,
+  invoiceNo: string | null,
+): Promise<{ id: string; invoiceNo: string | null }> {
+  if (!isFinanceStaff(actor)) throw new AppError(403, "Not authorized to edit this statement");
+  await assertHeadOfficeForVendorSettlementById(actor, settlementId);
+
+  return prisma.$transaction(async (tx) => {
+    await lockSettlement(tx, settlementId);
+
+    const settlement = await tx.settlements.findUnique({
+      where: { id: settlementId },
+      select: { payee_type: true, status: true, invoice_no: true },
+    });
+    if (!settlement) throw new AppError(404, "Settlement not found");
+    if (settlement.payee_type !== "vendor") {
+      throw new AppError(400, "Invoice numbers are recorded on vendor statements only");
+    }
+    if (settlement.status !== "settled" && settlement.status !== "partially_paid") {
+      throw new AppError(400, "An invoice number can only be recorded once a payment is recorded");
+    }
+
+    await tx.settlements.update({ where: { id: settlementId }, data: { invoice_no: invoiceNo } });
+    await tx.audit_logs.create({
+      data: {
+        actor_id: actor.id,
+        entity_type: "settlement",
+        entity_id: settlementId,
+        action: "SET_SETTLEMENT_INVOICE_NO",
+        old_data: { invoiceNo: settlement.invoice_no },
+        new_data: { invoiceNo },
+      },
+    });
+    return { id: settlementId, invoiceNo };
+  });
+}
+
 // Admin-only, gated by the delegable EDIT_SETTLEMENTS permission: corrects an
 // unsettled statement's order list (add/remove cod_collections) after the
 // fact. Once any payment is recorded against a statement (via payForSettlement)
@@ -1882,6 +1979,8 @@ export async function revertSettlement(
         // reverted statement doesn't keep serving the old proof.
         payment_receipt_path: null,
         tax_invoice_path: null,
+        // The invoice belonged to the payout being undone.
+        invoice_no: null,
       },
     });
 
@@ -1933,6 +2032,7 @@ export async function revertSettlement(
             filePath: doc.file_path,
           })),
           remark: settlement.remark,
+          invoiceNo: settlement.invoice_no,
         },
         new_data: { status: "pending", remark: remark.trim() },
       },
@@ -2347,10 +2447,98 @@ export async function getSettlementDetail(actor: Actor, settlementId: string): P
     paymentRecords,
     documents,
     remark: settlement.remark,
+    invoiceNo: settlement.invoice_no,
     // Fall back to the legacy columns for statements the partial-payments
     // backfill couldn't reach.
     paymentReceiptPath: newestOfKind("receipt") ?? settlement.payment_receipt_path,
     taxInvoicePath: newestOfKind("tax_invoice") ?? settlement.tax_invoice_path,
     items,
   };
+}
+
+// ── CIPS bulk bank transfer ─────────────────────────────────────────────────
+// The connectIPS charge (Rs 10 by default) is set on the Bank Transfer page
+// and taken off there; this only reports what each statement still owes.
+
+export interface BankTransferRow {
+  settlementId: string;
+  statementId: string;
+  status: settlement_status;
+  settlementDate: string | null;
+  createdAt: string;
+  vendorId: string;
+  vendorName: string;
+  /** What is still owed to the vendor on the statement. */
+  codAmount: number;
+  bankName: string | null;
+  /** From the banks table, matched on the vendor's bank name; null when it isn't there. */
+  bankCode: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+}
+
+/**
+ * Every vendor statement the office still owes money on (pending or part
+ * paid, payable above zero), with the vendor's bank details, for the CIPS
+ * bulk transfer sheet. Statements where the vendor owes the office are left
+ * out - there is nothing to send them. Head office only, like the vendor
+ * settlement ledger it is drawn from.
+ */
+export async function listVendorBankTransfers(actor: Actor): Promise<BankTransferRow[]> {
+  if (!isFinanceStaff(actor)) throw new AppError(403, "Not authorized to view bank transfers");
+  await assertHeadOfficeForVendorSettlement(actor);
+
+  const statements = await prisma.settlements.findMany({
+    where: { payee_type: "vendor", status: { in: ["pending", "partially_paid"] }, vendor_id: { not: null } },
+    orderBy: [{ created_at: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      statement_id: true,
+      status: true,
+      settlement_date: true,
+      created_at: true,
+      amount: true,
+      payable_amount: true,
+      paid_amount: true,
+      vendors: {
+        select: {
+          id: true,
+          client_name: true,
+          business_name: true,
+          bank_name: true,
+          bank_account_no: true,
+          bank_account_holder: true,
+        },
+      },
+    },
+  });
+
+  // Vendors store the bank by name; the code lives in the banks table.
+  const banks = await prisma.banks.findMany({ select: { name: true, code: true } });
+  const codeByName = new Map(banks.map((b) => [b.name.trim().toLowerCase(), b.code]));
+
+  const rows: BankTransferRow[] = [];
+  for (const s of statements) {
+    const vendor = s.vendors;
+    if (!vendor) continue;
+    const payable = Number(s.payable_amount ?? s.amount);
+    if (payable <= 0) continue;
+    const codAmount = round2(payable - Number(s.paid_amount));
+    if (codAmount <= 0) continue;
+    rows.push({
+      settlementId: s.id,
+      statementId: s.statement_id,
+      status: s.status,
+      settlementDate: s.settlement_date ? s.settlement_date.toISOString().slice(0, 10) : null,
+      createdAt: s.created_at.toISOString(),
+      vendorId: vendor.id,
+      vendorName: vendor.business_name || vendor.client_name,
+      codAmount,
+      bankName: vendor.bank_name,
+      bankCode: (vendor.bank_name && codeByName.get(vendor.bank_name.trim().toLowerCase())) || null,
+      accountNumber: vendor.bank_account_no,
+      accountName: vendor.bank_account_holder,
+    });
+  }
+  return rows;
 }

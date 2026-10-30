@@ -17,6 +17,7 @@ import { getAdmins, updateAdminPermissions, updateAdminRole, updateUserStatus, A
 import { getCurrentUserRoles, hasAdminPermission } from '../utils/auth';
 import '../components/Modal.css';
 import './AdminManagement.css';
+import { Toast } from '../components/toast';
 
 interface AdminUser {
   id: string;
@@ -156,8 +157,8 @@ const AdminManagement: React.FC = () => {
   };
 
   const columns = [
-    { header: 'SN', accessor: 'sn' as keyof AdminUser, width: '50px' },
-    { header: 'EMPLOYEE ID', accessor: (a: AdminUser) => a.employeeId || '—', width: '110px' },
+    { header: 'SN', accessor: 'sn' as keyof AdminUser },
+    { header: 'EMPLOYEE ID', accessor: (a: AdminUser) => a.employeeId || '—' },
     { header: 'NAME', accessor: 'name' as keyof AdminUser },
     { header: 'EMAIL', accessor: 'email' as keyof AdminUser },
     { header: 'PHONE', accessor: 'phone' as keyof AdminUser },
@@ -197,9 +198,7 @@ const AdminManagement: React.FC = () => {
             {item.status}
           </StatusChip>
         </div>
-      ),
-      width: '150px'
-    },
+      ) },
     // Registration documents, in the same slot vendor management puts them:
     // last read-only column before the row actions.
     {
@@ -210,7 +209,6 @@ const AdminManagement: React.FC = () => {
           View
         </Button>
       ),
-      width: '120px',
     },
     ...(canManageAdmins
       ? [{
@@ -231,7 +229,6 @@ const AdminManagement: React.FC = () => {
               )}
             </TableRowActions>
           ),
-          width: isSuperAdmin ? '340px' : '220px',
         }]
       : []),
   ];
@@ -239,7 +236,7 @@ const AdminManagement: React.FC = () => {
   return (
     <div className="admin-management-container">
       <PageHeader
-        title="ADMIN MANAGEMENT"
+        title="Admin Management"
         {...(canManageAdmins
           ? {
               actionLabel: 'Add new',
@@ -274,7 +271,7 @@ const AdminManagement: React.FC = () => {
         </div>
       </div>
 
-      {statusError && <p className="admin-status-error">{statusError}</p>}
+      <Toast tone="error" message={statusError} onShown={() => setStatusError('')} />
       {loadError && (
         <Banner tone="danger">
           {loadError}{' '}
@@ -282,25 +279,21 @@ const AdminManagement: React.FC = () => {
         </Banner>
       )}
 
-      {loading ? (
-        <div className="loading-state">Loading admins...</div>
-      ) : (
-        <>
-          <Table columns={columns} data={admins} selectable={false} />
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            ariaLabel="Admin management pagination"
-            summary={`${total} admin${total !== 1 ? 's' : ''} total`}
-            pageSize={pageSizeChoice}
-            pageSizeLabel="admins"
-            onPageSizeChange={(size) => {
-              setPageSizeChoice(size);
-              setPage(1);
-            }}
-          />
-        </>
+      <Table columns={columns} data={admins} selectable={false} loading={loading} />
+      {(!loading || total > 0) && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          ariaLabel="Admin management pagination"
+          summary={`${total} admin${total !== 1 ? 's' : ''} total`}
+          pageSize={pageSizeChoice}
+          pageSizeLabel="admins"
+          onPageSizeChange={(size) => {
+            setPageSizeChoice(size);
+            setPage(1);
+          }}
+        />
       )}
 
       <UserDocumentsModal
@@ -378,7 +371,7 @@ const AdminManagement: React.FC = () => {
               )}
             </div>
 
-            {permError && <p className="admin-permission-error">{permError}</p>}
+            <Toast tone="error" message={permError} onShown={() => setPermError('')} />
 
             <div className="admin-permission-actions">
               <Button variant="secondary" onClick={() => setPermAdmin(null)} disabled={permSaving}>

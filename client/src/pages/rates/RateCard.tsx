@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import Banner from '../../components/Banner';
+import { Toast, useToast } from '../../components/toast';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import Pagination from '../../components/Pagination';
@@ -71,7 +71,7 @@ const RateCard: React.FC<Props> = ({
 }) => {
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [savingRow, setSavingRow] = useState<string | null>(null);
-  const [status, setStatus] = useState('');
+  const toast = useToast();
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
@@ -167,10 +167,7 @@ const RateCard: React.FC<Props> = ({
     return edit.rate.trim() !== saved.rate || edit.branchRate.trim() !== saved.branchRate;
   };
 
-  const flash = (text: string) => {
-    setStatus(text);
-    setTimeout(() => setStatus(''), 2000);
-  };
+  const flash = (text: string) => toast.success(text);
 
   const saveRow = async (row: Row) => {
     const edit = rowFor(row);
@@ -342,14 +339,9 @@ const RateCard: React.FC<Props> = ({
               placeholder="Search destinations, codes or covered areas"
               width="100%"
             />
-            {status && <span className="rates-panel-status" role="status">{status}</span>}
           </div>
 
-          {error && (
-            <div className="rates-panel-banner">
-              <Banner tone="danger">{error}</Banner>
-            </div>
-          )}
+          <Toast tone="error" message={error} onShown={() => setError('')} />
 
           <Table
             columns={columns}

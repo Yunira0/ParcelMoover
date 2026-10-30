@@ -3,7 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { getTopVendors } from '../services/users.service';
 import { queryKeys } from '../queries/keys';
+import { canOpenPath } from '../utils/auth';
 import './TopVendors.css';
+import { SkeletonList } from './Skeleton';
 
 interface VendorRow {
   id: string;
@@ -27,13 +29,13 @@ const TopVendors: React.FC = () => {
     <section className="top-vendors" aria-label="Top vendors">
       <div className="top-vendors-header">
         <h3 className="section-title">Top vendors</h3>
-        <Link to="/vendors" className="top-vendors-link">View all</Link>
+        {canOpenPath('/vendors') && <Link to="/vendors" className="top-vendors-link">View all</Link>}
       </div>
 
       {error && <p className="top-vendors-error">{error}</p>}
 
       {loading ? (
-        <p className="top-vendors-empty">Loading vendor performance…</p>
+        <SkeletonList rows={4} />
       ) : vendors.length === 0 ? (
         <p className="top-vendors-empty">No vendors assigned yet.</p>
       ) : (

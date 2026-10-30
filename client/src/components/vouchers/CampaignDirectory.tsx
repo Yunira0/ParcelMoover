@@ -57,7 +57,6 @@ export default function CampaignDirectory({
                 )}
               </div>
             ),
-            width: '200px',
           },
         ]}
         data={campaigns}

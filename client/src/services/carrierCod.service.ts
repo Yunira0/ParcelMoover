@@ -40,7 +40,7 @@ export interface CarrierSettlementDetail extends CarrierSettlementRow {
   createdAt: string;
   documents: Array<{ id: string; fileName: string | null; isPdf: boolean; uploadedAt: string }>;
   payments: Array<{ id: string; amount: number; method: string; breakdown: PaymentLine[]; remark: string | null; paidAt: string; recordedBy: string | null }>;
-  items: Array<{ codCollectionId: string; orderNumber: number; trackingId: string; vendorName: string; receiverName: string; destination: string | null; collectedAmount: number; carrierCharge: number; netAmount: number }>;
+  items: Array<{ codCollectionId: string; orderNumber: number; trackingId: string; vendorName: string; receiverName: string; receiverPhone: string; receiverAlternatePhone: string; destination: string | null; collectedAmount: number; carrierCharge: number; netAmount: number }>;
 }
 
 export async function getUnsettledCarrierOrders(carrier: CarrierCode): Promise<UnsettledCarrierOrder[]> {

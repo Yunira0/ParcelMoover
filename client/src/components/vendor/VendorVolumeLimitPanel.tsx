@@ -6,6 +6,8 @@ import {
   updateVendorVolumeSettings,
 } from '../../services/vendorVolume.service';
 import './VendorVolumeLimitPanel.css';
+import { useToast } from '../toast';
+import { SkeletonForm } from '../Skeleton';
 
 // Super admin only - the daily-parcel threshold behind the "High volume
 // vendor" filter tab. A vendor qualifies once any single day's parcel count
@@ -17,6 +19,7 @@ const VendorVolumeLimitPanel: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const toast = useToast();
 
   const load = async () => {
     setLoading(true);
@@ -36,7 +39,7 @@ const VendorVolumeLimitPanel: React.FC = () => {
   const save = async () => {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 1) {
-      setError('Enter a whole number of parcels per day, at least 1.');
+      toast.error('Enter a whole number of parcels per day, at least 1.');
       return;
     }
     setSaving(true);
@@ -49,7 +52,7 @@ const VendorVolumeLimitPanel: React.FC = () => {
         setSaved(true);
       }
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to save the volume limit.');
+      toast.error(err?.response?.data?.message || 'Failed to save the volume limit.');
     } finally {
       setSaving(false);
     }
@@ -65,7 +68,7 @@ const VendorVolumeLimitPanel: React.FC = () => {
       {error && <p className="vendor-volume-panel-error">{error}</p>}
 
       {loading ? (
-        <p className="vendor-volume-panel-hint">Loading…</p>
+        <SkeletonForm fields={1} />
       ) : (
         <div className="vendor-volume-panel-form">
           <FormField

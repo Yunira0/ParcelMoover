@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Banknote, ChevronRight } from 'lucide-react';
 import type { CodDetailBucket, DashboardSummary } from '../services/orders.service';
 import { COD_BUCKET_META, codBucketPath } from '../utils/codBuckets';
+import { canOpenPath } from '../utils/auth';
 import './CODSettlement.css';
 
 interface CODSettlementProps {
@@ -25,24 +26,31 @@ const RowLink: React.FC<{
   loading: boolean;
   amountClassName?: string;
   nested?: boolean;
-}> = ({ bucket, dot, amount, loading, amountClassName, nested = false }) => (
-  <Link
-    to={codBucketPath(bucket)}
-    className={nested ? 'settlement-subrow' : 'settlement-row'}
-    aria-label={`${COD_BUCKET_META[bucket].label}: view orders`}
-  >
-    <div className="status-label">
-      <span className={`status-dot ${dot}`}></span>
-      <span>{COD_BUCKET_META[bucket].label}</span>
-    </div>
-    <span className="settlement-row-value">
-      <span className={`status-amount ${amountClassName ?? ''}`.trim()}>
-        {loading ? '...' : formatCurrency(amount)}
+}> = ({ bucket, dot, amount, loading, amountClassName, nested = false }) => {
+  const to = codBucketPath(bucket);
+  const className = nested ? 'settlement-subrow' : 'settlement-row';
+  const content = (
+    <>
+      <div className="status-label">
+        <span className={`status-dot ${dot}`}></span>
+        <span>{COD_BUCKET_META[bucket].label}</span>
+      </div>
+      <span className="settlement-row-value">
+        <span className={`status-amount ${amountClassName ?? ''}`.trim()}>
+          {loading ? '...' : formatCurrency(amount)}
+        </span>
+        {canOpenPath(to) && <ChevronRight className="settlement-row-chevron" size={14} aria-hidden="true" />}
       </span>
-      <ChevronRight className="settlement-row-chevron" size={14} aria-hidden="true" />
-    </span>
-  </Link>
-);
+    </>
+  );
+  // Plain row for anyone who can't open the order list behind it.
+  if (!canOpenPath(to)) return <div className={className}>{content}</div>;
+  return (
+    <Link to={to} className={className} aria-label={`${COD_BUCKET_META[bucket].label}: view orders`}>
+      {content}
+    </Link>
+  );
+};
 
 const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) => {
   const percent = Math.max(0, Math.min(100, Math.round(data.progressPercent)));
@@ -88,7 +96,9 @@ const CODSettlement: React.FC<CODSettlementProps> = ({ data, loading = false }) 
         <RowLink
           bucket="pending"
           dot="pending"
-          amount={data.pendingCod}
+          // Net of the delivery charge still to be deducted, as on the vendor card.
+          // A rider's cash in hand is gross.
+          amount={data.scopedToRider ? data.pendingCod : data.pendingCod - (data.pendingDeliveryCharge ?? 0)}
           loading={loading}
           amountClassName="cod-pending"
         />

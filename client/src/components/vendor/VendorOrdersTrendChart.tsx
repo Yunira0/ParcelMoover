@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DashboardTrendDay } from '../../services/orders.service';
 import './VendorOrdersTrendChart.css';
+import { Skeleton, SkeletonRegion } from '../Skeleton';
 
 interface VendorOrdersTrendChartProps {
   data: DashboardTrendDay[];
@@ -84,8 +85,10 @@ const VendorOrdersTrendChart: React.FC<VendorOrdersTrendChartProps> = ({ data, l
         </div>
       </div>
       <div className="vendor-orders-trend-chart-body" ref={bodyRef}>
-      {loading || data.length === 0 ? (
-        <div className="vendor-orders-trend-chart-empty">{loading ? 'Loading...' : 'No data yet'}</div>
+      {loading ? (
+        <SkeletonRegion className="skeleton-fill"><Skeleton height="100%" /></SkeletonRegion>
+      ) : data.length === 0 ? (
+        <div className="vendor-orders-trend-chart-empty">No data yet</div>
       ) : (
         <svg
           className="vendor-orders-trend-chart-svg"

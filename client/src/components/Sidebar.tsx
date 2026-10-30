@@ -40,19 +40,23 @@ import {
   Gauge,
   Building2,
   TrendingUp,
+  Landmark,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import {
   getCurrentUser,
   getCurrentUserRoles,
+  getDepartmentWorkspace,
   hasAdminPermission,
   isAccountantUser,
   isAdminSide,
   isBranchWorkspaceUser,
 } from '../utils/auth';
+import type { DepartmentWorkspace } from '../utils/auth';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
 import { useMobileNav } from '../context/MobileNavContext';
 import { logout } from '../services/auth.service';
+import { VAT_REGISTERS_ENABLED } from '../constants/features';
 import './Sidebar.css';
 
 // ── Collapse context ───────────────────────────────────────────────────────────
@@ -434,32 +438,12 @@ const BranchSidebar: React.FC = () => {
 // ── Finance menu ────────────────────────────────────────────────────────────
 // Shared by the head-office admin sidebar and the finance-only accountant
 // sidebar, so both always offer the same Finance screens.
-const FinanceNav: React.FC<{ canReadBooks: boolean; showOverview?: boolean }> = ({ canReadBooks, showOverview }) => (
+const FinanceNav: React.FC<{ canReadBooks: boolean }> = ({ canReadBooks }) => (
   <>
-    {/* Accounting. Gated on the same permission the routes and the API
-        check, so the section simply isn't there for staff who weren't
-        granted it — rather than being visible and then refusing. */}
-    {/* The books, named the way a Tally user already expects: the two COD
-        registers, the day book, the ledger, and the cash and bank sides of
-        the cash book.
-
-        One level shallower than it was. Rider COD and Vendor COD used to
-        sit inside a "Transactions" group, which put a daily screen behind
-        two disclosures; they are top-level here, with Vendor COD keeping
-        its own three screens beneath it.
-
-        Rider COD and Vendor COD are also the exception to the
-        ACCOUNTING_ACCESS gate: they are the settlement lists that used to
-        be COD Management, which every admin could reach. Hiding them behind
-        a grant would take a daily screen away from the people who use it,
-        so an admin without the grant sees those and nothing else here. */}
-    <SidebarSection label="Finance" />
+    {/* COD: the settlement registers. Rider and Vendor COD skip the
+        ACCOUNTING_ACCESS gate - every admin settles them daily. */}
+    <SidebarSection label="COD" />
     <div className="sidebar-subnav">
-      {/* The accountant has this as their home item above the section. */}
-      {showOverview && canReadBooks && (
-        <SubItem to="/accounting" icon={LayoutDashboard} label="Overview" end />
-      )}
-
       {/* Branch COD mirrors Vendor COD below: the statements and the
           deposits that clear them are one conversation, so they sit in one
           disclosure rather than as two siblings. */}
@@ -490,7 +474,13 @@ const FinanceNav: React.FC<{ canReadBooks: boolean; showOverview?: boolean }> = 
         <SubItem to="/cod-settlement-requests" icon={Banknote} label="Settlement Requests" />
         <SubItem to="/billing" icon={Receipt} label="Billing & Credit" />
       </SidebarGroup>
+    </div>
 
+    {/* Accounting: the books, gated on the same permission as the routes and
+        the API. Report is open to everyone who settles COD, so the section
+        always shows. */}
+    <SidebarSection label="Accounting" />
+    <div className="sidebar-subnav">
       {canReadBooks && (
         <>
           <SubItem to="/accounting/transactions/journal" icon={NotebookPen} label="Journal" />
@@ -530,27 +520,127 @@ const FinanceNav: React.FC<{ canReadBooks: boolean; showOverview?: boolean }> = 
       )}
 
       {canReadBooks && <SubItem to="/finance/masters" icon={FileText} label="Masters" />}
+
+      <SidebarGroup label="Report" icon={FileText} match={['/finance/bank-transfer', '/finance/reports']}>
+        <SubItem to="/finance/bank-transfer" icon={Landmark} label="COD Transfer Report" />
+        {VAT_REGISTERS_ENABLED && canReadBooks && (
+          <>
+            <SubItem to="/finance/reports/sales-register" icon={Receipt} label="Sales Register" />
+            <SubItem to="/finance/reports/sales-return-register" icon={Receipt} label="Sales Return Register" />
+            <SubItem to="/finance/reports/purchase-register" icon={FileText} label="Purchase Register" />
+            <SubItem to="/finance/reports/purchase-return-register" icon={FileText} label="Purchase Return Register" />
+          </>
+        )}
+      </SidebarGroup>
     </div>
   </>
 );
 
 // ── Accountant sidebar ──────────────────────────────────────────────────────
 // Finance-only account: the whole Finance menu (books included) plus read-only
-// orders and overviews. ProtectedRoute sends any other URL back to the finance
-// overview.
+// orders and overviews. ProtectedRoute sends any other URL back to their
+// dashboard.
 const AccountantSidebar: React.FC = () => {
   const { collapsed, mobileOpen } = useSidebarCollapse();
   return (
     <aside className={asideClassName(collapsed, mobileOpen)}>
       <SidebarToggleBtn />
       <div className="sidebar-nav">
-        <SidebarItem to="/accounting" icon={LayoutDashboard} label="Finance Overview" end />
-        {/* Read-only: where to check a figure against the orders behind it. */}
+        <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
+        {/* Where to check a figure against the orders behind it, and correct one. */}
         <SidebarItem to="/orders" icon={Package} label="Orders" />
+        {/* Read-only: the page shows no add, edit, status or password actions
+            to an accountant, and the server refuses those writes. */}
+        <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
+
+        <SidebarSection label="Overview" />
         <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
-        <SidebarItem to="/rider-overview" icon={Bike} label="Rider Overview" />
         <SidebarItem to="/branches" icon={Building2} label="Branch Overview" end />
         <FinanceNav canReadBooks />
+      </div>
+
+      <div className="sidebar-footer">
+        <SidebarLogout />
+      </div>
+    </aside>
+  );
+};
+
+// ── Department sidebar (Operation / Customer Experience) ────────────────────
+// Head-office admins whose department narrows them to its own pages
+// (utils/auth.ts, getDepartmentWorkspace). Anything a super admin delegates on
+// Edit Admin shows up under "Additional access", so a grant needs no code change.
+const DepartmentSidebar: React.FC<{ workspace: DepartmentWorkspace }> = ({ workspace }) => {
+  const { collapsed, mobileOpen } = useSidebarCollapse();
+  const isOperation = workspace === 'operation';
+  const canManageUsers = hasAdminPermission('MANAGE_USERS');
+  const canSettings = hasAdminPermission('SETTINGS_ACCESS');
+  const canLogs = hasAdminPermission('SYSTEM_LOGS_ACCESS');
+  const canBooks = hasAdminPermission('ACCOUNTING_ACCESS');
+  // Vendor / Rider Management already sit in one workspace's own menu.
+  const extraVendors = isOperation && (canManageUsers || hasAdminPermission('KYC_ACCESS'));
+  const extraRiders = !isOperation && canManageUsers;
+  const hasExtras = canManageUsers || canSettings || canLogs || canBooks || extraVendors || extraRiders;
+  return (
+    <aside className={asideClassName(collapsed, mobileOpen)}>
+      <SidebarToggleBtn />
+      <div className="sidebar-nav">
+        <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
+        <SidebarItem to="/orders" icon={Package} label="Orders" />
+
+        <SidebarSection label="Overview" />
+        <SidebarItem to="/branches" icon={Building2} label="Branch Overview" end />
+
+        {isOperation ? (
+          <>
+            <SidebarItem to="/rider-overview" icon={Bike} label="Rider Overview" />
+
+            <SidebarSection label="Management" />
+            <SidebarItem to="/riders" icon={Bike} label="Rider Management" />
+
+            <SidebarSection label="Finance" />
+            <SidebarItem to="/accounting/transactions/rider-cod" icon={Bike} label="Rider COD" />
+
+            <SidebarSection label="Operations" />
+            <div className="sidebar-subnav">
+              <SubItem to="/pickup" icon={Archive} label="Pickup" />
+              <SubItem to="/dispatch" icon={Send} label="Local Dispatch" />
+              <SubItem to="/rider-run-sheet" icon={ClipboardList} label="Rider Run Sheet" />
+              <SubItem to="/oov" icon={Route} label="Transit" />
+              <SubItem to="/return" icon={RotateCcw} label="Return" />
+              <SubItem to="/hold" icon={OctagonMinus} label="Hold" />
+              <SubItem to="/loss-and-damage" icon={Map} label="Loss & Damage" />
+            </div>
+          </>
+        ) : (
+          <>
+            <SidebarSection label="Management" />
+            <SidebarItem to="/vendors" icon={Store} label="Vendor Management" />
+
+            <SidebarSection label="Customer Experience" />
+            <div className="sidebar-subnav">
+              <SubItem to="/tickets" icon={Ticket} label="Tickets" />
+              <SubItem to="/remarks" icon={MessageSquare} label="Remarks" />
+            </div>
+          </>
+        )}
+
+        {hasExtras && (
+          <>
+            <SidebarSection label="Additional access" />
+            <div className="sidebar-subnav">
+              {canManageUsers && <SubItem to="/admin" icon={UserCheck} label="Admin Management" />}
+              {extraVendors && <SubItem to="/vendors" icon={Store} label="Vendor Management" />}
+              {extraRiders && <SubItem to="/riders" icon={Bike} label="Rider Management" />}
+              {canSettings && <SubItem to="/settings" icon={MapPin} label="Destination Management" />}
+              {canSettings && <SubItem to="/banners" icon={Image} label="Banner" />}
+              {canSettings && <SubItem to="/announcements" icon={Megaphone} label="Announcements" />}
+              {canLogs && <SubItem to="/system-logs" icon={ScrollText} label="System Logs" />}
+            </div>
+          </>
+        )}
+
+        {canBooks && <FinanceNav canReadBooks />}
       </div>
 
       <div className="sidebar-footer">
@@ -572,6 +662,8 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
       <div className="sidebar-nav">
         <SidebarItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
         <SidebarItem to="/orders" icon={Package} label="Orders" />
+
+        <SidebarSection label="Overview" />
         <SidebarItem to="/merchant-overview" icon={Gauge} label="Vendor Overview" />
         {canViewBranchTracking && (
           <SidebarItem to="/branches" icon={Building2} label="Branch Overview" />
@@ -603,13 +695,14 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           <SidebarGroup
             label="System Management"
             icon={Wrench}
-            match={['/pickup-time-slots', '/system-logs', '/sla', '/banners', '/announcements', '/vouchers']}
+            match={['/pickup-time-slots', '/system-logs', '/sla', '/banks', '/banners', '/announcements', '/vouchers']}
           >
             {isSuperAdmin && <SubItem to="/pickup-time-slots" icon={Clock} label="Pickup Time Slots" />}
             {(isSuperAdmin || hasAdminPermission('SYSTEM_LOGS_ACCESS')) && (
               <SubItem to="/system-logs" icon={ScrollText} label="System Logs" />
             )}
             {isSuperAdmin && <SubItem to="/sla" icon={Timer} label="SLA" />}
+            {isSuperAdmin && <SubItem to="/banks" icon={Landmark} label="Banks" />}
             {(isSuperAdmin || hasAdminPermission('SETTINGS_ACCESS')) && (
               <SubItem to="/banners" icon={Image} label="Banner" />
             )}
@@ -623,7 +716,7 @@ const AdminSidebar: React.FC<{ isSuperAdmin: boolean }> = ({ isSuperAdmin }) => 
           </SidebarGroup>
         )}
 
-        <FinanceNav canReadBooks={canReadBooks} showOverview />
+        <FinanceNav canReadBooks={canReadBooks} />
 
         <SidebarSection label="Operations" />
         <div className="sidebar-subnav">
@@ -667,6 +760,7 @@ const Sidebar: React.FC = () => {
   }, []);
 
   const roles = getCurrentUserRoles();
+  const workspace = getDepartmentWorkspace();
   const { mobileOpen, closeMobile } = useMobileNav();
 
   return (
@@ -686,6 +780,8 @@ const Sidebar: React.FC = () => {
         <AccountantSidebar />
       ) : isBranchWorkspaceUser() ? (
         <BranchSidebar />
+      ) : workspace ? (
+        <DepartmentSidebar workspace={workspace} />
       ) : (
         <AdminSidebar isSuperAdmin={roles.includes('super_admin')} />
       )}

@@ -121,7 +121,7 @@
 .home-trust-bar span {
   position: relative;
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-default);
   white-space: nowrap;
   padding-left: var(--space-5);
@@ -172,7 +172,7 @@
 
 .home-feature-text h3 {
   font-size: clamp(1.375rem, 2.4vw, 1.75rem);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 var(--space-3);
 }
@@ -207,7 +207,7 @@
 
 .home-capability-head h3 {
   font-size: var(--font-size-lg);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0;
 }
@@ -282,7 +282,7 @@
 
 .home-trust-explainer-list h3 {
   font-size: var(--font-size-md);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 var(--space-1);
 }
@@ -385,7 +385,7 @@
   align-items: center;
   gap: var(--space-2);
   color: rgb(255 255 255 / 94%);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--font-size-sm);
   padding: var(--space-1) 0;
   border-radius: var(--border-radius-default);

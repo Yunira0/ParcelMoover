@@ -105,6 +105,8 @@ export interface CodDetailRow {
   orderNumber: number;
   vendorName: string;
   receiverName: string;
+  receiverPhone: string;
+  receiverAlternatePhone: string;
   riderName: string | null;
   collectedAmount: number;
   riderRemittedAmount: number;
@@ -152,6 +154,12 @@ export async function getCodSettlementDetail(
     ? riderSettledSql
     : Prisma.sql`LEAST(c.remitted_amount + c.collected_amount * pp.vendor_frac, c.collected_amount)`;
   const pendingExprSql = Prisma.sql`c.collected_amount - ${settledExprSql}`;
+  // The "pending" bucket is net of delivery charge, like the card: the charge
+  // still unsettled (pending_delivery_charge in dashboard-cod) comes off each
+  // row. A rider's cash in hand is gross, so their scope keeps the gross figure.
+  const pendingNetSql = riderId
+    ? pendingExprSql
+    : Prisma.sql`${pendingExprSql} - CASE WHEN c.payment_status::text = 'pending' THEN p.delivery_charge * (1 - pp.vendor_frac) ELSE 0 END`;
   // Branch parcels count under Branches, not PM-Rider - except on a rider's
   // own drill-down, which keeps every parcel they hold under PM-Rider.
   const branchFilter = bucket === "pm-rider" || bucket === "branches" ? await branchCodFilter() : null;
@@ -162,7 +170,9 @@ export async function getCodSettlementDetail(
     bucket === "settled"
       ? Prisma.sql`AND ${settledExprSql} > 0`
       : bucket === "pending"
-        ? Prisma.sql`AND ${pendingExprSql} > 0`
+        ? riderId
+          ? Prisma.sql`AND ${pendingExprSql} > 0`
+          : Prisma.sql`AND (${pendingExprSql} > 0 OR c.payment_status::text = 'pending')`
         : bucket === "pm-rider"
           ? Prisma.sql`AND ${pmRiderFilterSql(riderId ? null : branchFilter)} AND (c.collected_amount - ${riderSettledSql}) > 0`
           : bucket === "ncm" || bucket === "upaya"
@@ -188,7 +198,7 @@ export async function getCodSettlementDetail(
               ? BRANCH_OWED_SQL
               : bucket === "delivery-charge"
               ? Prisma.sql`p.delivery_charge`
-              : pendingExprSql;
+              : pendingNetSql;
 
   const rows = await prisma.$queryRaw<
     Array<{
@@ -197,6 +207,8 @@ export async function getCodSettlementDetail(
       order_number: number;
       vendor_name: string | null;
       receiver_name: string;
+      receiver_phone: string | null;
+      receiver_alternate_phone: string | null;
       rider_name: string | null;
       collected_amount: string;
       rider_remitted_amount: string;
@@ -212,6 +224,8 @@ export async function getCodSettlementDetail(
       p.order_number,
       COALESCE(v.business_name, v.client_name) AS vendor_name,
       party.name AS receiver_name,
+      party.phone AS receiver_phone,
+      party.alternate_phone AS receiver_alternate_phone,
       r.name AS rider_name,
       c.collected_amount,
       c.rider_remitted_amount,
@@ -247,6 +261,8 @@ export async function getCodSettlementDetail(
       orderNumber: r.order_number,
       vendorName: r.vendor_name ?? "—",
       receiverName: r.receiver_name,
+      receiverPhone: r.receiver_phone ?? "",
+      receiverAlternatePhone: r.receiver_alternate_phone ?? "",
       riderName: r.rider_name,
       collectedAmount: Number(r.collected_amount),
       riderRemittedAmount: Number(r.rider_remitted_amount),

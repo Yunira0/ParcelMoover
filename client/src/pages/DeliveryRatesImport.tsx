@@ -7,6 +7,7 @@ import {
   type BulkImportRateRow,
 } from '../services/deliveryRates.service';
 import './settings/DestinationsImport.css';
+import { Toast } from '../components/toast';
 
 // ── Column definitions ────────────────────────────────────────────────────────
 
@@ -410,7 +411,7 @@ const DeliveryRatesImport: React.FC<{ onImported?: () => void }> = ({ onImported
         </div>
       )}
 
-      {error && <p role="alert" className="di-error">{error}</p>}
+      <Toast tone="error" message={error} onShown={() => setError('')} />
 
       <div className="di-actions">
         <Button

@@ -121,7 +121,7 @@
 
 .api-key-name-field input:focus {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 12%);
 }
 
 /* Quick-start endpoint reference under the table */

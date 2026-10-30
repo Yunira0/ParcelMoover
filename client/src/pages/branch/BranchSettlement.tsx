@@ -189,10 +189,9 @@ const BranchSettlement: React.FC = () => {
         loadingMessage="Loading settlements…"
         data={rows}
         columns={[
-          { header: 'SN', accessor: 'sn', width: '60px' },
+          { header: 'SN', accessor: 'sn' },
           {
             header: 'Statement ID',
-            width: '185px',
             accessor: (item) => (
               <button
                 type="button"
@@ -203,16 +202,14 @@ const BranchSettlement: React.FC = () => {
               </button>
             ),
           },
-          { header: 'Branch', width: '210px', accessor: (item) => `${item.fromBranch} → ${item.toBranch}` },
+          { header: 'Branch', accessor: (item) => `${item.fromBranch} → ${item.toBranch}` },
           {
             header: 'Net payable',
-            width: '130px',
             className: 'acc-num',
             accessor: (item) => <span className="acc-num">{money(item.netPayable)}</span>,
           },
           {
             header: 'Paid / balance',
-            width: '160px',
             accessor: (item) => (
               <>
                 <span className="acc-stack">Paid {money(item.paidAmount)}</span>
@@ -226,7 +223,6 @@ const BranchSettlement: React.FC = () => {
           },
           {
             header: 'Payment',
-            width: '185px',
             accessor: (item) =>
               item.paymentBreakdown.length > 0 ? (
                 <>
@@ -242,7 +238,6 @@ const BranchSettlement: React.FC = () => {
           },
           {
             header: 'Status',
-            width: '150px',
             accessor: (item) => (
               <>
                 <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
@@ -258,11 +253,9 @@ const BranchSettlement: React.FC = () => {
           },
           {
             header: 'Settlement date',
-            width: '125px',
             accessor: (item) => toBsDate(item.settlementDate) || '—',
           },
         ]}
-        minWidth="1250px"
         emptyMessage={
           fromBranchId !== 'all'
             ? 'No settlements recorded for that branch yet.'

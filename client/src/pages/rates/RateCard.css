@@ -59,10 +59,6 @@
   white-space: nowrap;
 }
 
-.rates-panel-banner {
-  padding: var(--space-3) var(--space-4) 0;
-}
-
 .rates-panel-body {
   padding: var(--space-4);
 }

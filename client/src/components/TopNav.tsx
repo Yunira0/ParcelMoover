@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ArrowRight, Bell, User, Package, Truck, Banknote, Menu, MessageSquare, Bike, X, AlertCircle } from 'lucide-react';
+import { Search, Bell, User, Package, Truck, Banknote, Menu, MessageSquare, X, AlertCircle } from 'lucide-react';
 import Button from './Button';
 import type { AppNotification } from '../services/notifications.service';
 import {
@@ -13,7 +13,7 @@ import {
 import { getUnclosedRemarksCounts, subscribeToRemarkStatusChanged } from '../services/remarks.service';
 import { useMobileNav } from '../context/MobileNavContext';
 import { useStaffPermissions } from '../context/StaffPermissionsContext';
-import { isAccountantUser, isBranchWorkspaceUser, isVendorSide } from '../utils/auth';
+import { getDepartmentWorkspace, isAccountantUser, isBranchWorkspaceUser, isVendorSide } from '../utils/auth';
 import { toBsDateLabel, toNptTime } from '../utils/nepaliDate';
 import './TopNav.css';
 
@@ -33,9 +33,11 @@ const TopNav: React.FC = () => {
   const isBranchWorkspace = isBranchWorkspaceUser();
   // The finance-only accountant has no remark queues (it can search orders).
   const isAccountant = isAccountantUser();
-  const hideRemarks = isBranchWorkspace || isAccountant;
-  // Rider remarks are an internal queue - vendors only work their own comments.
-  const showRiderCmt = !isVendorSide() && !hideRemarks;
+  // Remarks belong to the Customer Experience workspace, not Operation.
+  const isOperationWorkspace = getDepartmentWorkspace() === 'operation';
+  const hideRemarks = isBranchWorkspace || isAccountant || isOperationWorkspace;
+  // Staff work vendor and rider comments as one queue; vendors only their own.
+  const vendorSide = isVendorSide();
   const [query, setQuery] = useState('');
   // Below the breakpoint the search field is collapsed to an icon; this
   // expands it to take over the bar, same pattern as most mobile search UIs.
@@ -43,10 +45,7 @@ const TopNav: React.FC = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  // Vendor- and rider-raised comments are worked as separate queues, so each
-  // button carries its own count rather than sharing one total.
-  const [vendorCmtCount, setVendorCmtCount] = useState(0);
-  const [riderCmtCount, setRiderCmtCount] = useState(0);
+  const [cmtCount, setCmtCount] = useState(0);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const sseConnectedRef = useRef(true);
 
@@ -58,11 +57,10 @@ const TopNav: React.FC = () => {
     getUnclosedRemarksCounts()
       .then((res) => {
         if (!res?.success || !res.data) return;
-        setVendorCmtCount(res.data.vendor ?? 0);
-        setRiderCmtCount(res.data.rider ?? 0);
+        setCmtCount((vendorSide ? res.data.vendor : res.data.total) ?? 0);
       })
       .catch(() => {});
-  }, []);
+  }, [vendorSide]);
 
   const runSearch = () => {
     const trimmed = query.trim();
@@ -245,7 +243,6 @@ const TopNav: React.FC = () => {
         onSubmit={(event) => { event.preventDefault(); runSearch(); }}
       >
         <div className="search-input-wrapper">
-          <Search size={16} style={{ color: 'var(--color-text-caption)' }} />
           <input
             type="text"
             placeholder="Search number, name, tracking id"
@@ -254,6 +251,9 @@ const TopNav: React.FC = () => {
             onChange={(event) => setQuery(event.target.value)}
             autoFocus={isSearchOpen}
           />
+          <button type="submit" className="search-submit-btn" aria-label="Search">
+            <Search size={16} />
+          </button>
           <button
             type="button"
             className="search-close-btn"
@@ -263,10 +263,6 @@ const TopNav: React.FC = () => {
             <X size={16} />
           </button>
         </div>
-        <Button type="submit" variant="primary" className="search-button">
-          Search
-          <ArrowRight size={16} />
-        </Button>
       </form>
 
       <button
@@ -282,33 +278,16 @@ const TopNav: React.FC = () => {
       <div className="top-nav-profile">
         {!hideRemarks && (
           <Button
-          variant="outline"
-          className="cmt-button"
-          onClick={() => navigate('/unclosed-remarks')}
-          aria-label={`Unclosed comments${vendorCmtCount > 0 ? `, ${vendorCmtCount > 99 ? '99+' : vendorCmtCount}` : ''}`}
-        >
-          <MessageSquare size={16} />
-          <span className="cmt-label">Unclosed cmt</span>
-          {vendorCmtCount > 0 && (
-            <span className="cmt-badge" aria-hidden="true">
-              {vendorCmtCount > 99 ? '99+' : vendorCmtCount}
-            </span>
-          )}
-          </Button>
-        )}
-
-        {showRiderCmt && (
-          <Button
             variant="outline"
             className="cmt-button"
-            onClick={() => navigate('/rider-remarks')}
-            aria-label={`Rider comments${riderCmtCount > 0 ? `, ${riderCmtCount > 99 ? '99+' : riderCmtCount}` : ''}`}
+            onClick={() => navigate('/unclosed-remarks')}
+            aria-label={`Unclosed comments${cmtCount > 0 ? `, ${cmtCount > 99 ? '99+' : cmtCount}` : ''}`}
           >
-            <Bike size={16} />
-            <span className="cmt-label">Rider cmt</span>
-            {riderCmtCount > 0 && (
+            <MessageSquare size={16} />
+            <span className="cmt-label">Unclosed cmt</span>
+            {cmtCount > 0 && (
               <span className="cmt-badge" aria-hidden="true">
-                {riderCmtCount > 99 ? '99+' : riderCmtCount}
+                {cmtCount > 99 ? '99+' : cmtCount}
               </span>
             )}
           </Button>

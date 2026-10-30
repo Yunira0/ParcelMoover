@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useId } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, Upload, X, User, Building2, FileText, CreditCard, Lock } from 'lucide-react';
 import Button from '../components/Button';
-import FormField from '../components/FormField';
+import FormField, { FieldMarker } from '../components/FormField';
+import BankSelectField from '../components/BankSelectField';
 import DocLink from '../components/DocLink';
 import { registerUser, getManagedUser, updateUserProfile, AGREEMENT_FILE_ACCEPT } from '../services/users.service';
 import { getLocations } from '../queries/lookups';
@@ -10,6 +11,7 @@ import { extractServerFieldErrors, isValidEmail, isValidName, isValidPhone, norm
 import { convertHeicFileIfNeeded } from '../utils/heicConvert';
 import { adminDocumentSizeError, adminSaveErrorMessage, formatAdminFileSize } from '../utils/adminUpload';
 import { useHubLock } from '../hooks/useHubLock';
+import Banner from '../components/Banner';
 import './AdminFormPage.css';
 
 // API validation-error field → form field, for errors returned by the server.
@@ -63,6 +65,21 @@ const DEPARTMENT_OPTIONS = [
   { value: 'Customer Experience', label: 'Customer Experience' },
   { value: 'Sales', label: 'Sales' },
 ];
+
+type AdminRole = 'admin' | 'accountant' | 'sales';
+
+/** What each role can open, as the form describes it. */
+const ROLE_LABELS: Record<AdminRole, string> = {
+  admin: 'Admin — operations',
+  accountant: 'Accountant — Finance only',
+  sales: 'Sales — their own vendors only',
+};
+
+/** The role a department gives an account; mirrors roleForDepartment on the server. */
+const roleForDepartment = (department: string): AdminRole => {
+  const key = department.trim().toLowerCase();
+  return key === 'sales' ? 'sales' : key === 'accountant' ? 'accountant' : 'admin';
+};
 
 const emptyForm: AdminFormInput = {
   employeeId: '',
@@ -128,7 +145,7 @@ const FileInput: React.FC<{
   return (
     <div className="afp-file-field">
       <label className="afp-file-label" htmlFor={id}>
-        {label}{required && <span className="afp-required"> *</span>}
+        {label}<FieldMarker required={required} />
       </label>
       {file ? (
         <div className="afp-file-chip">
@@ -181,6 +198,8 @@ const AdminFormPage: React.FC = () => {
   const { id: editId } = useParams();
   const isEdit = !!editId;
   const [form, setForm] = useState<AdminFormInput>(emptyForm);
+  // Edit only: the access the account has now, to warn before a department change alters it.
+  const [access, setAccess] = useState<{ saved: AdminRole | ''; superAdmin: boolean }>({ saved: '', superAdmin: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -238,6 +257,8 @@ const AdminFormPage: React.FC = () => {
         if (!res?.success || !res.data) return;
         const d = res.data;
         const s = (v: unknown) => (v == null ? '' : String(v));
+        const role = (d.role ?? '') as AdminRole | '';
+        setAccess({ saved: role, superAdmin: !!d.isSuperAdmin });
         setForm((prev) => ({
           ...prev,
           employeeId: s(d.employeeId),
@@ -448,7 +469,7 @@ const AdminFormPage: React.FC = () => {
           <div className="afp-success-icon-wrap">
             <CheckCircle size={48} />
           </div>
-          <h3>Admin Created Successfully!</h3>
+          <h3>Admin created</h3>
           <p>Admin <strong>{form.fullName}</strong> has been created.</p>
           <p className="afp-success-hint">Login credentials will be sent to <strong>{form.email}</strong></p>
           <div className="afp-success-actions">
@@ -584,32 +605,29 @@ const AdminFormPage: React.FC = () => {
               <div className="afp-fields">
                 <FormField
                   label="Hub"
-                  type="select"
+                  type="choice"
                   required
                   value={form.locationId}
                   onChange={set('locationId')}
-                  placeholder="Select hub"
                   options={hubs}
                   disabled={hubFieldDisabled}
                 />
                 {fieldErrors.locationId && <span className="afp-field-error">{fieldErrors.locationId}</span>}
-                {form.locationId && (
-                  <p className="afp-hint">
-                    {hubs.find((h) => h.value === form.locationId)?.isMasterHub
-                      ? 'Imadol admins get the full head-office view — every branch, not just their own.'
-                      : "This hub gets the limited branch workspace automatically — only this hub's orders, branch settlements, and branch payments."}
-                  </p>
-                )}
                 <FormField
                   label="Department"
-                  type="select"
+                  type="choice"
                   required
                   value={form.department}
                   onChange={set('department')}
-                  placeholder="Select department"
                   options={DEPARTMENT_OPTIONS}
                 />
                 {fieldErrors.department && <span className="afp-field-error">{fieldErrors.department}</span>}
+                {!access.superAdmin && form.department && isEdit && access.saved && access.saved !== roleForDepartment(form.department) && (
+                  <Banner tone="warning">
+                    Saving changes their access from {ROLE_LABELS[access.saved].split(' — ')[0]} to{' '}
+                    {ROLE_LABELS[roleForDepartment(form.department)].split(' — ')[0]}.
+                  </Banner>
+                )}
                 <FormField
                   label="Designation"
                   required
@@ -724,12 +742,7 @@ const AdminFormPage: React.FC = () => {
                 description="Payment account information"
               />
               <div className="afp-fields">
-                <FormField
-                  label="Name of Bank"
-                  value={form.bankName}
-                  onChange={set('bankName')}
-                  placeholder="e.g. Nabil Bank"
-                />
+                <BankSelectField value={form.bankName} onChange={set('bankName')} />
                 <FormField
                   label="Account No."
                   value={form.bankAccountNo}
@@ -785,7 +798,7 @@ const AdminFormPage: React.FC = () => {
                   </>
                 )}
               </div>
-              {!isEdit && <p className="afp-hint">Minimum 8 characters. Admin can change password after logging in.</p>}
+              {!isEdit && <p className="afp-hint">Minimum 8 characters.</p>}
             </section>
           </div>
         </div>

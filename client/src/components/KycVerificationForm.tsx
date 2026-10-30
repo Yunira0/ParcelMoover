@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Files, Landmark, Receipt, Store, User } from 'lucide-react';
 import FormField from './FormField';
+import BankSelectField from './BankSelectField';
 import FileField from './FileField';
 import Banner from './Banner';
+import { Toast } from './toast';
 import Button from './Button';
 import './KycVerificationForm.css';
 
@@ -134,7 +136,7 @@ const KycVerificationForm: React.FC<KycVerificationFormProps> = ({
           <p>Where COD settlements are paid — optional until payout.</p>
         </div>
         <div className="kyc-grid">
-          <FormField label="Bank name" value={values.bankName} onChange={set('bankName')} />
+          <BankSelectField label="Bank name" value={values.bankName} onChange={set('bankName')} />
           <FormField label="Account holder" value={values.bankAccountHolder} onChange={set('bankAccountHolder')} />
           <FormField label="Account no." value={values.bankAccountNo} onChange={set('bankAccountNo')} gridColumn="1 / -1" />
         </div>
@@ -150,13 +152,13 @@ const KycVerificationForm: React.FC<KycVerificationFormProps> = ({
         </div>
         <div className="kyc-grid">
           <FileField
-            label={docsOnFile.citizenshipFront ? 'Citizenship front (on file — replace)' : 'Citizenship (Front) *'}
+            label={docsOnFile.citizenshipFront ? 'Citizenship front (on file — replace)' : 'Citizenship (Front)'}
             hint="JPG, PNG, WebP or PDF · max 5 MB"
             file={files.citizenshipFront}
             onChange={setFile('citizenshipFront')}
           />
           <FileField
-            label={docsOnFile.citizenshipBack ? 'Citizenship back (on file — replace)' : 'Citizenship (Back) *'}
+            label={docsOnFile.citizenshipBack ? 'Citizenship back (on file — replace)' : 'Citizenship (Back)'}
             hint="JPG, PNG, WebP or PDF · max 5 MB"
             file={files.citizenshipBack}
             onChange={setFile('citizenshipBack')}
@@ -176,13 +178,8 @@ const KycVerificationForm: React.FC<KycVerificationFormProps> = ({
         </div>
       </section>
 
-      {(formError || error) && (
-        <div className="kyc-form-error">
-          <Banner tone="danger">{formError || error}</Banner>
-        </div>
-      )}
+      <Toast tone="error" message={formError || error} onShown={() => setFormError('')} />
       <div className="kyc-form-footer">
-        <p className="kyc-form-footer-hint">Submitting sends this to the KYC Applications queue for review.</p>
         <div className="kyc-form-footer-actions">
           <Button variant="secondary" type="button" onClick={onCancel} disabled={submitting}>Cancel</Button>
           <Button variant="primary" type="submit" disabled={submitting}>

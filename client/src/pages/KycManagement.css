@@ -7,20 +7,20 @@
 
 .kyc-cell-primary {
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-default);
 }
 
 .kyc-cell-sub {
   font-size: 0.78rem;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   margin-top: 2px;
 }
 
 .kyc-verification-note {
   display: block;
   font-size: 0.78rem;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   margin-top: 4px;
 }
 
@@ -28,17 +28,17 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   display: flex;
   align-items: center;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-default);
   transition: color 0.15s, background 0.15s;
 }
 
 .kyc-view-btn:hover {
-  color: var(--color-primary, #4f46e5);
-  background: var(--color-background-surface, #f3f4f6);
+  color: var(--color-primary);
+  background: var(--color-background-surface);
 }
 
 /* Modal */
@@ -55,7 +55,7 @@
 
 .kyc-modal {
   background: var(--color-background-surface);
-  border-radius: 12px;
+  border-radius: var(--border-radius-xl);
   width: 100%;
   max-width: 560px;
   max-height: 90vh;
@@ -75,7 +75,7 @@
 
 .kyc-modal-header h2 {
   font-size: 1.1rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 8px;
 }
@@ -84,17 +84,17 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   display: flex;
   align-items: center;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-default);
   flex-shrink: 0;
   margin-top: 2px;
 }
 
 .kyc-modal-close:hover {
-  background: var(--color-background-surface, #f3f4f6);
+  background: var(--color-background-surface);
 }
 
 .kyc-modal-body {
@@ -117,16 +117,14 @@
 /* Detail sections */
 .kyc-detail-section {
   border: 1px solid var(--color-border-default);
-  border-radius: 8px;
+  border-radius: var(--border-radius-lg);
   padding: 16px;
 }
 
 .kyc-detail-section h4 {
   font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-caption, #6b7280);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-caption);
   margin: 0 0 12px;
 }
 
@@ -143,14 +141,14 @@
 }
 
 .kyc-detail-label {
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   flex-shrink: 0;
   width: 120px;
 }
 
 .kyc-detail-value {
   color: var(--color-text-default);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   word-break: break-word;
 }
 
@@ -172,7 +170,7 @@
 
 .kyc-notes {
   margin-top: 8px !important;
-  color: var(--color-text-caption, #6b7280) !important;
+  color: var(--color-text-caption) !important;
   font-style: italic;
 }
 
@@ -195,7 +193,7 @@
 .kyc-doc-item:last-child { border-bottom: none; }
 
 .kyc-doc-label {
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   flex-shrink: 0;
   width: 120px;
 }
@@ -206,26 +204,22 @@
   flex-direction: column;
   gap: 10px;
   padding: 16px;
-  background: var(--color-background-surface, #f9fafb);
+  background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: 8px;
+  border-radius: var(--border-radius-lg);
 }
 
 .kyc-action-form label {
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-semi-bold);
   color: var(--color-text-default);
-}
-
-.kyc-action-form .required {
-  color: var(--color-danger-default);
 }
 
 .kyc-action-form textarea {
   width: 100%;
   padding: 8px 12px;
   border: 1.5px solid var(--color-border-default);
-  border-radius: 6px;
+  border-radius: var(--border-radius-md);
   font-size: 0.875rem;
   resize: vertical;
   box-sizing: border-box;
@@ -235,17 +229,7 @@
 }
 
 .kyc-action-form textarea:focus {
-  border-color: var(--color-primary, #4f46e5);
-}
-
-.kyc-action-error {
-  font-size: 0.82rem;
-  color: var(--color-danger-default);
-  background: var(--color-danger-surface);
-  border: 1px solid var(--color-danger-border);
-  border-radius: 5px;
-  padding: 8px 12px;
-  margin: 0;
+  border-color: var(--color-primary);
 }
 
 .kyc-action-buttons {

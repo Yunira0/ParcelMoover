@@ -1,0 +1,25 @@
+/* Sits inside the statement's meta grid (.sdp-meta). In edit mode the row
+   spans the full grid so the field and its actions have room. */
+
+.sin-edit {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.sin-edit .form-group {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+
+.sin-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.sin-edit-btn {
+  margin-left: var(--space-2);
+  vertical-align: middle;
+}

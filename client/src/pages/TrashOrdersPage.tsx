@@ -17,6 +17,8 @@ import {
 } from '../services/orders.service';
 import { ORDER_STATUS_LABELS as STATUS_LABELS } from '../utils/orderStatus';
 import './TrashOrdersPage.css';
+import { useToast } from '../components/toast';
+import { Toast } from '../components/toast';
 
 const PAGE_SIZE = 10;
 
@@ -40,6 +42,7 @@ const TrashOrdersPage: React.FC = () => {
   const [pageSizeChoice, setPageSizeChoice] = useState(PAGE_SIZE);
   // The order awaiting restore confirmation; null when closed.
   const [restoreTarget, setRestoreTarget] = useState<Order | null>(null);
+  const toast = useToast();
 
   // Same keyset pager the orders list uses: /orders/trash goes through
   // listOrders, so it returns the identical cursor meta.
@@ -99,7 +102,7 @@ const TrashOrdersPage: React.FC = () => {
       await load();
     } catch (err) {
       setRestoreTarget(null);
-      setError(apiErrorMessage(err, 'Failed to restore the order'));
+      toast.error(apiErrorMessage(err, 'Failed to restore the order'));
     } finally {
       setBusyId(null);
     }
@@ -109,7 +112,6 @@ const TrashOrdersPage: React.FC = () => {
     {
       header: 'ORDER',
       accessor: (order: Order) => `#${order.orderNumber}`,
-      width: '100px',
     },
     {
       header: 'TRACKING ID',
@@ -118,7 +120,6 @@ const TrashOrdersPage: React.FC = () => {
           {order.trackingId}
         </Link>
       ),
-      width: '180px',
       className: 'trash-tracking-cell',
     },
     {
@@ -149,13 +150,11 @@ const TrashOrdersPage: React.FC = () => {
           {order.status.replace(/_/g, ' ')}
         </StatusChip>
       ),
-      width: '140px',
     },
     {
       header: 'CANCELLED FROM',
       accessor: (order: Order) =>
         order.cancelledFromStatus ? STATUS_LABELS[order.cancelledFromStatus] : '—',
-      width: '150px',
     },
     {
       header: 'REMARK',
@@ -175,7 +174,6 @@ const TrashOrdersPage: React.FC = () => {
           </Button>
         </div>
       ),
-      width: '130px',
       className: 'trash-actions-column',
     },
   ];
@@ -193,7 +191,7 @@ const TrashOrdersPage: React.FC = () => {
       </div>
 
       {error && <p className="trash-error">{error}</p>}
-      {notice && <p className="trash-notice">{notice}</p>}
+      <Toast tone="success" message={notice} onShown={() => setNotice('')} />
 
       <Table
         columns={columns}

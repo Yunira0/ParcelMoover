@@ -130,27 +130,24 @@ const CarrierCodPage: React.FC = () => {
         loadingMessage="Loading settlements…"
         data={rows}
         columns={[
-          { header: 'SN', accessor: 'sn', width: '60px' },
+          { header: 'SN', accessor: 'sn' },
           {
             header: 'Statement ID',
-            width: '185px',
             accessor: (item: Row) => (
               <button type="button" className="acc-link acc-entry-no" onClick={() => navigate(`/finance/carrier-cod/${item.id}`)}>
                 {item.statementNo}
               </button>
             ),
           },
-          { header: 'Carrier', width: '110px', accessor: (item: Row) => CARRIER_LABEL[item.carrier] },
+          { header: 'Carrier', accessor: (item: Row) => CARRIER_LABEL[item.carrier] },
           {
             header: 'Amount',
-            width: '130px',
             className: 'acc-num',
             accessor: (item: Row) => <span className="acc-num">{money(item.netReceivable)}</span>,
           },
-          { header: 'Settled date', width: '125px', accessor: (item: Row) => (item.settledAt ? toBsDate(item.settledAt) : '—') },
+          { header: 'Settled date', accessor: (item: Row) => (item.settledAt ? toBsDate(item.settledAt) : '—') },
           {
             header: 'Payment',
-            width: '185px',
             accessor: (item: Row) =>
               item.paymentBreakdown.length > 0 ? (
                 <>
@@ -166,16 +163,14 @@ const CarrierCodPage: React.FC = () => {
           },
           {
             header: 'Status',
-            width: '120px',
             accessor: (item: Row) => (
               <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
                 {settlementStatusLabel(item.status)}
               </StatusChip>
             ),
           },
-          { header: 'Remark', width: '190px', accessor: (item: Row) => item.remark || '—' },
+          { header: 'Remark', accessor: (item: Row) => item.remark || '—' },
         ]}
-        minWidth="1110px"
         emptyMessage="No 3PL settlements recorded yet."
       />
 

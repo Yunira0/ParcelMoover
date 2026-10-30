@@ -865,6 +865,9 @@ model settlements {
   settlement_date                      DateTime?                 @db.Date
   status                               settlement_status         @default(pending)
   remark                               String?
+  // The vendor's invoice number for this payout, entered with the payment
+  // proof. One per statement; null until staff record it.
+  invoice_no                           String?
   // Roll-up of every instalment: a "Cash, eSewa" style summary and the flat
   // list of {method, amount} lines across all of them. Kept for the statement
   // header; settlement_payments is where the per-instalment truth lives.
@@ -1085,6 +1088,7 @@ model users {
   accounting_periods                                     accounting_periods[]
   expenses_created                                       expenses[]                @relation("expenses_created_by")
   expenses_voided                                        expenses[]                @relation("expenses_voided_by")
+  user_daily_activity                                    user_daily_activity[]
   user_roles                                             user_roles[]
   vendor_staff                                           vendor_staff?
   vendors                                                vendors?                  @relation("vendor_owner")
@@ -2068,4 +2072,72 @@ model vendor_staff {
   users       users?    @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([vendor_id], map: "idx_vendor_staff_vendor_id")
+}
+
+// One row per person per Nepal calendar day with a logged-in request.
+// Written by services/analytics/track.ts, read by pm-stats.
+model user_daily_activity {
+  day           DateTime @db.Date
+  user_id       String   @db.Uuid
+  user_group    String
+  first_seen_at DateTime @default(now()) @db.Timestamptz(6)
+  last_seen_at  DateTime @default(now()) @db.Timestamptz(6)
+  app_platform  String?
+  app_version   String?
+  users         users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([day, user_id])
+  @@index([last_seen_at(sort: Desc)], map: "idx_user_daily_activity_last_seen")
+}
+
+/// Banks a vendor's payouts can go to. Vendors store the bank's name, so a
+/// bank is disabled rather than renamed or deleted once it is in use.
+/// A supplier's bill entered by finance staff (rent, fuel, other suppliers) for
+/// the Purchase Register. Amounts are VAT-inclusive: total = exempt + taxable +
+/// vat. A cancelled bill moves to the Purchase Return Register.
+model purchase_bills {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bill_date      DateTime  @db.Date
+  bill_no        String
+  customs_no     String?
+  supplier_name  String
+  supplier_pan   String?
+  /// "local" | "import" | "capital" - which register column pair it lands in.
+  purchase_type  String    @default("local")
+  description    String?
+  total_amount   Decimal   @db.Decimal(12, 2)
+  exempt_amount  Decimal   @default(0) @db.Decimal(12, 2)
+  taxable_amount Decimal   @db.Decimal(12, 2)
+  vat_amount     Decimal   @db.Decimal(12, 2)
+  /// "active" | "cancelled"
+  status         String    @default("active")
+  cancelled_at   DateTime? @db.Timestamptz(6)
+  cancel_remark  String?
+  created_by     String?   @db.Uuid
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([bill_date], map: "idx_purchase_bills_bill_date")
+  @@index([cancelled_at], map: "idx_purchase_bills_cancelled_at")
+}
+
+model banks {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @unique
+  code       String
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+// Lasting copy of pm-stats request counts kept in Redis (one row per Redis
+// hash field). Written by services/analytics/persist.ts, read by pm-stats.
+model analytics_counters {
+  bucket     String
+  field      String
+  count      BigInt
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@id([bucket, field])
+  @@index([updated_at], map: "idx_analytics_counters_updated_at")
 }

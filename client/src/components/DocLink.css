@@ -4,13 +4,13 @@
   gap: 5px;
   color: var(--color-primary);
   font-size: 0.82rem;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   text-decoration: none;
 }
 
 .doc-link:hover { text-decoration: underline; }
 
 .doc-link-missing {
-  color: var(--color-text-caption, #9ca3af);
+  color: var(--color-text-caption);
   font-size: 0.85rem;
 }

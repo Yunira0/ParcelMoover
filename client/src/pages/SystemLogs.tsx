@@ -189,7 +189,6 @@ const SystemLogs: React.FC = () => {
           <small>{toNptTime(log.createdAt, true)}</small>
         </div>
       ),
-      width: '120px',
     },
     {
       header: 'ACTOR',
@@ -199,14 +198,12 @@ const SystemLogs: React.FC = () => {
           {log.actorEmail && <small>{log.actorEmail}</small>}
         </div>
       ),
-      width: '180px',
     },
     {
       header: 'ACTION',
       accessor: (log: AuditLog) => (
         <StatusChip tone={toneForAction(log.action)}>{humanize(log.action)}</StatusChip>
       ),
-      width: '160px',
     },
     {
       header: 'ENTITY',
@@ -216,7 +213,6 @@ const SystemLogs: React.FC = () => {
           {log.entityId && <small title={log.entityId}>{log.entityId.slice(0, 8)}…</small>}
         </div>
       ),
-      width: '160px',
     },
     {
       header: '',
@@ -230,7 +226,6 @@ const SystemLogs: React.FC = () => {
           <Eye size={15} />
         </button>
       ),
-      width: '48px',
     },
   ], []);
 
@@ -287,7 +282,6 @@ const SystemLogs: React.FC = () => {
         loading={loading}
         loadingMessage="Loading system logs…"
         emptyMessage="No log entries found."
-        minWidth="900px"
         tableClassName="system-logs-table"
         expandedRowId={expandedId}
         renderExpandedRow={(log) => <LogDetailPanel log={log} />}

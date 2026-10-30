@@ -18,10 +18,15 @@ import {
   updateSettlementSchema,
   revertSettlementSchema,
   cancelSettlementSchema,
+  settlementInvoiceNoSchema,
+  vatRegisterQuerySchema,
+  createPurchaseBillSchema,
+  cancelPurchaseBillSchema,
   createCarrierSettlementSchema,
   updateCarrierSettlementSchema,
 } from "../validators/finance.schema";
 import { createRedisRateLimitStore } from "../lib/rateLimitStore";
+import { requireFeature } from "../middlewares/featureFlag.middleware";
 import {
   attachCarrierSettlementDocumentsController,
   cancelCarrierSettlementController,
@@ -46,9 +51,18 @@ import {
   updateSettlementController,
   revertSettlementController,
   cancelSettlementController,
+  setSettlementInvoiceNoController,
   getSettlementDetailController,
+  getSettlementBillingPaymentsController,
   getSettlementDocumentController,
+  listVendorBankTransfersController,
 } from "../controllers/finance.controller";
+
+import {
+  cancelPurchaseBillController,
+  createPurchaseBillController,
+  getVatRegisterController,
+} from "../controllers/vatRegister.controller";
 
 const financeRouter: Router = Router();
 
@@ -101,6 +115,17 @@ financeRouter.get(
   listOrderCodController,
 );
 
+// GET /api/finance/bank-transfers — vendor statements still owed, with each
+// vendor's bank and account, for the CIPS bulk transfer sheet. Same
+// staff who can pay a statement; branch admins are refused in the service.
+financeRouter.get(
+  "/bank-transfers",
+  authMiddleware,
+  authorizeRoles("super_admin", "accountant", "admin"),
+  financeReadLimiter,
+  listVendorBankTransfersController,
+);
+
 // GET /api/finance/settlements — historical settlement statements (rider or vendor)
 financeRouter.get(
   "/settlements",
@@ -120,6 +145,18 @@ financeRouter.get(
   requireStaffPermission("FINANCE_ACCESS"),
   financeReadLimiter,
   getSettlementDetailController,
+);
+
+// GET /api/finance/settlements/:id/billing-payments — the vendor's unapplied
+// and still-pending Billing payments, so Make Payment can warn before the same
+// transfer is recorded twice. Staff only (same audience as pay); deliberately
+// not part of the Partner API.
+financeRouter.get(
+  "/settlements/:id/billing-payments",
+  authMiddleware,
+  authorizeRoles("super_admin", "accountant", "admin"),
+  financeReadLimiter,
+  getSettlementBillingPaymentsController,
 );
 
 // GET /api/finance/settlements/:id/documents/:doc — one payment proof for a
@@ -175,6 +212,18 @@ financeRouter.patch(
   settlementCreateLimiter,
   settlementDocsUpload,
   attachSettlementDocumentsController,
+);
+
+// PATCH /api/finance/settlements/:id/invoice-no — record the vendor's invoice
+// number with the payment proof (same audience as attaching proof)
+financeRouter.patch(
+  "/settlements/:id/invoice-no",
+  authMiddleware,
+  csrfProtection,
+  authorizeRoles("super_admin", "accountant", "admin"),
+  settlementCreateLimiter,
+  validate(settlementInvoiceNoSchema),
+  setSettlementInvoiceNoController,
 );
 
 // DELETE /api/finance/settlements/:id/documents/:documentId — remove one proof
@@ -254,5 +303,12 @@ financeRouter.post("/carrier-settlements/:id/cancel", ...carrierStaff, csrfProte
 financeRouter.post("/carrier-settlements/:id/documents", ...carrierStaff, csrfProtection, settlementCreateLimiter, carrierSettlementFileUpload, attachCarrierSettlementDocumentsController);
 financeRouter.get("/carrier-settlements/:id/documents/:documentId", ...carrierStaff, financeReadLimiter, getCarrierSettlementDocumentController);
 financeRouter.delete("/carrier-settlements/:id/documents/:documentId", ...carrierStaff, csrfProtection, settlementCreateLimiter, deleteCarrierSettlementDocumentController);
+
+// ── VAT registers (Sales / Purchase and their returns) ── books grant, head office only (in the service).
+// Not released yet: 404 unless VAT_REGISTERS_ENABLED=true.
+const vatRegistersFeature = requireFeature("VAT_REGISTERS_ENABLED");
+financeRouter.get("/vat-registers/:kind", vatRegistersFeature, ...carrierStaff, financeReadLimiter, validate(vatRegisterQuerySchema, "query"), getVatRegisterController);
+financeRouter.post("/purchase-bills", vatRegistersFeature, ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(createPurchaseBillSchema), createPurchaseBillController);
+financeRouter.post("/purchase-bills/:id/cancel", vatRegistersFeature, ...carrierStaff, csrfProtection, settlementCreateLimiter, validate(cancelPurchaseBillSchema), cancelPurchaseBillController);
 
 export default financeRouter;

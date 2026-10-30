@@ -3,6 +3,7 @@ import ConfirmDialog from './ConfirmDialog';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Download, Plus, Search, Trash2, Truck, X } from 'lucide-react';
 import Table from './Table';
+import ReceiverPhones from './ReceiverPhones';
 import Pagination from './Pagination';
 import Button from './Button';
 import StatusChip, { type StatusChipTone } from './StatusChip';
@@ -27,6 +28,9 @@ import {
 } from '../services/transitManifests.service';
 import CreateTransitManifestModal from './CreateTransitManifestModal';
 import '../pages/OOVOperations.css';
+import { useToast } from './toast';
+import { Skeleton } from './Skeleton';
+import { Toast } from './toast';
 
 const STATUS_TONE: Record<TransitManifestStatus, StatusChipTone> = {
   open: 'warning',
@@ -37,22 +41,24 @@ const STATUS_TONE: Record<TransitManifestStatus, StatusChipTone> = {
 const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const parcelColumns = (parcels: TransitManifestParcel[]) => [
-  { header: 'S.N', accessor: (p: TransitManifestParcel) => parcels.indexOf(p) + 1, width: '55px' },
-  { header: 'ORDER ID', accessor: (p: TransitManifestParcel) => `#${p.orderNumber}`, width: '80px' },
+  { header: 'S.N', accessor: (p: TransitManifestParcel) => parcels.indexOf(p) + 1 },
+  { header: 'ORDER ID', accessor: (p: TransitManifestParcel) => `#${p.orderNumber}` },
   {
     header: 'TRACKING ID',
     accessor: (p: TransitManifestParcel) => (
       <Link to={`/orders/track/${p.trackingId}`} className="tracking-id-link">{p.trackingId}</Link>
     ),
-    width: '150px',
   },
-  { header: 'RECEIVER', accessor: (p: TransitManifestParcel) => p.receiverName || '-', width: '160px' },
-  { header: 'DESTINATION', accessor: (p: TransitManifestParcel) => p.destination || '-', width: '180px' },
-  { header: 'COD', accessor: (p: TransitManifestParcel) => formatMoney(p.codAmount), width: '100px' },
+  { header: 'RECEIVER', accessor: (p: TransitManifestParcel) => p.receiverName || '-' },
+  {
+    header: 'NUMBER',
+    accessor: (p: TransitManifestParcel) => <ReceiverPhones phone={p.receiverPhone} alternate={p.receiverAlternatePhone} />,
+  },
+  { header: 'DESTINATION', accessor: (p: TransitManifestParcel) => p.destination || '-' },
+  { header: 'COD', accessor: (p: TransitManifestParcel) => formatMoney(p.codAmount) },
   {
     header: 'STATUS',
     accessor: (p: TransitManifestParcel) => <StatusChip tone="neutral">{p.status.replace(/_/g, ' ')}</StatusChip>,
-    width: '140px',
   },
 ];
 
@@ -258,6 +264,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
   // that ever held parcels or ever left is a record of real work, not a
   // mistake to clean up.
   const [pendingDelete, setPendingDelete] = useState<TransitManifestModel | null>(null);
+  const toast = useToast();
   const handleDelete = (manifest: TransitManifestModel) => setPendingDelete(manifest);
 
   const confirmDelete = async () => {
@@ -274,7 +281,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
       if (expandedId === manifest.id) setExpandedId('');
       await load();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to delete the manifest.'));
+      toast.error(apiErrorMessage(err, 'Failed to delete the manifest.'));
     } finally {
       setBusy(false);
     }
@@ -297,7 +304,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
       if (expandedId === manifest.id) void loadDetail(manifest.id);
       await load();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to dispatch the manifest.'));
+      toast.error(apiErrorMessage(err, 'Failed to dispatch the manifest.'));
     } finally {
       dispatching.current = false;
       setBusy(false);
@@ -305,18 +312,17 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
   };
 
   const columns = [
-    { header: 'MANIFEST NO', accessor: (m: TransitManifestModel) => m.manifestNo, width: '150px' },
+    { header: 'MANIFEST NO', accessor: (m: TransitManifestModel) => m.manifestNo },
     {
       header: 'STATUS',
       accessor: (m: TransitManifestModel) => (
         <StatusChip tone={STATUS_TONE[m.status]}>{TRANSIT_MANIFEST_STATUS_LABELS[m.status]}</StatusChip>
       ),
-      width: '130px',
     },
-    { header: 'ROUTE', accessor: (m: TransitManifestModel) => `${m.fromHub || '—'} → ${m.toHub || '—'}`, width: '220px' },
-    { header: 'PARCELS', accessor: (m: TransitManifestModel) => m.parcelCount, width: '90px' },
-    { header: 'CREATED', accessor: (m: TransitManifestModel) => toBsDateTime(m.createdAt) || '—', width: '150px' },
-    { header: 'UPDATED', accessor: (m: TransitManifestModel) => toBsDateTime(m.updatedAt) || '—', width: '150px' },
+    { header: 'ROUTE', accessor: (m: TransitManifestModel) => `${m.fromHub || '—'} → ${m.toHub || '—'}` },
+    { header: 'PARCELS', accessor: (m: TransitManifestModel) => m.parcelCount },
+    { header: 'CREATED', accessor: (m: TransitManifestModel) => toBsDateTime(m.createdAt) || '—' },
+    { header: 'UPDATED', accessor: (m: TransitManifestModel) => toBsDateTime(m.updatedAt) || '—' },
     {
       header: 'ACTION',
       accessor: (m: TransitManifestModel) => (
@@ -345,7 +351,6 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
           )}
         </div>
       ),
-      width: '260px',
     },
   ];
 
@@ -365,7 +370,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
         .filter((o): o is Order => Boolean(o));
       downloadOrdersExcel(`${manifest.manifestNo}.xlsx`, manifest.manifestNo, orders);
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to download the orders on this manifest.'));
+      toast.error(apiErrorMessage(err, 'Failed to download the orders on this manifest.'));
     } finally {
       setDownloading(false);
     }
@@ -389,7 +394,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
     if (!detail) {
       return (
         <p className="oov-status-empty">
-          {detailLoadingId === manifest.id ? 'Loading parcels…' : 'Could not load the parcels on this manifest.'}
+          {detailLoadingId === manifest.id ? <Skeleton width="60%" className="skeleton-inline" /> : 'Could not load the parcels on this manifest.'}
         </p>
       );
     }
@@ -426,7 +431,6 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
           allSelected={allSelected}
           someSelected={someSelected}
           onToggleAll={() => toggleAllParcels(detail.parcels)}
-          minWidth="1000px"
           tableClassName="oov-table"
           emptyMessage="No parcels on this manifest."
         />
@@ -483,7 +487,7 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
             </button>
           )}
         </label>
-        {notice && <p className="oov-action-notice">{notice}</p>}
+        <Toast tone="success" message={notice} onShown={() => setNotice('')} />
         {rejected.length > 0 && (
           <ul className="oov-action-error-list">
             {rejected.map((r) => (
@@ -507,7 +511,6 @@ const TransitManifestPanel: React.FC<TransitManifestPanelProps> = ({ statusFilte
         loading={loading}
         loadingMessage="Loading manifests…"
         emptyMessage="No transit manifests."
-        minWidth="1080px"
         tableClassName="oov-table"
         expandedRowId={expandedId}
         renderExpandedRow={renderParcels}

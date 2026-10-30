@@ -52,7 +52,7 @@
 
 .dispatch-search:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 12%);
 }
 
 .dispatch-search input {
@@ -261,7 +261,7 @@
   border: 0;
   color: var(--color-text-caption);
   cursor: pointer;
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   height: 24px;
   line-height: 1;
   padding: 0;
@@ -301,7 +301,7 @@
 
 .dispatch-status-option:focus-visible {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 18%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 18%);
   outline: none;
 }
 
@@ -409,10 +409,6 @@
   font-weight: var(--font-weight-medium);
 }
 
-.dispatch-partial-required {
-  color: var(--color-danger-text);
-}
-
 .dispatch-partial-textarea,
 .dispatch-partial-input {
   background: var(--color-background-surface);
@@ -429,7 +425,7 @@
 .dispatch-partial-textarea:focus,
 .dispatch-partial-input:focus {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 2px rgb(226 76 0 / 12%);
+  box-shadow: 0 0 0 2px rgb(242 101 34 / 12%);
   outline: none;
 }
 

@@ -20,7 +20,7 @@
 }
 
 .overview-orders-title h1 {
-  font-size: var(--font-size-xl);
+  font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0;

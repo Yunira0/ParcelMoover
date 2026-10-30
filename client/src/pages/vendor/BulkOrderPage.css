@@ -134,7 +134,7 @@
 }
 .bop-cell-input::placeholder { color: var(--color-text-caption); opacity: .8; }
 .bop-cell-input:hover { background: var(--color-background-surface); border-color: var(--color-border-default); }
-.bop-cell-input:focus { background: var(--color-background-surface); border-color: var(--color-border-primary); box-shadow: 0 0 0 2px rgb(226 76 0 / 18%); outline: none; }
+.bop-cell-input:focus { background: var(--color-background-surface); border-color: var(--color-border-primary); box-shadow: 0 0 0 2px rgb(242 101 34 / 18%); outline: none; }
 .bop-cell-input--num { min-width: 72px; }
 .bop-cell-input--wide { min-width: 150px; }
 .bop-cell-input--invalid { background: var(--color-danger-surface); border-color: var(--color-danger-border); }
@@ -167,7 +167,7 @@ select.bop-cell-input { cursor: pointer; min-width: 110px; }
   .bop-result-actions .btn { width: 100%; }
 }
 
-.bop-warning { padding: 12px 16px; border: 1px solid #f59e0b; border-radius: 8px; background: #fffbeb; color: #92400e; }
+.bop-warning { padding: 12px 16px; border: 1px solid #f59e0b; border-radius: var(--border-radius-lg); background: #fffbeb; color: #92400e; }
 @media (max-width: 600px) {
   .bop-sender-fields { grid-template-columns: 1fr; }
   .bop-header h1 { font-size: var(--font-size-2xl); line-height: var(--line-height-2xl); }
@@ -181,5 +181,5 @@ select.bop-cell-input { cursor: pointer; min-width: 110px; }
 
 .bop-dest-list { background: var(--color-background-surface); border: 1px solid var(--color-border-default); border-radius: var(--border-radius-default); box-shadow: var(--app-shadow); list-style: none; margin: 0; max-height: 260px; overflow-y: auto; padding: var(--space-1); position: fixed; z-index: var(--z-modal); }
 .bop-dest-item { border-radius: var(--border-radius-default); cursor: pointer; display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3); }
-.bop-dest-item small { color: var(--color-text-caption); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bop-dest-item--active { background: rgb(226 76 0 / 10%); }
+.bop-dest-item small { color: var(--color-text-caption); font-size: var(--font-size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bop-dest-item--active { background: rgb(242 101 34 / 10%); }

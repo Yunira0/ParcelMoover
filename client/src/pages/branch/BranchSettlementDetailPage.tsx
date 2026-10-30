@@ -24,7 +24,9 @@ import type { ParcelStatus } from '../../services/orders.service';
 import '../../pages/SettlementCreatePage.css';
 import './BranchSettlement.css';
 import './BranchSettlementDetailPage.css';
+import { SkeletonPage } from '../../components/Skeleton';
 import ReceiverPhones from '../../components/ReceiverPhones';
+import { Toast, useToast } from '../../components/toast';
 
 type PaymentRow = { method: string; amount: string };
 type DetailTab = 'statement' | 'proof';
@@ -51,6 +53,7 @@ const BranchSettlementDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const toast = useToast();
   const [notice, setNotice] = useState(location.state && typeof location.state === 'object' && 'created' in location.state ? 'Pending statement created. Record payment when the branch remits the COD.' : '');
 
   const activeMethods = useMemo(() => methods.filter((method) => method.isActive), [methods]);
@@ -83,9 +86,9 @@ const BranchSettlementDetailPage: React.FC = () => {
     event.preventDefault();
     if (!detail) return;
     const validPayments = payments.map((payment) => ({ method: payment.method.trim(), amount: Number(payment.amount) || 0 })).filter((payment) => payment.amount > 0 || detail.remainingAmount === 0);
-    if (validPayments.length === 0) { setError('Enter at least one payment amount.'); return; }
-    if (validPayments.some((payment) => !payment.method)) { setError('Choose a payment method for every amount.'); return; }
-    if (enteredAmount > detail.remainingAmount) { setError(`Payment is more than the ${money(detail.remainingAmount)} outstanding balance.`); return; }
+    if (validPayments.length === 0) { toast.error('Enter at least one payment amount.'); return; }
+    if (validPayments.some((payment) => !payment.method)) { toast.error('Choose a payment method for every amount.'); return; }
+    if (enteredAmount > detail.remainingAmount) { toast.error(`Payment is more than the ${money(detail.remainingAmount)} outstanding balance.`); return; }
     setSaving(true);
     setError('');
     try {
@@ -95,41 +98,41 @@ const BranchSettlementDetailPage: React.FC = () => {
       setPayments([{ method: activeMethods[0]?.name ?? '', amount: '' }]);
       await load();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to record branch payment.');
+      toast.error(err?.response?.data?.message || 'Failed to record branch payment.');
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="scp-page"><div className="scp-empty">Loading branch settlement…</div></div>;
+  if (loading) return <div className="scp-page"><SkeletonPage /></div>;
   if (!detail) return <div className="scp-page"><Button variant="secondary" onClick={() => navigate('/branches/settlement')}>Back to Branch COD</Button><Banner tone="danger">{error || 'Branch settlement not found.'}</Banner></div>;
 
   const payable = detail.status === 'pending' || detail.status === 'partially_paid';
   const hasVerifiedPayment = detail.status === 'partially_paid' || detail.status === 'settled';
   const paymentColumns = [
-    { header: 'Paid at', accessor: (payment: BranchSettlementDetail['payments'][number]) => toBsDate(payment.paidAt) || '—', width: '130px' },
-    { header: 'Method', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.method, width: '180px' },
-    { header: 'Amount', accessor: (payment: BranchSettlementDetail['payments'][number]) => money(payment.amount), width: '140px', className: 'branch-money-cell' },
-    { header: 'Breakdown', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.breakdown.map((line) => `${line.method} · ${money(line.amount)}`).join(' · '), width: '250px' },
-    { header: 'Recorded by', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.recordedBy || '—', width: '160px' },
-    { header: 'Remark', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.remark || '—', width: '200px' },
+    { header: 'Paid at', accessor: (payment: BranchSettlementDetail['payments'][number]) => toBsDate(payment.paidAt) || '—' },
+    { header: 'Method', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.method },
+    { header: 'Amount', accessor: (payment: BranchSettlementDetail['payments'][number]) => money(payment.amount), className: 'branch-money-cell' },
+    { header: 'Breakdown', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.breakdown.map((line) => `${line.method} · ${money(line.amount)}`).join(' · ') },
+    { header: 'Recorded by', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.recordedBy || '—' },
+    { header: 'Remark', accessor: (payment: BranchSettlementDetail['payments'][number]) => payment.remark || '—' },
   ];
   const orderColumns = [
-    { header: 'Order', accessor: (item: BranchSettlementDetail['items'][number]) => `#${item.orderNumber}`, width: '85px' },
-    { header: 'Tracking ID', accessor: (item: BranchSettlementDetail['items'][number]) => item.trackingId, width: '170px' },
-    { header: 'Receiver', accessor: (item: BranchSettlementDetail['items'][number]) => <div className="party-cell"><span>{item.receiverName}</span><small><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></small></div>, width: '185px' },
-    { header: 'Route', accessor: (item: BranchSettlementDetail['items'][number]) => `${item.origin || '—'} → ${item.destination || '—'}`, width: '220px' },
-    { header: 'Collected', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.collectedAmount), width: '125px', className: 'branch-money-cell' },
-    { header: 'Commission credit', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.commissionAmount), width: '145px', className: 'branch-money-cell' },
-    { header: 'Net payable', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.netPayable), width: '130px', className: 'branch-money-cell' },
-    { header: 'Order status', accessor: (item: BranchSettlementDetail['items'][number]) => <StatusChip tone={getOrderStatusTone(item.status as ParcelStatus)}>{ORDER_STATUS_LABELS[item.status as keyof typeof ORDER_STATUS_LABELS] || item.status}</StatusChip>, width: '150px' },
+    { header: 'Order', accessor: (item: BranchSettlementDetail['items'][number]) => `#${item.orderNumber}` },
+    { header: 'Tracking ID', accessor: (item: BranchSettlementDetail['items'][number]) => item.trackingId },
+    { header: 'Receiver', accessor: (item: BranchSettlementDetail['items'][number]) => <div className="party-cell"><span>{item.receiverName}</span><small><ReceiverPhones phone={item.receiverPhone} alternate={item.receiverAlternatePhone} /></small></div> },
+    { header: 'Route', accessor: (item: BranchSettlementDetail['items'][number]) => `${item.origin || '—'} → ${item.destination || '—'}` },
+    { header: 'Collected', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.collectedAmount), className: 'branch-money-cell' },
+    { header: 'Commission credit', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.commissionAmount), className: 'branch-money-cell' },
+    { header: 'Net payable', accessor: (item: BranchSettlementDetail['items'][number]) => money(item.netPayable), className: 'branch-money-cell' },
+    { header: 'Order status', accessor: (item: BranchSettlementDetail['items'][number]) => <StatusChip tone={getOrderStatusTone(item.status as ParcelStatus)}>{ORDER_STATUS_LABELS[item.status as keyof typeof ORDER_STATUS_LABELS] || item.status}</StatusChip> },
   ];
 
   return (
     <div className="scp-page bsd-page">
       <button type="button" className="scp-back" onClick={() => navigate('/branches/settlement')}><ArrowLeft size={15} />Branch COD</button>
       <div className="bsd-heading"><div><h1>{detail.statementNo}</h1><p><strong>{detail.fromBranch.name}</strong> pays collected COD to master branch <strong>{detail.toBranch.name}</strong>.</p></div><div className="bsd-heading-actions">{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="secondary" size="sm" onClick={() => setShowEdit(true)}><Pencil size={15} /> Edit statement</Button>}{canCancel && detail.status === 'pending' && detail.paidAmount === 0 && <Button variant="danger" size="sm" onClick={() => setShowCancel(true)}><Ban size={15} /> Cancel statement</Button>}<StatusChip variant="solid" tone={settlementStatusTone(detail.status)}>{settlementStatusLabel(detail.status)}</StatusChip></div></div>
-      {notice && <Banner tone="success">{notice}</Banner>}
+      <Toast tone="success" message={notice} onShown={() => setNotice('')} />
       {error && <Banner tone="danger">{error}</Banner>}
 
       {hasVerifiedPayment && (
@@ -202,8 +205,8 @@ const BranchSettlementDetailPage: React.FC = () => {
           )}
           {payable && !canRecordOfficePayment && <Banner tone="info">Submit the paid receipt from Branch Billing & Credit. The office will verify it before this statement is cleared.</Banner>}
 
-          <section className="scp-section"><div className="scp-section-header"><div><h3>Payment history</h3><p>Every transfer remains visible here, including split or partial payments.</p></div></div><Table selectable={false} data={detail.payments} columns={paymentColumns} minWidth="1060px" emptyMessage="No payment has been recorded yet." /></section>
-          <section className="scp-section"><div className="scp-section-header"><div><h3>Statement orders ({detail.items.length})</h3><p>These orders are earmarked for this statement and cannot be added to another one.</p></div></div><Table selectable={false} data={detail.items.map((item) => ({ ...item, id: item.parcelId }))} columns={orderColumns} minWidth="1210px" emptyMessage="No orders on this statement." /></section>
+          <section className="scp-section"><div className="scp-section-header"><div><h3>Payment history</h3><p>Every transfer remains visible here, including split or partial payments.</p></div></div><Table selectable={false} data={detail.payments} columns={paymentColumns} emptyMessage="No payment has been recorded yet." /></section>
+          <section className="scp-section"><div className="scp-section-header"><div><h3>Statement orders ({detail.items.length})</h3><p>These orders are earmarked for this statement and cannot be added to another one.</p></div></div><Table selectable={false} data={detail.items.map((item) => ({ ...item, id: item.parcelId }))} columns={orderColumns} emptyMessage="No orders on this statement." /></section>
         </>
       )}
 

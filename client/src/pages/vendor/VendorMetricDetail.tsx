@@ -241,15 +241,13 @@ const VendorMetricDetail: React.FC = () => {
     {
       header: 'SN',
       accessor: (order: Order) => (currentPage - 1) * pageSizeChoice + pagedOrders.indexOf(order) + 1,
-      width: '50px',
     },
-    { header: 'ORDER ID', accessor: (order: Order) => `#${order.orderNumber}`, width: '80px' },
+    { header: 'ORDER ID', accessor: (order: Order) => `#${order.orderNumber}` },
     {
       header: 'TRACKING ID',
       accessor: (order: Order) => (
         <Link to={`/orders/track/${order.trackingId}`} className="vmd-tracking-link">{order.trackingId}</Link>
       ),
-      width: '190px',
     },
     {
       header: 'RECEIVER',
@@ -259,20 +257,18 @@ const VendorMetricDetail: React.FC = () => {
           <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
         </div>
       ),
-      width: '180px',
     },
-    { header: 'DESTINATION', accessor: (order: Order) => order.destination || '-', width: '170px' },
+    { header: 'DESTINATION', accessor: (order: Order) => order.destination || '-' },
     {
       header: 'STATUS',
       accessor: (order: Order) => (
         <StatusChip tone={getStatusTone(order.status)}>{STATUS_LABELS[order.status]}</StatusChip>
       ),
-      width: '150px',
     },
     ...(canSeeCod
-      ? [{ header: 'COD AMOUNT', accessor: (order: Order) => formatCurrency(order.codAmount, 0), width: '110px' }]
+      ? [{ header: 'COD AMOUNT', accessor: (order: Order) => formatCurrency(order.codAmount, 0) }]
       : []),
-    { header: 'CREATED', accessor: (order: Order) => toBsDate(order.createdAtRaw), width: '110px' },
+    { header: 'CREATED', accessor: (order: Order) => toBsDate(order.createdAtRaw) },
   ], [currentPage, pageSizeChoice, pagedOrders, canSeeCod]);
 
   if (!config) return <Navigate to="/dashboard" replace />;
@@ -313,7 +309,6 @@ const VendorMetricDetail: React.FC = () => {
         loading={loading}
         loadingMessage="Loading orders..."
         emptyMessage="No orders in this metric right now."
-        minWidth="1050px"
         tableClassName="vmd-table"
       />
 

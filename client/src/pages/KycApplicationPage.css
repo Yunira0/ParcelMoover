@@ -22,8 +22,8 @@
   align-items: center;
   gap: 8px;
   font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--color-primary, #4f46e5);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
   text-decoration: none;
   margin-bottom: 16px;
   letter-spacing: -0.3px;
@@ -37,14 +37,14 @@
 
 .kyc-header h1 {
   font-size: 1.6rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 8px;
 }
 
 .kyc-header p {
   font-size: 0.9rem;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   margin: 0;
 }
 
@@ -75,14 +75,14 @@
   align-items: center;
   justify-content: center;
   font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-text-caption, #9ca3af);
+  font-weight: var(--font-weight-semi-bold);
+  color: var(--color-text-caption);
   transition: all 0.2s;
 }
 
 .kyc-step.active .kyc-step-circle {
-  border-color: var(--color-primary, #4f46e5);
-  background: var(--color-primary, #4f46e5);
+  border-color: var(--color-primary);
+  background: var(--color-primary);
   color: var(--color-text-base);
 }
 
@@ -94,14 +94,14 @@
 
 .kyc-step-label {
   font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--color-text-caption, #9ca3af);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-caption);
   white-space: nowrap;
 }
 
 .kyc-step.active .kyc-step-label {
-  color: var(--color-primary, #4f46e5);
-  font-weight: 600;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semi-bold);
 }
 
 .kyc-step.done .kyc-step-label {
@@ -124,14 +124,14 @@
 /* Form card */
 .kyc-form {
   background: var(--color-background-surface);
-  border-radius: 12px;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-xl);
   padding: 32px;
 }
 
 .kyc-section h3 {
   font-size: 1.05rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 20px;
   padding-bottom: 12px;
@@ -153,18 +153,16 @@
 }
 
 .kyc-review-group {
-  background: var(--color-background-surface, #f9fafb);
+  background: var(--color-background-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: 8px;
+  border-radius: var(--border-radius-lg);
   padding: 16px;
 }
 
 .kyc-review-group h4 {
   font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--color-text-caption, #6b7280);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-caption);
   margin: 0 0 12px;
 }
 
@@ -181,20 +179,20 @@
 }
 
 .review-label {
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   flex-shrink: 0;
   width: 140px;
 }
 
 .review-value {
   color: var(--color-text-default);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   word-break: break-word;
 }
 
 .kyc-declaration {
   font-size: 0.8rem;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   line-height: 1.5;
   margin: 0;
 }
@@ -208,12 +206,8 @@
 
 .kyc-file-label {
   font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-text-default, #1f2937);
-}
-
-.kyc-file-label .required {
-  color: var(--color-danger-default, #dc2626);
+  font-weight: var(--font-weight-semi-bold);
+  color: var(--color-text-default);
 }
 
 .kyc-file-btn,
@@ -222,12 +216,12 @@
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  border: 1px dashed var(--color-border-default, #d1d5db);
-  border-radius: 8px;
-  background: var(--color-background-surface, #fff);
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--border-radius-lg);
+  background: var(--color-background-surface);
   font-size: 0.85rem;
   cursor: pointer;
-  color: var(--color-text-default, #1f2937);
+  color: var(--color-text-default);
 }
 
 .kyc-file-chip {
@@ -240,17 +234,7 @@
   border: none;
   cursor: pointer;
   display: inline-flex;
-  color: var(--color-text-caption, #6b7280);
-}
-
-.kyc-error {
-  margin: 16px 0 0;
-  padding: 10px 14px;
-  background: var(--color-danger-surface);
-  border: 1px solid var(--color-danger-border);
-  border-radius: 6px;
-  color: var(--color-danger-default);
-  font-size: 0.85rem;
+  color: var(--color-text-caption);
 }
 
 /* Actions */
@@ -266,8 +250,8 @@
 /* Success state */
 .kyc-success {
   background: var(--color-background-surface);
-  border-radius: 12px;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.07);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-xl);
   padding: 48px 40px;
   text-align: center;
   max-width: 480px;
@@ -281,14 +265,14 @@
 
 .kyc-success h2 {
   font-size: 1.4rem;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-default);
   margin: 0 0 12px;
 }
 
 .kyc-success p {
   font-size: 0.9rem;
-  color: var(--color-text-caption, #6b7280);
+  color: var(--color-text-caption);
   line-height: 1.6;
   margin: 0 0 12px;
 }

@@ -30,6 +30,8 @@ import '../OrderManagement.css';
 import '../MerchantOverview.css';
 import './BranchOverview.css';
 import ReceiverPhones from '../../components/ReceiverPhones';
+import { Skeleton } from '../../components/Skeleton';
+import { useToast } from '../../components/toast';
 
 const hubName = (loc: string) => loc.split(' - ')[0];
 
@@ -53,6 +55,7 @@ const BranchOverview: React.FC = () => {
   // Collapsed by default so the branch list doesn't push the order report down.
   const [branchListOpen, setBranchListOpen] = useState(false);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const toast = useToast();
   const pager = useCursorPagination();
 
   const filters: BranchFilters = useMemo(() => ({
@@ -149,14 +152,14 @@ const BranchOverview: React.FC = () => {
     ]);
       await downloadExcel('branch-overview.xlsx', 'Branch Overview', headers, body);
     } catch {
-      setError('Failed to export branch orders.');
+      toast.error('Failed to export branch orders.');
     } finally {
       setExporting(false);
     }
   };
 
   const columns = [
-    { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}`, width: '70px' },
+    { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}` },
     {
       header: 'TRACKING ID',
       accessor: (o: Order) => (
@@ -164,25 +167,22 @@ const BranchOverview: React.FC = () => {
           {o.trackingId}
         </Link>
       ),
-      width: '170px',
       className: 'tracking-cell',
     },
-    { header: 'CREATED', accessor: (o: Order) => toBsDate(o.createdAt) || '-', width: '110px' },
-    { header: 'ORIGIN', accessor: (o: Order) => (o.origin ? hubName(o.origin) : '-'), width: '110px' },
-    { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-', width: '130px' },
+    { header: 'CREATED', accessor: (o: Order) => toBsDate(o.createdAt) || '-' },
+    { header: 'ORIGIN', accessor: (o: Order) => (o.origin ? hubName(o.origin) : '-') },
+    { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-' },
     {
       header: 'SENDER',
       accessor: (o: Order) => (
         <div className="party-cell"><span>{o.senderName}</span><small>{o.senderPhone}</small></div>
       ),
-      width: '170px',
     },
     {
       header: 'RECEIVER',
       accessor: (o: Order) => (
         <div className="party-cell"><span>{o.receiverName}</span><small><ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} /></small></div>
       ),
-      width: '150px',
     },
     {
       header: 'FINANCE',
@@ -192,9 +192,8 @@ const BranchOverview: React.FC = () => {
           <span>Collected: {formatMoneyCompact(o.collectedAmount)}</span>
         </div>
       ),
-      width: '140px',
     },
-    { header: 'WEIGHT', accessor: (o: Order) => (o.weightKg ? `${o.weightKg} Kg` : '-'), width: '90px' },
+    { header: 'WEIGHT', accessor: (o: Order) => (o.weightKg ? `${o.weightKg} Kg` : '-') },
     {
       header: 'STATUS',
       accessor: (o: Order) => (
@@ -203,7 +202,6 @@ const BranchOverview: React.FC = () => {
           {o.carrierCode && <span className="om-carrier-chip">{CARRIER_LABELS[o.carrierCode]}</span>}
         </span>
       ),
-      width: '150px',
     },
   ];
 
@@ -276,7 +274,7 @@ const BranchOverview: React.FC = () => {
       <div className="order-toolbar">
         <div className="order-toolbar-left">
           <span className="vendor-overview-count">
-            {loading ? 'Loading…' : `${meta?.total ?? rows.length} order${(meta?.total ?? rows.length) === 1 ? '' : 's'}`}
+            {loading ? <Skeleton width={64} height={12} className="skeleton-inline" /> : `${meta?.total ?? rows.length} order${(meta?.total ?? rows.length) === 1 ? '' : 's'}`}
             {selectedIds.size > 0 && <> · {selectedIds.size} selected</>}
           </span>
         </div>
@@ -298,7 +296,6 @@ const BranchOverview: React.FC = () => {
         loading={loading && orders.length === 0}
         loadingMessage="Loading orders..."
         emptyMessage="No orders for this branch pair and range."
-        minWidth="1450px"
         tableClassName="orders-table merchant-overview-table"
       />
 

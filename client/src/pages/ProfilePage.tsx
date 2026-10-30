@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Lock, Check, LogOut, MapPin, Mail, Phone, Shield, Briefcase } from 'lucide-react';
+import { User, Lock, LogOut, MapPin, Mail, Phone, Shield, Briefcase } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import StatusChip from '../components/StatusChip';
@@ -10,6 +10,7 @@ import { getCurrentUser as fetchMe, changePassword, logout, updateMe } from '../
 import { getLocations } from '../queries/lookups';
 import { getCurrentUser, getCurrentUserRoles } from '../utils/auth';
 import './ProfilePage.css';
+import { Toast, useToast } from '../components/toast';
 
 type Tab = 'info' | 'password';
 
@@ -66,7 +67,6 @@ const ProfilePage: React.FC = () => {
   const [hubOptions, setHubOptions] = useState<{ id: string; label: string }[]>([]);
   const [accountStatus, setAccountStatus] = useState('');
   const [infoLoading, setInfoLoading] = useState(false);
-  const [infoSuccess, setInfoSuccess] = useState(false);
   const [infoError, setInfoError] = useState('');
 
   // Password fields
@@ -74,9 +74,9 @@ const ProfilePage: React.FC = () => {
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
   const [pwdLoading, setPwdLoading] = useState(false);
-  const [pwdSuccess, setPwdSuccess] = useState(false);
   const [pwdError, setPwdError] = useState('');
 
+  const toast = useToast();
   const roles = getCurrentUserRoles();
   // Staff (admin/super_admin) accounts carry a hub assignment and may set
   // their own from here - other account types keep it read-only/hidden.
@@ -119,14 +119,12 @@ const ProfilePage: React.FC = () => {
     if (!fullName.trim()) { setInfoError('Full name is required'); return; }
     setInfoLoading(true);
     setInfoError('');
-    setInfoSuccess(false);
     try {
       const updated = await updateMe({ fullName, phone, ...(isStaff ? { hubId: hubId || null } : {}) });
       const stored = JSON.parse(localStorage.getItem('user') || 'null');
       if (stored) localStorage.setItem('user', JSON.stringify({ ...stored, fullName: updated.fullName }));
       if (isStaff) setHubName(hubOptions.find((o) => o.id === hubId)?.label ?? '');
-      setInfoSuccess(true);
-      setTimeout(() => setInfoSuccess(false), 3000);
+      toast.success('Profile updated');
     } catch (err: any) {
       setInfoError(err?.response?.data?.error || 'Failed to update profile.');
     } finally {
@@ -143,14 +141,12 @@ const ProfilePage: React.FC = () => {
 
     setPwdLoading(true);
     setPwdError('');
-    setPwdSuccess(false);
     try {
       await changePassword(currentPwd, newPwd);
-      setPwdSuccess(true);
+      toast.success('Password changed');
       setCurrentPwd('');
       setNewPwd('');
       setConfirmPwd('');
-      setTimeout(() => setPwdSuccess(false), 3000);
     } catch (err: any) {
       setPwdError(err?.response?.data?.message || 'Failed to change password.');
     } finally {
@@ -161,9 +157,9 @@ const ProfilePage: React.FC = () => {
   if (loading) {
     return (
       <div className="profile-page">
-        <div className="profile-skeleton-header" />
-        <div className="profile-skeleton-tabs" />
-        <div className="profile-skeleton-body" />
+        <div className="skeleton profile-skeleton-header" />
+        <div className="skeleton profile-skeleton-tabs" />
+        <div className="skeleton profile-skeleton-body" />
       </div>
     );
   }
@@ -306,10 +302,7 @@ const ProfilePage: React.FC = () => {
                 />
               )}
 
-              {infoError && <p className="profile-alert profile-alert-error">{infoError}</p>}
-              {infoSuccess && (
-                <p className="profile-alert profile-alert-success"><Check size={14} /> Profile updated successfully</p>
-              )}
+              <Toast tone="error" message={infoError} onShown={() => setInfoError('')} />
 
               <div className="profile-form-actions">
                 <Button type="submit" variant="primary" disabled={infoLoading}>
@@ -354,10 +347,7 @@ const ProfilePage: React.FC = () => {
                 placeholder="Re-enter new password"
               />
 
-              {pwdError && <p className="profile-alert profile-alert-error">{pwdError}</p>}
-              {pwdSuccess && (
-                <p className="profile-alert profile-alert-success"><Check size={14} /> Password changed successfully</p>
-              )}
+              <Toast tone="error" message={pwdError} onShown={() => setPwdError('')} />
 
               <div className="profile-form-actions">
                 <Button type="submit" variant="primary" disabled={pwdLoading}>

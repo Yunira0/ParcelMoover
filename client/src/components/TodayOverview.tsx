@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ClipboardList, Check, Truck, Package, RotateCcw, Undo2, MessageSquare, type LucideIcon } from 'lucide-react';
 import type { DashboardSummary } from '../services/orders.service';
+import { canOpenPath } from '../utils/auth';
 import './TodayOverview.css';
 
 interface TodayOverviewProps {
@@ -45,7 +46,7 @@ const TodayOverview: React.FC<TodayOverviewProps> = ({ today, overview, loading 
     { icon: RotateCcw, label: 'Returned', value: today.returnedToVendor, to: `/orders?${updatedToday}&currentStatus=returned_to_vendor`, color: 'var(--color-danger-default)' },
     { icon: Undo2, label: 'Pending returns', value: overview.pendingReturns, to: '/orders?currentStatus=follow_up&currentStatus=ready_to_return&currentStatus=sent_to_vendor', color: 'var(--color-background-warning-default)' },
     { icon: MessageSquare, label: 'Unclosed remarks', value: today.unclosedComments, to: '/unclosed-remarks', color: 'var(--color-primary)' },
-  ];
+  ].filter((row) => canOpenPath(row.to));
 
   return (
     <div className="today-overview">

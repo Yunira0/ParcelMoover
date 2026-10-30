@@ -40,6 +40,8 @@ export interface TransitManifestParcel {
   trackingId: string;
   status: string;
   receiverName: string;
+  receiverPhone: string;
+  receiverAlternatePhone: string;
   destination: string;
   codAmount: number;
 }

@@ -21,6 +21,7 @@ import SlaRoutes from "./routes/sla.routes"
 import VendorVolumeRoutes from "./routes/vendorVolume.routes"
 import PickupTimeSlotsRoutes from "./routes/pickupTimeSlots.routes"
 import PaymentMethodRoutes from "./routes/payment-method.routes"
+import BankRoutes from "./routes/bank.routes"
 import NcmRoutes from "./routes/ncm.routes"
 import UpayaRoutes from "./routes/upaya.routes"
 import ApiKeyRoutes from "./routes/apiKey.routes"
@@ -42,6 +43,7 @@ import {authMiddleware} from "./middlewares/auth.middleware";
 import { errorHandler } from "./middlewares/errorHandler.middleware";
 import { requestId } from "./middlewares/requestId.middleware";
 import { requestPerformance } from "./lib/requestPerformance";
+import { usageTrackingMiddleware } from "./middlewares/usageTracking.middleware";
 import {authorizeRoles} from "./middlewares/authorizeRoles.middleware";
 import { createRedisRateLimitStore } from "./lib/rateLimitStore";
 import { createGlobalRateLimitKeyGenerator } from "./lib/rateLimitKey";
@@ -77,6 +79,7 @@ const app: Express = express();
 
 app.use(requestId);
 app.use("/api", requestPerformance);
+app.use("/api", usageTrackingMiddleware);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -188,6 +191,7 @@ app.use("/api/vendor-volume", VendorVolumeRoutes)
 
 app.use("/api/pickup-time-slots", PickupTimeSlotsRoutes)
 app.use("/api/payment-methods", PaymentMethodRoutes)
+app.use("/api/banks", BankRoutes)
 
 // NCM (Nepal Can Move) 3PL integration — includes the public webhook receiver.
 app.use("/api/ncm", NcmRoutes)

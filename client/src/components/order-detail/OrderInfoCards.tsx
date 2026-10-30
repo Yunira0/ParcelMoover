@@ -5,6 +5,7 @@ import Button from '../Button';
 import { getLocations } from '../../queries/lookups';
 import type { UpdateOrderInput } from '../../services/orders.service';
 import '../Modal.css';
+import { Toast } from '../toast';
 
 interface OrderInfoCardsProps {
   senderName: string;
@@ -542,7 +543,7 @@ const OrderInfoCards: React.FC<OrderInfoCardsProps> = ({
                 works while the COD hasn't been settled to the vendor yet.
               </p>
             )}
-            {error && <p className="error-text">{error}</p>}
+            <Toast tone="error" message={error} />
             <div className="modal-footer">
               <Button type="button" variant="secondary" onClick={cancel} disabled={saving}>
                 Cancel

@@ -20,20 +20,31 @@ beforeEach(() => {
     id: "statement-1", statement_id: "STM-1", _count: { settlement_items: 345 }, riders: null,
     vendors: { client_name: "Contact", business_name: "Store", phone: "9800000000", bank_name: "Bank", bank_account_no: "123", bank_account_holder: "Store" },
     settlement_date: null, created_at: new Date("2026-10-06T00:00:00Z"), payable_amount: 900, amount: 1000,
-    status: "partially_paid", paid_amount: 100, payments: [{ method: "Cash", amount: 100 }], remark: "First instalment",
+    status: "partially_paid", paid_amount: 100, payments: [{ method: "Cash", amount: 100 }], remark: "First instalment", invoice_no: "INV-9",
   }] as any);
 });
 
 describe("settlement list relation counts", () => {
   it("returns exact item totals and existing payment fields without loading every linked ID", async () => {
     const result = await listSettlements({ id: "user-a", roles: ["vendor"] }, "vendor", "vendor-b");
-    expect(result.data[0]).toMatchObject({ orderCount: 345, amount: 900, payeeName: "Store", paidAmount: 100, bankAccountNo: "123" });
+    expect(result.data[0]).toMatchObject({ orderCount: 345, amount: 900, payeeName: "Store", paidAmount: 100, bankAccountNo: "123", invoiceNo: "INV-9" });
     expect(result.meta).toEqual({ page: 1, pageSize: 20, total: 21, totalPages: 2 });
     expect(prisma.settlements.count).toHaveBeenCalledWith({ where: { payee_type: "vendor", vendor_id: "vendor-a" } });
     const args = vi.mocked(prisma.settlements.findMany).mock.calls[0]![0]!;
     expect(args.include).toHaveProperty("_count", { select: { settlement_items: true } });
     expect(args.include).not.toHaveProperty("settlement_items");
     expect(args.orderBy).toEqual([{ created_at: "desc" }, { id: "desc" }]);
+  });
+  it("splits a vendor statement's delivery charges into taxable value and VAT for staff only", async () => {
+    vi.mocked(prisma.settlements.findMany).mockResolvedValue([{
+      id: "statement-1", statement_id: "STM-1", _count: { settlement_items: 1 }, riders: null, vendors: null,
+      settlement_date: null, created_at: new Date("2026-10-06T00:00:00Z"), payable_amount: 887, amount: 1000,
+      vendor_credit_applied: 0, vat_rate: 13, status: "pending", paid_amount: 0, payments: null, remark: null, invoice_no: null,
+    }] as any);
+    const staff = await listSettlements({ id: "admin-1", roles: ["super_admin"] }, "vendor", undefined);
+    expect(staff.data[0]).toMatchObject({ taxableAmount: 100, vatAmount: 13 });
+    const vendor = await listSettlements({ id: "user-a", roles: ["vendor"] }, "vendor", undefined);
+    expect(vendor.data[0]).not.toHaveProperty("taxableAmount");
   });
   it("rejects a vendor without a valid profile before querying finance records", async () => {
     vi.mocked(resolveOwnVendorId).mockResolvedValue(null);

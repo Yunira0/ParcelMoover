@@ -8,6 +8,7 @@ import FilterDropdown from '../components/FilterDropdown';
 import ClearableFilter from '../components/ClearableFilter';
 import Pagination from '../components/Pagination';
 import { Banner } from './accounting/ui';
+import { useToast } from '../components/toast';
 import { isSalesUser } from '../utils/auth';
 import {
   COD_REQUEST_STATUS_LABELS,
@@ -53,6 +54,7 @@ const CodSettlementRequests: React.FC = () => {
   const [status, setStatus] = useSessionState('cod-settlement-requests:status', '');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<CodSettlementRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -101,7 +103,7 @@ const CodSettlementRequests: React.FC = () => {
     let active = true;
     getCodSettlementRequestById(linkedId)
       .then((response) => { if (active) setLinked(response.data); })
-      .catch((err) => { if (active) setError(apiErrorMessage(err, 'Could not open that request')); });
+      .catch((err) => { if (active) toast.error(apiErrorMessage(err, 'Could not open that request')); });
     return () => { active = false; };
   }, [linkedId, requests]);
 
@@ -138,7 +140,7 @@ const CodSettlementRequests: React.FC = () => {
       setStatementChoice('');
       await load();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Could not update the request'));
+      toast.error(apiErrorMessage(err, 'Could not update the request'));
     } finally {
       setBusyId(null);
     }
@@ -172,8 +174,8 @@ const CodSettlementRequests: React.FC = () => {
   }, []);
 
   const columns = [
-    { header: 'REQUEST', accessor: (r: CodSettlementRequest) => r.requestNo, width: '140px' },
-    { header: 'VENDOR', accessor: (r: CodSettlementRequest) => r.vendorName || '—', width: '160px' },
+    { header: 'REQUEST', accessor: (r: CodSettlementRequest) => r.requestNo },
+    { header: 'VENDOR', accessor: (r: CodSettlementRequest) => r.vendorName || '—' },
     {
       header: 'PAYOUT ACCOUNT',
       accessor: (r: CodSettlementRequest) => (
@@ -183,21 +185,18 @@ const CodSettlementRequests: React.FC = () => {
           <span>{r.accountName}</span>
         </div>
       ),
-      width: '200px',
     },
     {
       // Snapshot, not a live figure — labelled so nobody pays out against it.
       header: 'BALANCE WHEN ASKED',
       accessor: (r: CodSettlementRequest) =>
         r.amountSnapshot === null ? '—' : `Rs ${r.amountSnapshot.toLocaleString()}`,
-      width: '160px',
     },
     {
       header: 'STATUS',
       accessor: (r: CodSettlementRequest) => COD_REQUEST_STATUS_LABELS[r.status],
-      width: '110px',
     },
-    { header: 'RAISED', accessor: (r: CodSettlementRequest) => toBsDate(r.createdAt) || '—', width: '110px' },
+    { header: 'RAISED', accessor: (r: CodSettlementRequest) => toBsDate(r.createdAt) || '—' },
     {
       header: readOnly ? 'OUTCOME' : 'ACTIONS',
       accessor: (r: CodSettlementRequest) =>
@@ -221,7 +220,6 @@ const CodSettlementRequests: React.FC = () => {
         ) : (
           <span className="cod-request-outcome">{r.decisionNote || r.settlementStatementId || '—'}</span>
         ),
-      width: '200px',
     },
   ];
 
@@ -300,11 +298,11 @@ const CodSettlementRequests: React.FC = () => {
       {linked && (
         <section className="cod-request-card">
           <h2>{linked.requestNo}</h2>
-          <Table selectable={false} columns={columns} data={[linked]} minWidth="1080px" />
+          <Table selectable={false} columns={columns} data={[linked]} />
         </section>
       )}
 
-      <Table selectable={false} columns={columns} data={requests} loading={loading} minWidth="1080px" />
+      <Table selectable={false} columns={columns} data={requests} loading={loading} />
 
       <Pagination
         ariaLabel="COD settlement requests pagination"

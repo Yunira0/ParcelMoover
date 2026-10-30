@@ -38,5 +38,6 @@ export const queryKeys = {
     allRiders: (params: unknown) => ['lookups', 'all-riders', params] as const,
     accounts: (scope: string | undefined) => ['lookups', 'accounts', scope ?? 'all'] as const,
     periods: ['lookups', 'accounting-periods'] as const,
+    banks: ['lookups', 'banks'] as const,
   },
 };

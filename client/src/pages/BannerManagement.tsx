@@ -17,6 +17,7 @@ import {
   type BannerStatus,
 } from '../services/banners.service';
 import './BannerManagement.css';
+import { useToast } from '../components/toast';
 
 const STATUS_TONE: Record<BannerStatus, StatusChipTone> = {
   draft: 'neutral',
@@ -47,6 +48,7 @@ const BannerManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const toast = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,7 +75,7 @@ const BannerManagement: React.FC = () => {
     try {
       await updateBanner(banner.id, { isEnabled: next });
     } catch {
-      setError('Failed to update that banner.');
+      toast.error('Failed to update that banner.');
       setBanners((prev) => prev.map((b) => (b.id === banner.id ? { ...b, isEnabled: banner.isEnabled } : b)));
     } finally {
       setBusyId(null);
@@ -93,7 +95,7 @@ const BannerManagement: React.FC = () => {
       await deleteBanner(banner.id);
       setBanners((prev) => prev.filter((b) => b.id !== banner.id));
     } catch {
-      setError('Failed to delete that banner.');
+      toast.error('Failed to delete that banner.');
     } finally {
       setBusyId(null);
     }
@@ -109,7 +111,6 @@ const BannerManagement: React.FC = () => {
           className="banner-mgmt-thumb"
         />
       ),
-      width: '96px',
     },
     { header: 'NAME', accessor: 'name' as keyof Banner },
     {
@@ -140,7 +141,7 @@ const BannerManagement: React.FC = () => {
       ),
     },
     { header: 'WINDOW', accessor: (banner: Banner) => dateWindow(banner) },
-    { header: 'PRIORITY', accessor: (banner: Banner) => banner.sortOrder, width: '70px' },
+    { header: 'PRIORITY', accessor: (banner: Banner) => banner.sortOrder },
     {
       header: 'ACTION',
       accessor: (banner: Banner) => (
@@ -156,14 +157,13 @@ const BannerManagement: React.FC = () => {
           </Button>
         </TableRowActions>
       ),
-      width: '220px',
     },
   ];
 
   return (
     <div className="banner-management-container">
       <PageHeader
-        title="BANNER MANAGEMENT"
+        title="Banner Management"
         actionLabel="Add banner"
         actionIcon={<Plus size={16} />}
         onAction={() => navigate('/banners/new')}

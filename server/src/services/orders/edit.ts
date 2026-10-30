@@ -3,6 +3,7 @@ import prisma from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import type { OrderPartyInput, UpdateOrderDetailsInput } from "../../types/order.type";
 import { hasAdminPermission } from "../../middlewares/adminPermission.middleware";
+import { isAccountant } from "../../utils/financeRoles";
 import { getDeliveryQuote, getReturnRouteQuote } from "../delivery-rate.service";
 import { invalidateVendorFinanceCache } from "../finance.service";
 import { getReturnDeliveryQuote, getVendorQuote, type RateType, type ServiceType } from "../pricing.service";
@@ -33,8 +34,8 @@ const VENDOR_EDITABLE_STATUSES: parcel_status[] = [
 
 // A parcel in EDIT_BLOCKED_STATUSES is otherwise settled paperwork, but a
 // wrong COD amount (customer dispute, data-entry mistake) still needs
-// correcting after delivery/RTV/RTO. Narrow escape hatch: super_admin or an
-// admin holding EDIT_SETTLEMENTS may still change codAmount alone, as long as
+// correcting after delivery/RTV/RTO. Narrow escape hatch: super_admin, the
+// accountant, or an admin holding EDIT_SETTLEMENTS may still change codAmount alone, as long as
 // the money hasn't actually moved yet - once cod_collections.payment_status
 // is "paid" the parcel's COD must never drift from what was already settled.
 // Callers decide "codAmount alone" from the actual before/after diff (see
@@ -42,7 +43,7 @@ const VENDOR_EDITABLE_STATUSES: parcel_status[] = [
 // the full-page edit form always resubmits every field, changed or not.
 async function canOverrideCodOnBlockedParcel(actor: OrderActor, parcelId: string): Promise<boolean> {
   const isPrivileged =
-    actor.roles.includes("super_admin") || (await hasAdminPermission(actor, "EDIT_SETTLEMENTS"));
+    actor.roles.includes("super_admin") || isAccountant(actor) || (await hasAdminPermission(actor, "EDIT_SETTLEMENTS"));
   if (!isPrivileged) return false;
 
   const collection = await prisma.cod_collections.findFirst({

@@ -1,4 +1,5 @@
 import React from 'react';
+import FilterClearButton from './FilterClearButton';
 import SearchableSelect, { type SearchableSelectOption } from './SearchableSelect';
 
 export interface FilterDropdownOption {
@@ -33,13 +34,15 @@ const FilterDropdown: React.FC<FilterDropdownProps> = ({
   return (
     <label aria-label={ariaLabel}>
       <span>{label}</span>
-      <SearchableSelect
-        options={searchableOptions}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder || `Select ${label.toLowerCase()}`}
-        searchPlaceholder={searchPlaceholder}
-      />
+      <FilterClearButton active={Boolean(value)} onClear={() => onChange('')} label={label}>
+        <SearchableSelect
+          options={searchableOptions}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder || `Select ${label.toLowerCase()}`}
+          searchPlaceholder={searchPlaceholder}
+        />
+      </FilterClearButton>
     </label>
   );
 };

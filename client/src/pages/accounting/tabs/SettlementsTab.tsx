@@ -293,10 +293,9 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
         loadingMessage="Loading settlements…"
         data={rows}
         columns={[
-          { header: 'SN', accessor: 'sn', width: '60px' },
+          { header: 'SN', accessor: 'sn' },
           {
             header: 'Statement ID',
-            width: '185px',
             accessor: (item) => (
               <button
                 type="button"
@@ -307,24 +306,32 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
               </button>
             ),
           },
-          { header: payeeType === 'rider' ? 'Rider' : 'Vendor', width: '200px', accessor: 'payeeName' },
           {
-            header: 'Amount',
-            width: '130px',
+            // Flexible, like Bank details, Payment and Remark: they share the spare width.
+            header: payeeType === 'rider' ? 'Rider' : 'Vendor',
+            accessor: 'payeeName',
+          },
+          // The delivery charges on the statement, split for VAT, ahead of what is paid out.
+          ...(payeeType === 'vendor'
+            ? [
+                { header: 'Taxable amount', className: 'acc-num', accessor: (item: SettlementRow) => money(item.taxableAmount ?? 0) },
+                { header: 'VAT 13%', className: 'acc-num', accessor: (item: SettlementRow) => money(item.vatAmount ?? 0) },
+              ]
+            : []),
+          {
+            header: payeeType === 'vendor' ? 'Payable amount' : 'Amount',
             className: 'acc-num',
             accessor: (item) => <span className="acc-num">{money(item.amount)}</span>,
           },
           // When the statement was drawn up.
           {
             header: 'Created date',
-            width: '125px',
             accessor: (item) => toBsDate(item.createdAt),
           },
           // The day the statement was actually paid off, not the date picked
           // when it was drawn up. Blank while pending or part-paid.
           {
             header: 'Settled date',
-            width: '125px',
             accessor: (item) => (item.settledDate ? toBsDate(item.settledDate) : '—'),
           },
           // Vendors only, and this is the one place it earns its width: a payout
@@ -339,7 +346,6 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
             ? [
                 {
                   header: 'Bank details',
-                  width: '185px',
                   accessor: (item: SettlementRow) => {
                     // Only the parts that are filled in. Rendering an em dash
                     // for a missing account holder cost a whole extra line of
@@ -368,7 +374,6 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
           // reconciling against a bank statement is looking for.
           {
             header: 'Payment',
-            width: '185px',
             accessor: (item) =>
               item.paymentBreakdown.length > 0 ? (
                 <>
@@ -385,34 +390,25 @@ const SettlementsTab: React.FC<{ payeeType: 'rider' | 'vendor' }> = ({ payeeType
                 <span className="acc-muted">Not paid</span>
               ),
           },
+          // The vendor's invoice for the payout, recorded with the payment proof.
+          ...(payeeType === 'vendor'
+            ? [{ header: 'Invoice no.', accessor: (item: SettlementRow) => item.invoiceNo || '—' }]
+            : []),
           // Status then Remark, last two. The remark is free text of any length,
           // so it goes at the end where it can run on without pushing a fixed
           // column off the edge — and status sits beside it, where the eye
           // finishes the row.
           {
             header: 'Status',
-            width: '150px',
             accessor: (item) => (
-              <>
-                <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
-                  {settlementStatusLabel(item.status)}
-                </StatusChip>
-                {/* A part-paid row otherwise reads exactly like a pending one
-                    beside its full amount. */}
-                {item.status === 'partially_paid' && (
-                  <span className="acc-sub">
-                    {money(item.paidAmount)} of {money(Math.abs(item.amount))}
-                  </span>
-                )}
-              </>
+              <StatusChip variant="solid" tone={settlementStatusTone(item.status)}>
+                {settlementStatusLabel(item.status)}
+              </StatusChip>
             ),
           },
-          { header: 'Remark', width: '190px', accessor: (item) => item.remark || '—' },
+          // The one flexible column: takes whatever width is left, and wraps.
+          { header: 'Remark', accessor: (item) => item.remark || '—' },
         ]}
-        // Every column is sized, so the table opts into fixed layout and scrolls
-        // inside its own box rather than squeezing the payment figures. Vendor
-        // carries the extra bank column, hence the wider floor.
-        minWidth={payeeType === 'vendor' ? '1535px' : '1350px'}
         emptyMessage={
           payeeId
             ? `No settlements recorded for that ${payeeType} yet.`

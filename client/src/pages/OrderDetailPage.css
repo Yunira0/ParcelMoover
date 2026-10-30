@@ -21,13 +21,10 @@
 .od-loading { display: flex; flex-direction: column; gap: var(--space-4); }
 .od-skeleton {
   border-radius: var(--border-radius-modal);
-  background: linear-gradient(90deg, var(--color-background-canvas) 25%, var(--color-background-elevated) 50%, var(--color-background-canvas) 75%);
-  background-size: 200% 100%; animation: od-shimmer 1.5s infinite ease-in-out;
 }
 .od-skeleton-header { height: 120px; }
 .od-skeleton-card { height: 180px; border-radius: var(--border-radius-modal); }
 .od-skeleton-timeline { height: 280px; border-radius: var(--border-radius-modal); }
-@keyframes od-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 /* Empty */
 .od-empty {
@@ -419,7 +416,7 @@
 }
 
 .od-timeline-from {
-  font-size: 12px; color: var(--color-text-caption); margin: 0 0 var(--space-1);
+  font-size: var(--font-size-xs); color: var(--color-text-caption); margin: 0 0 var(--space-1);
 }
 
 .od-timeline-remarks {
@@ -433,7 +430,7 @@
 
 .od-timeline-by, .od-timeline-time {
   display: inline-flex; align-items: center; gap: var(--space-1);
-  font-size: 12px; color: var(--color-text-caption);
+  font-size: var(--font-size-xs); color: var(--color-text-caption);
 }
 
 .od-timeline-dot-sep {
@@ -516,7 +513,7 @@
 }
 .od-chat-thread::-webkit-scrollbar { width: 4px; }
 .od-chat-thread::-webkit-scrollbar-track { background: transparent; }
-.od-chat-thread::-webkit-scrollbar-thumb { background: var(--color-border-default); border-radius: 4px; }
+.od-chat-thread::-webkit-scrollbar-thumb { background: var(--color-border-default); border-radius: var(--border-radius-default); }
 
 .od-chat-empty {
   display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
@@ -596,7 +593,7 @@
 
 .od-bottom-replying-preview {
   flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: baseline; gap: var(--space-1-5);
-  font-size: 12px; color: var(--color-text-primary);
+  font-size: var(--font-size-xs); color: var(--color-text-primary);
 }
 .od-bottom-replying-label { color: var(--color-text-caption); flex-shrink: 0; }
 .od-bottom-replying-preview strong { font-weight: var(--font-weight-bold); flex-shrink: 0; }
@@ -612,12 +609,12 @@
   background: transparent; border: none; border-radius: 50%;
   color: var(--color-text-default); cursor: pointer; transition: all 150ms ease; flex-shrink: 0;
 }
-.od-bottom-replying-close:hover { background: rgb(226 76 0 / 0.15); color: var(--color-text-primary); }
+.od-bottom-replying-close:hover { background: rgb(242 101 34 / 0.15); color: var(--color-text-primary); }
 
 /* Highlight for newly added remark */
 .od-chat-msg-highlight { animation: od-highlight-flash 2.5s ease; }
 @keyframes od-highlight-flash {
-  0%   { background: rgb(226 76 0 / 0.1); }
+  0%   { background: rgb(242 101 34 / 0.1); }
   100% { background: transparent; }
 }
 
@@ -635,7 +632,7 @@
 }
 .od-bottom-input-wrap:focus-within {
   border-color: var(--color-border-primary);
-  box-shadow: 0 0 0 3px rgb(226 76 0 / 0.08);
+  box-shadow: 0 0 0 3px rgb(242 101 34 / 0.08);
 }
 
 .od-bottom-input {
@@ -796,12 +793,6 @@
 .od-override-apply:disabled {
   cursor: not-allowed;
   opacity: 0.6;
-}
-
-.od-override-error {
-  color: var(--color-danger-text);
-  font-size: var(--font-size-sm);
-  margin: 0;
 }
 
 /* â”€â”€ Price Log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */

@@ -210,7 +210,6 @@ const Remarks: React.FC = () => {
     {
       header: 'SN',
       accessor: (remark: Remark) => ((page - 1) * pageSizeChoice) + visibleRemarks.findIndex((row) => row.id === remark.id) + 1,
-      width: '50px',
       className: 'remarks-sn-cell',
     },
     {
@@ -218,7 +217,6 @@ const Remarks: React.FC = () => {
       accessor: (remark: Remark) => (
         <Link to={`/remarks/${remark.id}`} className="tracking-id-link">{remark.remarkId}</Link>
       ),
-      width: '110px',
       className: 'remarks-id-cell',
     },
     {
@@ -226,7 +224,6 @@ const Remarks: React.FC = () => {
       accessor: (remark: Remark) => (
         <Link to={`/orders/track/${remark.trackingId}`} className="tracking-id-link">{remark.trackingId}</Link>
       ),
-      width: '130px',
     },
     {
       header: 'VENDOR',
@@ -236,9 +233,8 @@ const Remarks: React.FC = () => {
           <small>{remark.customerPhone}</small>
         </div>
       ),
-      width: '160px',
     },
-    { header: 'REMARKS', accessor: (remark: Remark) => remark.subject, width: '220px', className: 'remarks-subject-cell' },
+    { header: 'REMARKS', accessor: (remark: Remark) => remark.subject, className: 'remarks-subject-cell' },
     {
       header: 'LAST REMARK',
       accessor: (remark: Remark) => (
@@ -247,7 +243,6 @@ const Remarks: React.FC = () => {
           <small>{remark.lastRemarkBy} · {toBsDate(remark.lastRemarkAt)}</small>
         </div>
       ),
-      width: '220px',
       className: 'remarks-subject-cell',
     },
     {
@@ -255,10 +250,9 @@ const Remarks: React.FC = () => {
       accessor: (remark: Remark) => (
         <StatusChip tone={STATUS_TONE[remark.status]}>{REMARK_STATUS_LABELS[remark.status]}</StatusChip>
       ),
-      width: '140px',
     },
-    { header: 'ADDED BY', accessor: (remark: Remark) => remark.addedBy, width: '140px' },
-    { header: 'CREATED AT', accessor: (remark: Remark) => toBsDate(remark.createdAt), width: '110px' },
+    { header: 'ADDED BY', accessor: (remark: Remark) => remark.addedBy },
+    { header: 'CREATED AT', accessor: (remark: Remark) => toBsDate(remark.createdAt) },
     {
       header: 'ACTION',
       accessor: (remark: Remark) => (
@@ -278,7 +272,6 @@ const Remarks: React.FC = () => {
           )}
         </div>
       ),
-      width: '240px',
     },
   ], [page, pageSizeChoice, visibleRemarks, navigate, markAsDone, markingDoneId]);
 
@@ -334,7 +327,6 @@ const Remarks: React.FC = () => {
         loading={loading}
         loadingMessage="Loading remarks..."
         emptyMessage="No remarks found."
-        minWidth="1630px"
         tableClassName="remarks-table"
       />
 

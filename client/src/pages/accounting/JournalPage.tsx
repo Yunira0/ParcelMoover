@@ -21,6 +21,7 @@ import { hasAdminPermission } from '../../utils/auth';
 import { formatAmount } from '../../utils/format';
 import { downloadExcel } from '../../utils/excel';
 import { useBackOr } from '../../hooks/useBackOr';
+import { SkeletonRows } from '../../components/Skeleton';
 
 /**
  * The Day Book, as TallyPrime lays it out: Date, Particulars, Vch Type,
@@ -250,7 +251,7 @@ const JournalPage: React.FC = () => {
             </thead>
             <tbody>
               {loading && (
-                <tr className="jv-empty"><td colSpan={6}>Loading vouchers…</td></tr>
+                <SkeletonRows columns={6} />
               )}
               {!loading && data.length === 0 && (
                 <tr className="jv-empty"><td colSpan={6}>No vouchers match.</td></tr>

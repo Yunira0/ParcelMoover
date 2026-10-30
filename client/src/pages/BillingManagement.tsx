@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, ExternalLink, FileText, Search, X } from 'lucide-react';
+import { ExternalLink, FileText, Search, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SegmentedTabs from '../components/SegmentedTabs';
 import CreditUsageBar from '../components/CreditUsageBar';
@@ -30,6 +30,7 @@ import { useSessionState } from '../hooks/useSessionState';
 import './vendor/VendorFinance.css';
 import './vendor/VendorBilling.css';
 import './BillingManagement.css';
+import { Toast, useToast } from '../components/toast';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
 const uploadUrl = (path: string) =>
@@ -111,6 +112,7 @@ const BillingManagement: React.FC = () => {
   const [savingNote, setSavingNote] = useState(false);
   const [noteMessage, setNoteMessage] = useState('');
   const [noteError, setNoteError] = useState('');
+  const toast = useToast();
 
   const loadClaims = useCallback(async () => {
     setClaimsLoading(true);
@@ -181,7 +183,7 @@ const BillingManagement: React.FC = () => {
       // A verification changes the vendor's balance, so any loaded report is stale.
       if (balances.length > 0) await loadBalances();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Failed to review payment.'));
+      toast.error(apiErrorMessage(err, 'Failed to review payment.'));
     } finally {
       setReviewing(null);
     }
@@ -270,10 +272,10 @@ const BillingManagement: React.FC = () => {
   };
 
   const claimColumns = [
-    { header: 'DATE', accessor: (p: VendorPayment) => toBsDate(p.createdAt) || '—', width: '110px' },
-    { header: 'VENDOR', accessor: (p: VendorPayment) => p.vendorName, width: '180px' },
-    { header: 'AMOUNT', accessor: (p: VendorPayment) => formatCurrency(p.amount), width: '120px' },
-    { header: 'REFERENCE', accessor: (p: VendorPayment) => p.reference || '—', width: '160px' },
+    { header: 'DATE', accessor: (p: VendorPayment) => toBsDate(p.createdAt) || '—' },
+    { header: 'VENDOR', accessor: (p: VendorPayment) => p.vendorName },
+    { header: 'AMOUNT', accessor: (p: VendorPayment) => formatCurrency(p.amount) },
+    { header: 'REFERENCE', accessor: (p: VendorPayment) => p.reference || '—' },
     {
       header: 'PROOF',
       accessor: (p: VendorPayment) =>
@@ -294,9 +296,8 @@ const BillingManagement: React.FC = () => {
         ) : (
           '—'
         ),
-      width: '110px',
     },
-    { header: 'NOTE', accessor: (p: VendorPayment) => p.note || '—', width: '160px' },
+    { header: 'NOTE', accessor: (p: VendorPayment) => p.note || '—' },
   ];
 
   const decidedColumns = [
@@ -306,10 +307,9 @@ const BillingManagement: React.FC = () => {
       accessor: (p: VendorPayment) => (
         <span className={`billing-pill billing-pill-${p.status}`}>{CLAIM_STATUS_LABELS[p.status]}</span>
       ),
-      width: '110px',
     },
-    { header: 'REVIEWED', accessor: (p: VendorPayment) => (p.reviewedAt ? toBsDate(p.reviewedAt) : '—'), width: '110px' },
-    { header: 'REMARK', accessor: (p: VendorPayment) => p.reviewRemark || '—', width: '200px' },
+    { header: 'REVIEWED', accessor: (p: VendorPayment) => (p.reviewedAt ? toBsDate(p.reviewedAt) : '—') },
+    { header: 'REMARK', accessor: (p: VendorPayment) => p.reviewRemark || '—' },
   ];
 
   const pendingColumns = [
@@ -342,7 +342,6 @@ const BillingManagement: React.FC = () => {
           </div>
         </div>
       ),
-      width: '300px',
     },
   ];
 
@@ -354,18 +353,17 @@ const BillingManagement: React.FC = () => {
     .map((v) => ({ ...v, id: v.vendorId }));
 
   const balanceColumns = [
-    { header: 'VENDOR', accessor: (v: VendorBalanceRow) => v.vendorName, width: '200px' },
+    { header: 'VENDOR', accessor: (v: VendorBalanceRow) => v.vendorName },
     {
       header: 'BALANCE',
       accessor: (v: VendorBalanceRow) => (
         <span className={v.balance < 0 ? 'billing-debit' : ''}>{formatCurrency(v.balance)}</span>
       ),
-      width: '130px',
     },
-    { header: 'COD COLLECTED', accessor: (v: VendorBalanceRow) => formatCurrency(v.codCollected), width: '140px' },
-    { header: 'CHARGES', accessor: (v: VendorBalanceRow) => formatCurrency(v.deliveryCharges), width: '120px' },
-    { header: 'PAID OUT', accessor: (v: VendorBalanceRow) => formatCurrency(v.payouts), width: '120px' },
-    { header: 'RECEIVED', accessor: (v: VendorBalanceRow) => formatCurrency(v.paymentsReceived), width: '120px' },
+    { header: 'COD COLLECTED', accessor: (v: VendorBalanceRow) => formatCurrency(v.codCollected) },
+    { header: 'CHARGES', accessor: (v: VendorBalanceRow) => formatCurrency(v.deliveryCharges) },
+    { header: 'PAID OUT', accessor: (v: VendorBalanceRow) => formatCurrency(v.payouts) },
+    { header: 'RECEIVED', accessor: (v: VendorBalanceRow) => formatCurrency(v.paymentsReceived) },
     {
       header: 'CREDIT LIMIT',
       accessor: (v: VendorBalanceRow) => (
@@ -386,7 +384,6 @@ const BillingManagement: React.FC = () => {
           <CreditUsageBar balance={v.balance} creditLimit={v.creditLimit} state={v.state} />
         </span>
       ),
-      width: '190px',
     },
     {
       header: 'STATE',
@@ -395,7 +392,6 @@ const BillingManagement: React.FC = () => {
           {v.state}
         </span>
       ),
-      width: '110px',
     },
   ];
 
@@ -445,7 +441,6 @@ const BillingManagement: React.FC = () => {
                 ? 'No payments awaiting verification.'
                 : `No ${CLAIM_STATUS_LABELS[claimStatus].toLowerCase()} payments yet.`
             }
-            minWidth="1200px"
           />
           <Pagination
             ariaLabel="Payment verification pagination"
@@ -495,7 +490,6 @@ const BillingManagement: React.FC = () => {
             loading={balancesLoading}
             loadingMessage="Calculating vendor balances..."
             emptyMessage={balanceQuery ? `No vendor matching "${balanceSearch.trim()}".` : 'No vendors found.'}
-            minWidth="1040px"
           />
         </>
       )}
@@ -552,12 +546,8 @@ const BillingManagement: React.FC = () => {
                   disabled={!isSuperAdmin || savingSettings}
                 />
               </label>
-              {settingsError && <p className="vendor-finance-error">{settingsError}</p>}
-              {settingsMessage && (
-                <p className="billing-success">
-                  <CheckCircle2 size={14} /> {settingsMessage}
-                </p>
-              )}
+              <Toast tone="error" message={settingsError} onShown={() => setSettingsError('')} />
+              <Toast tone="success" message={settingsMessage} onShown={() => setSettingsMessage('')} />
               {isSuperAdmin ? (
                 <Button type="submit" variant="primary" disabled={savingSettings}>
                   {savingSettings ? 'Saving...' : 'Save thresholds'}
@@ -570,7 +560,6 @@ const BillingManagement: React.FC = () => {
 
           <section className="billing-card">
             <h3>Payment QR</h3>
-            <p className="billing-hint">Shown to every vendor on their billing page.</p>
 
             {settings?.paymentQrPath ? (
               <img className="billing-qr" src={paymentQrUrl(settings.paymentQrPath)} alt="Current payment QR" />
@@ -588,12 +577,8 @@ const BillingManagement: React.FC = () => {
               onChange={(e) => setNote(e.target.value)}
               disabled={!isSuperAdmin || savingNote}
             />
-            {noteError && <p className="vendor-finance-error">{noteError}</p>}
-            {noteMessage && (
-              <p className="billing-success">
-                <CheckCircle2 size={14} /> {noteMessage}
-              </p>
-            )}
+            <Toast tone="error" message={noteError} onShown={() => setNoteError('')} />
+            <Toast tone="success" message={noteMessage} onShown={() => setNoteMessage('')} />
             {isSuperAdmin && (
               <Button
                 variant="secondary"
@@ -616,12 +601,8 @@ const BillingManagement: React.FC = () => {
                     setQrMessage('');
                   }}
                 />
-                {qrError && <p className="vendor-finance-error">{qrError}</p>}
-                {qrMessage && (
-                  <p className="billing-success">
-                    <CheckCircle2 size={14} /> {qrMessage}
-                  </p>
-                )}
+                <Toast tone="error" message={qrError} onShown={() => setQrError('')} />
+                <Toast tone="success" message={qrMessage} onShown={() => setQrMessage('')} />
                 {qrFile && (
                   <div className="billing-review-actions">
                     <Button variant="secondary" onClick={() => setQrFile(null)} disabled={qrUploading}>
@@ -683,7 +664,7 @@ const BillingManagement: React.FC = () => {
                 hint="Only this vendor changes."
               />
             </div>
-            {creditError && <p role="alert" className="error-text">{creditError}</p>}
+            <Toast tone="error" message={creditError} onShown={() => setCreditError('')} />
             <div className="modal-footer">
               <Button variant="secondary" onClick={closeCreditEditor} disabled={creditSaving}>
                 Cancel

@@ -1,17 +1,24 @@
-import React, { useId, useState } from 'react';
+import React, { useContext, useId, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import SearchableSelect, { type SearchableSelectOption } from './SearchableSelect';
 import SearchableSelectAsync, {
   type SearchableSelectAsyncResult,
 } from './SearchableSelectAsync';
 import NepaliDatePicker from './NepaliDatePicker';
+import { FieldMarkerContext } from './fieldMarkerContext';
 import './FormField.css';
 
 export type FormFieldOption = { value: string; label: string };
 
+export function FieldMarker({ required, disabled }: { required?: boolean; disabled?: boolean }) {
+  const mode = useContext(FieldMarkerContext);
+  if (mode === 'none' || required || disabled) return null;
+  return <span className="optional"> (optional)</span>;
+}
+
 // No 'datetime-local': every date the UI collects goes through type="date",
 // which renders the shared Nepali (BS) picker. Keep it that way.
-export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'decimal' | 'date' | 'select' | 'searchable-select' | 'searchable-select-async' | 'combobox' | 'textarea';
+export type FormFieldType = 'text' | 'email' | 'password' | 'number' | 'decimal' | 'date' | 'select' | 'choice' | 'searchable-select' | 'searchable-select-async' | 'combobox' | 'textarea';
 
 /** Digits with at most one decimal point. Deliberately permits a trailing "."
  *  and an empty string — both are states you pass through while typing. */
@@ -34,7 +41,7 @@ interface FormFieldProps {
   minLength?: number;
   maxLength?: number;
   autoComplete?: string;
-  /** Options for type="select". */
+  /** Options for type="select" and type="choice" (a row of single-select buttons). */
   options?: FormFieldOption[];
   /** Options for type="searchable-select". */
   searchableOptions?: SearchableSelectOption[];
@@ -89,11 +96,12 @@ const FormField: React.FC<FormFieldProps> = ({
     >
       {label && (
         <label
-          htmlFor={type === 'searchable-select' || type === 'searchable-select-async' ? undefined : id}
+          id={`${id}-label`}
+          htmlFor={type === 'searchable-select' || type === 'searchable-select-async' || type === 'choice' ? undefined : id}
           className={hideLabel ? 'sr-only' : undefined}
         >
           {label}
-          {required && <span className="required">*</span>}
+          <FieldMarker required={required} disabled={disabled} />
         </label>
       )}
       {type === 'select' ? (
@@ -110,6 +118,23 @@ const FormField: React.FC<FormFieldProps> = ({
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
+      ) : type === 'choice' ? (
+        <div id={id} className="form-choice" role="radiogroup" aria-labelledby={`${id}-label`} aria-required={required}>
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={value === opt.value}
+              className={`form-choice-option${value === opt.value ? ' is-selected' : ''}`}
+              onClick={() => onChange(opt.value)}
+              disabled={disabled}
+            >
+              <span className="form-choice-dot" aria-hidden="true" />
+              {opt.label}
+            </button>
+          ))}
+        </div>
       ) : type === 'textarea' ? (
         <textarea
           id={id}

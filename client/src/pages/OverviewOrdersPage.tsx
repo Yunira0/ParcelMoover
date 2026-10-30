@@ -19,6 +19,7 @@ import { toBsDate, toBsDateTimeCell } from '../utils/nepaliDate';
 import { formatCurrency } from '../utils/format';
 import './OverviewOrdersPage.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Skeleton } from '../components/Skeleton';
 
 const PAGE_SIZE = 10;
 // The server caps a page at 100 rows, so the export walks the list in
@@ -221,7 +222,7 @@ const OverviewOrdersPage: React.FC = () => {
           </button>
           <div>
             <h1>{group.label}</h1>
-            <span className="overview-orders-count">{loading ? 'Loading…' : `${totalCount} order${totalCount === 1 ? '' : 's'}`}</span>
+            <span className="overview-orders-count">{loading ? <Skeleton width={64} height={12} className="skeleton-inline" /> : `${totalCount} order${totalCount === 1 ? '' : 's'}`}</span>
           </div>
         </div>
         <Button variant="secondary" onClick={handleExport} disabled={loading || exporting || totalCount === 0}>

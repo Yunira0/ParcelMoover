@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import Button from './Button';
+import ReceiverPhones from './ReceiverPhones';
 import { apiErrorMessage } from '../utils/serverValidation';
 import './Modal.css';
 import './EditSettlementModal.css';
+import { SkeletonList } from './Skeleton';
 import '../pages/SettlementCreatePage.css';
 
 /** One order as the edit window lists it. `amount` is what it contributes to the statement. */
@@ -10,6 +12,9 @@ export interface EditableOrder {
   id: string;
   trackingId: string;
   receiverName: string;
+  /** Supplying this on any order adds a Receiver Phone column to the tables. */
+  receiverPhone?: string;
+  receiverAlternatePhone?: string;
   amount: number;
 }
 
@@ -81,6 +86,8 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
     ...addable.filter((order) => addedIds.has(order.id)),
   ];
 
+  const showPhone = [...currentOrders, ...addable].some((order) => order.receiverPhone !== undefined);
+
   const toggle = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
     setter((prev) => {
       const next = new Set(prev);
@@ -118,6 +125,7 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
             <th style={{ width: '40px' }} />
             <th style={{ textAlign: 'left' }}>Tracking ID</th>
             <th style={{ textAlign: 'left' }}>Receiver</th>
+            {showPhone && <th style={{ textAlign: 'left' }}>Receiver Phone</th>}
             <th style={{ textAlign: 'right' }}>{amountLabel}</th>
             {extraColumn && <th style={{ textAlign: 'right' }}>{extraColumn.header}</th>}
           </tr>
@@ -135,6 +143,11 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
               </td>
               <td className="scp-mono">{order.trackingId}</td>
               <td>{order.receiverName}</td>
+              {showPhone && (
+                <td className="scp-mono">
+                  <ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} />
+                </td>
+              )}
               <td style={{ textAlign: 'right' }}>{money(order.amount)}</td>
               {extraColumn && (
                 <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
@@ -177,13 +190,12 @@ const StatementEditModal: React.FC<StatementEditModalProps> = ({
                 (id) => !keptIds.has(id),
               )
             )}
-            <p className="esm-hint">Uncheck an order to remove it from the statement.</p>
           </div>
 
           <div className="esm-section">
             <label className="scp-label">Add other unsettled orders</label>
             {fetchingOrders ? (
-              <div className="scp-empty">Loading orders...</div>
+              <SkeletonList rows={3} />
             ) : addable.length === 0 ? (
               <div className="scp-empty">No other unsettled orders for this {payeeNoun}.</div>
             ) : (

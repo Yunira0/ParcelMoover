@@ -35,6 +35,7 @@ import { formatCurrency } from '../utils/format';
 import { commitScannedTerm, handleScannerPaste } from '../utils/scannerInput';
 import './PickupOperations.css';
 import ReceiverPhones from '../components/ReceiverPhones';
+import { Toast } from '../components/toast';
 
 type PickupTab = 'pickup_ordered' | 'rider_assigned' | 'picked_up' | 'arrived' | 'failed' | 'cancelled';
 
@@ -258,17 +259,14 @@ const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) =>
   {
     header: 'SN',
     accessor: (order: Order) => `${group.sn}.${group.orders.indexOf(order) + 1}`,
-    width: '60px',
   },
   {
     header: 'ORDER ID',
     accessor: (order: Order) => `#${order.orderNumber}`,
-    width: '70px',
   },
   {
     header: 'DATE & TIME',
     accessor: (order: Order) => <DateTimeCell iso={order.createdAtRaw} />,
-    width: '110px',
   },
   {
     header: 'SENDER DETAILS',
@@ -278,7 +276,6 @@ const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) =>
         <small>{order.senderPhone}</small>
       </div>
     ),
-    width: '170px',
   },
   {
     header: 'RECEIVER DETAILS',
@@ -289,18 +286,16 @@ const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) =>
         <small><ReceiverPhones phone={order.receiverPhone} alternate={order.receiverAlternatePhone} /></small>
       </div>
     ),
-    width: '200px',
   },
-  { header: 'PICKUP RIDER', accessor: (order: Order) => order.riderName || '-', width: '120px' },
+  { header: 'PICKUP RIDER', accessor: (order: Order) => order.riderName || '-' },
   {
     header: 'TRACKING CODE',
     accessor: (order: Order) => (
       <Link to={`/orders/track/${order.trackingId}`} className="tracking-id-link">{order.trackingId}</Link>
     ),
-    width: '170px',
     className: 'pickup-group-tracking-cell',
   },
-  { header: 'WEIGHT (KG)', accessor: (order: Order) => order.weightKg ?? '-', width: '100px' },
+  { header: 'WEIGHT (KG)', accessor: (order: Order) => order.weightKg ?? '-' },
   {
     header: 'HUB/LOCATION',
     accessor: (order: Order) => (
@@ -309,12 +304,11 @@ const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) =>
         <small>{order.destination || '-'}</small>
       </div>
     ),
-    width: '170px',
   },
-  { header: 'DELIVERY CHARGE', accessor: (order: Order) => formatCurrency(order.deliveryCharge, 0), width: '130px' },
-  { header: 'COD AMOUNT', accessor: (order: Order) => formatCurrency(order.codAmount, 0), width: '120px' },
-  { header: 'LAST HANDLE BY', accessor: (order: Order) => order.lastUpdatedBy || '-', width: '140px' },
-  { header: 'ORDER TYPE', accessor: (order: Order) => ORDER_TYPE_LABELS[order.orderType], width: '130px' },
+  { header: 'DELIVERY CHARGE', accessor: (order: Order) => formatCurrency(order.deliveryCharge, 0) },
+  { header: 'COD AMOUNT', accessor: (order: Order) => formatCurrency(order.codAmount, 0) },
+  { header: 'LAST HANDLE BY', accessor: (order: Order) => order.lastUpdatedBy || '-' },
+  { header: 'ORDER TYPE', accessor: (order: Order) => ORDER_TYPE_LABELS[order.orderType] },
   {
     header: 'REMARKS',
     accessor: (order: Order) => (
@@ -327,7 +321,6 @@ const groupDetailColumns = (group: PickupGroup, onRemarkClick: (order: Order) =>
         {order.remarks || '-'}
       </button>
     ),
-    width: '160px',
     className: 'pickup-remarks-cell',
   },
 ];
@@ -357,7 +350,6 @@ const PickupGroupDetailPanel: React.FC<{
       allSelected={allSelected}
       someSelected={someSelected}
       onToggleAll={onToggleAll}
-      minWidth="1850px"
       tableClassName="pickup-group-table"
       emptyMessage="No orders in this pickup."
     />
@@ -749,7 +741,6 @@ const PickupOperations: React.FC = () => {
     {
       header: 'SN',
       accessor: (group: PickupGroup) => group.sn,
-      width: '50px',
       className: 'pickup-sn-cell',
     },
     {
@@ -762,13 +753,11 @@ const PickupOperations: React.FC = () => {
           {group.orderType === 'exchange' ? <RefreshCw size={18} /> : <OstrichIcon size={18} />}
         </span>
       ),
-      width: '100px',
     },
     {
       header: 'SERVICE TYPE',
       accessor: (group: PickupGroup) =>
         group.mixedServiceType ? 'Mixed' : SERVICE_TYPE_FULL_LABELS[group.serviceType],
-      width: '190px',
       className: 'pickup-strong-cell',
     },
     {
@@ -779,19 +768,16 @@ const PickupOperations: React.FC = () => {
           <small>{group.senderPhone}</small>
         </div>
       ),
-      width: '220px',
     },
-    { header: 'LOCATION', accessor: (group: PickupGroup) => group.location, width: '150px', className: 'pickup-strong-cell' },
+    { header: 'LOCATION', accessor: (group: PickupGroup) => group.location, className: 'pickup-strong-cell' },
     {
       header: 'PIECES',
       accessor: (group: PickupGroup) => `${group.totalPieces}/${group.orders.length}`,
-      width: '80px',
       className: 'pickup-strong-cell',
     },
     {
       header: 'PICKUP RIDER',
       accessor: (group: PickupGroup) => group.riderName || '-',
-      width: '140px',
       className: 'pickup-strong-cell',
     },
     {
@@ -805,12 +791,12 @@ const PickupOperations: React.FC = () => {
           {expandedGroupId === group.id ? <><ChevronUp size={14} /> Details</> : <><ChevronDown size={14} /> Details</>}
         </Button>
       ),
-      width: '130px',
     },
   ];
 
   return (
     <div className="pickup-operations-container">
+      <Toast tone="error" message={actionError} onShown={() => setActionError('')} />
       <PageHeader title="Pickup Operations" />
 
       <SegmentedTabs
@@ -902,7 +888,7 @@ const PickupOperations: React.FC = () => {
                 {isReasonRequiredAction && (
                   <div className="pickup-reason-field">
                     <label className="pickup-reason-label">
-                      Reason <span className="pickup-reason-required">*</span>
+                      Reason
                     </label>
                     <textarea
                       rows={2}
@@ -914,7 +900,6 @@ const PickupOperations: React.FC = () => {
                     />
                   </div>
                 )}
-                {actionError && <p className="pickup-action-error">{actionError}</p>}
                 <div className="pickup-status-submit-row">
                   <Button variant="secondary" className="pickup-outline-btn" onClick={() => { setIsActionOpen(false); setRiderId(''); setReasonRemarks(''); }}>
                     Cancel
@@ -991,7 +976,6 @@ const PickupOperations: React.FC = () => {
         loading={loading}
         loadingMessage="Loading pickup orders..."
         emptyMessage="No pickup orders found."
-        minWidth="1100px"
         tableClassName="pickup-table"
         expandedRowId={expandedGroupId}
         renderExpandedRow={group => (

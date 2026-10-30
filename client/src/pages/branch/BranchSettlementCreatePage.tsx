@@ -205,8 +205,8 @@ const BranchSettlementCreatePage: React.FC = () => {
   };
 
   const orderColumns = [
-    { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}`, width: '80px' },
-    { header: 'TRACKING ID', accessor: (o: Order) => o.trackingId, width: '150px' },
+    { header: 'ORDER ID', accessor: (o: Order) => `#${o.orderNumber}` },
+    { header: 'TRACKING ID', accessor: (o: Order) => o.trackingId },
     {
       header: 'RECEIVER',
       accessor: (o: Order) => (
@@ -215,22 +215,19 @@ const BranchSettlementCreatePage: React.FC = () => {
           <small>{o.receiverAddress || '-'}</small>
         </div>
       ),
-      width: '190px',
     },
-    { header: 'NUMBER', accessor: (o: Order) => <ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} />, width: '120px' },
-    { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-', width: '130px' },
-    { header: 'COLLECTED', accessor: (o: Order) => <CodCell codAmount={o.collectedAmount} />, width: '110px' },
+    { header: 'NUMBER', accessor: (o: Order) => <ReceiverPhones phone={o.receiverPhone} alternate={o.receiverAlternatePhone} /> },
+    { header: 'DESTINATION', accessor: (o: Order) => o.destination || '-' },
+    { header: 'COLLECTED', accessor: (o: Order) => <CodCell codAmount={o.collectedAmount} /> },
     {
       header: 'Commission',
       accessor: () => <span className="scp-num">{money(commission)}</span>,
-      width: '110px',
     },
     {
       header: 'Net Payable',
       accessor: (o: Order) => (
         <span className="scp-num scp-num-strong">{money(Math.max(0, o.collectedAmount - commission))}</span>
       ),
-      width: '120px',
     },
   ];
 
@@ -335,7 +332,6 @@ const BranchSettlementCreatePage: React.FC = () => {
               loading={loadingOrders}
               loadingMessage="Loading orders…"
               emptyMessage="No unsettled COD orders were delivered by this branch."
-              minWidth="1100px"
             />
             {moreOrders && (
               <p className="scp-subtext">
