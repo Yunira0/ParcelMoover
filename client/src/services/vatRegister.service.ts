@@ -21,6 +21,8 @@ export interface RegisterRow extends RegisterAmounts {
   date: string;
   invoiceNo: string;
   customsNo: string | null;
+  /** Vendor id on the sales registers; null for carriers and purchase bills. */
+  partyId: string | null;
   partyName: string;
   partyPan: string | null;
   description: string | null;

@@ -39,14 +39,14 @@ describe("getVatRegister", () => {
   it("lists vendor statements' delivery charges as sales, split into value and VAT", async () => {
     vi.mocked(prisma.settlements.findMany).mockResolvedValue([{
       id: "s1", statement_id: "STM-V-1", invoice_no: "INV-2083-0142", created_at: inBhadra, updated_at: inBhadra,
-      amount: 5000, payable_amount: 4774, vendor_credit_applied: 0, vat_rate: 13,
+      amount: 5000, payable_amount: 4774, vendor_credit_applied: 0, vat_rate: 13, vendor_id: "v1",
       vendors: { client_name: "Ram", business_name: "Ram Store", billing_business_name: null, pan_vat_no: "609862489" },
     }] as any);
 
     const result = await getVatRegister(staff, "sales", 2083, 5);
     expect(result.taxpayer).toEqual({ name: "ParcelMoover", pan: "600000001" });
     expect(result.rows).toEqual([expect.objectContaining({
-      invoiceNo: "INV-2083-0142", partyName: "Ram Store", partyPan: "609862489", date: "2083.05.10", total: 226, taxable: 200, vat: 26,
+      invoiceNo: "INV-2083-0142", partyId: "v1", partyName: "Ram Store", partyPan: "609862489", date: "2083.05.10", total: 226, taxable: 200, vat: 26,
     })]);
     expect(result.totals).toMatchObject({ total: 226, taxable: 200, vat: 26 });
     // Sales are non-cancelled statements drawn up inside the period.

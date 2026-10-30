@@ -1,5 +1,6 @@
-import type { RegisterKind, RegisterRow, VatRegister } from '../services/vatRegister.service';
+import type { RegisterAmounts, RegisterKind, RegisterRow, VatRegister } from '../services/vatRegister.service';
 import { BS_MONTHS } from './nepaliDate';
+import { downloadExcel } from './excel';
 
 // The four IRD VAT registers (Rule 23(1)(h)), in English. One layout drives both
 // the screen table and the Excel file, so the two always carry the same columns.
@@ -198,7 +199,8 @@ export async function buildVatRegisterWorkbook(register: VatRegister) {
   return wb;
 }
 
-export async function downloadVatRegister(register: VatRegister): Promise<void> {
+/** `forName` (a vendor) is added to the file name when the register is filtered to one. */
+export async function downloadVatRegister(register: VatRegister, forName?: string): Promise<void> {
   const layout = REGISTER_LAYOUTS[register.kind];
   const { year, month } = register.period;
   const buffer = await (await buildVatRegisterWorkbook(register)).xlsx.writeBuffer();
@@ -207,7 +209,62 @@ export async function downloadVatRegister(register: VatRegister): Promise<void> 
   }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${layout.title} - ${BS_MONTHS[month - 1]} ${year}.xlsx`;
+  a.download = `${layout.title}${forName ? ` - ${forName}` : ''} - ${BS_MONTHS[month - 1]} ${year}.xlsx`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Per-vendor views of the sales registers, worked out from the month's rows.
+
+const AMOUNT_KEYS: (keyof RegisterAmounts)[] = [
+  'total', 'exempt', 'taxable', 'vat', 'importTaxable', 'importVat', 'capitalTaxable', 'capitalVat',
+];
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Totals of a set of rows, e.g. one vendor's statements. */
+export function registerTotals(rows: RegisterRow[]): RegisterAmounts {
+  return Object.fromEntries(
+    AMOUNT_KEYS.map((key) => [key, round2(rows.reduce((sum, row) => sum + row[key], 0))]),
+  ) as unknown as RegisterAmounts;
+}
+
+export interface VendorSummaryRow {
+  id: string;
+  name: string;
+  pan: string | null;
+  statements: number;
+  total: number;
+  taxable: number;
+  vat: number;
+}
+
+/** One line per vendor: how many statements they had in the period and their totals. */
+export function vendorSummary(rows: RegisterRow[]): VendorSummaryRow[] {
+  const byVendor = new Map<string, VendorSummaryRow>();
+  for (const row of rows) {
+    const id = row.partyId ?? row.partyName;
+    const line = byVendor.get(id) ?? { id, name: row.partyName, pan: row.partyPan, statements: 0, total: 0, taxable: 0, vat: 0 };
+    line.statements += 1;
+    line.total = round2(line.total + row.total);
+    line.taxable = round2(line.taxable + row.taxable);
+    line.vat = round2(line.vat + row.vat);
+    byVendor.set(id, line);
+  }
+  return [...byVendor.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function downloadVendorSummary(register: VatRegister, summary: VendorSummaryRow[]): Promise<void> {
+  const { title } = REGISTER_LAYOUTS[register.kind];
+  const { year, month } = register.period;
+  const { total, taxable, vat } = register.totals;
+  const statements = summary.reduce((sum, line) => sum + line.statements, 0);
+  return downloadExcel(
+    `${title} by vendor - ${BS_MONTHS[month - 1]} ${year}.xlsx`,
+    'By vendor',
+    ['Vendor', 'PAN', 'Statements', 'Total (Rs.)', 'Taxable value (Rs.)', 'VAT (Rs.)'],
+    [
+      ...summary.map((line) => [line.name, line.pan ?? '', line.statements, line.total, line.taxable, line.vat]),
+      ['Total', '', statements, total, taxable, vat],
+    ],
+  );
 }
