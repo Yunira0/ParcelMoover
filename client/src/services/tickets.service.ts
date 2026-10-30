@@ -74,7 +74,8 @@ export const TICKET_CATEGORY_LABELS: Record<TicketCategory, string> = {
 };
 
 export interface ListTicketsParams {
-  status?: TicketStatus;
+  /** 'unresolved' = pending + open (used by the operations pages). */
+  status?: TicketStatus | 'unresolved';
   search?: string;
   priority?: TicketPriority;
   category?: TicketCategory;

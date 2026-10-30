@@ -324,6 +324,8 @@ export async function listTickets(actor: Actor, params: ListTicketsParams = {}) 
     where.status = "pending";
   } else if (params.status === "open") {
     where.status = { in: ["open", "in_progress"] };
+  } else if (params.status === "unresolved") {
+    where.status = { in: ["pending", "open", "in_progress"] };
   }
   if (params.priority) where.priority = params.priority;
   if (params.category) where.category = params.category;

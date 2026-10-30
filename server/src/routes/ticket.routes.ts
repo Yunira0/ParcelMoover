@@ -4,7 +4,7 @@ import { authMiddleware } from "../middlewares/auth.middleware";
 import { authorizeRoles } from "../middlewares/authorizeRoles.middleware";
 import { csrfProtection } from "../middlewares/csrf.middleware";
 import { validate } from "../middlewares/validate.middleware";
-import { createTicketSchema, listTicketsQuerySchema } from "../validators/ticket.schema";
+import { createTicketSchema, staffListTicketsQuerySchema } from "../validators/ticket.schema";
 import {
   createTicketController,
   getTicketByIdController,
@@ -66,7 +66,7 @@ ticketRouter.get(
   authMiddleware,
   authorizeRoles(...CX_ROLES),
   ticketsReadLimiter,
-  validate(listTicketsQuerySchema, "query"),
+  validate(staffListTicketsQuerySchema, "query"),
   listTicketsController,
 );
 

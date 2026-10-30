@@ -10,11 +10,9 @@ import StatusChip, { type StatusChipTone } from '../StatusChip';
 import {
   getTickets,
   TICKET_PRIORITY_LABELS,
-  TICKET_STATUS_LABELS,
   type Ticket,
   type TicketCategory,
   type TicketPriority,
-  type TicketStatus,
 } from '../../services/tickets.service';
 import { queryKeys } from '../../queries/keys';
 import { toBsDate } from '../../utils/nepaliDate';
@@ -28,23 +26,18 @@ import './StageTickets.css';
 export const TICKETS_TAB = 'tickets' as const;
 export type TicketsTab = typeof TICKETS_TAB;
 
-type StatusFilter = 'all' | TicketStatus;
+// Operations only needs to know whether a ticket is still waiting: Open covers
+// both pending (not yet opened) and open, Closed is resolved.
+type StatusFilter = 'unresolved' | 'closed';
 
-// Pending (not yet opened by staff) leads: it is the stage's work queue.
-const STATUS_FILTERS: StatusFilter[] = ['pending', 'open', 'closed', 'all'];
-const STATUS_FILTER_LABELS: Record<StatusFilter, string> = { all: 'All', ...TICKET_STATUS_LABELS };
+const STATUS_FILTERS: StatusFilter[] = ['unresolved', 'closed'];
+const STATUS_FILTER_LABELS: Record<StatusFilter, string> = { unresolved: 'Open', closed: 'Closed' };
 
 const PRIORITY_TONE: Record<TicketPriority, StatusChipTone> = {
   urgent: 'danger',
   high: 'warning',
   medium: 'info',
   low: 'neutral',
-};
-
-const STATUS_TONE: Record<TicketStatus, StatusChipTone> = {
-  pending: 'warning',
-  open: 'info',
-  closed: 'success',
 };
 
 const PAGE_SIZE = 10;
@@ -87,27 +80,21 @@ interface StageTicketsPanelProps {
 
 export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }) => {
   const navigate = useNavigate();
-  const [pickedStatus, setStatus] = useState<StatusFilter | null>(null);
+  const [status, setStatus] = useState<StatusFilter>('unresolved');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
-  const countsQuery = useStageTicketCounts(category);
-  const counts = countsQuery.data;
-
-  // Until staff pick a filter, open on the first one with tickets in it, so a
-  // stage whose tickets are all Open doesn't land on an empty Pending list.
-  const status: StatusFilter = pickedStatus
-    ?? (!counts || counts.pending > 0 ? 'pending' : counts.open > 0 ? 'open' : 'all');
+  const counts = useStageTicketCounts(category).data;
+  const filterCounts: Record<StatusFilter, number> | undefined = counts
+    ? { unresolved: counts.pending + counts.open, closed: counts.closed }
+    : undefined;
 
   useEffect(() => { setPage(1); }, [status, pageSize]);
 
-  const params = { category, status: status === 'all' ? undefined : status, page, pageSize };
+  const params = { category, status, page, pageSize };
   const listQuery = useQuery({
     queryKey: queryKeys.tickets.list(params),
     queryFn: () => getTickets(params),
     placeholderData: keepPreviousData,
-    // Wait for the counts that pick the default filter, so the list isn't
-    // fetched twice on open.
-    enabled: pickedStatus !== null || !countsQuery.isPending,
   });
   const tickets = useMemo(() => listQuery.data?.data ?? [], [listQuery.data]);
   const meta = listQuery.data?.meta;
@@ -139,7 +126,9 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
     },
     {
       header: 'STATUS',
-      accessor: (t: Ticket) => <StatusChip tone={STATUS_TONE[t.status]}>{TICKET_STATUS_LABELS[t.status]}</StatusChip>,
+      accessor: (t: Ticket) => t.status === 'closed'
+        ? <StatusChip tone="success">Closed</StatusChip>
+        : <StatusChip tone="info">Open</StatusChip>,
       width: '110px',
     },
     { header: 'CREATED AT', accessor: (t: Ticket) => toBsDate(t.createdAt), width: '110px' },
@@ -162,7 +151,7 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
           fullWidth={false}
           value={status}
           onChange={setStatus}
-          options={STATUS_FILTERS.map((s) => ({ value: s, label: STATUS_FILTER_LABELS[s], count: counts?.[s] }))}
+          options={STATUS_FILTERS.map((s) => ({ value: s, label: STATUS_FILTER_LABELS[s], count: filterCounts?.[s] }))}
         />
         {canOpenPath('/tickets') && (
           <Link to={`/tickets?category=${category}`} className="stage-tickets-all-link">
@@ -183,7 +172,7 @@ export const StageTicketsPanel: React.FC<StageTicketsPanelProps> = ({ category }
           selectable={false}
           loading={listQuery.isPending}
           loadingMessage="Loading tickets..."
-          emptyMessage={status === 'all' ? 'No tickets for this stage yet.' : `No ${STATUS_FILTER_LABELS[status].toLowerCase()} tickets.`}
+          emptyMessage={`No ${STATUS_FILTER_LABELS[status].toLowerCase()} tickets.`}
           minWidth="1000px"
         />
       )}

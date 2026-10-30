@@ -60,3 +60,10 @@ export const listTicketsQuerySchema = paginationQuerySchema.extend({
 });
 
 export type ListTicketsQuery = z.infer<typeof listTicketsQuerySchema>;
+
+// Dashboard-only: the operations pages list a stage's tickets as Open
+// (pending + open, i.e. not yet resolved) and Closed. Kept off the shared
+// schema so the Partner API's status filter stays as documented.
+export const staffListTicketsQuerySchema = listTicketsQuerySchema.extend({
+  status: z.enum([...TICKET_STATUSES, "unresolved"]).optional(),
+});

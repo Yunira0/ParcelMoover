@@ -6,7 +6,7 @@ import {
   listTickets,
   setTicketStatus,
 } from "../services/ticket.service";
-import { ListTicketsParams, TicketStatus, TicketWorkflowStatus } from "../types/ticket.type";
+import { ListTicketsParams, TicketWorkflowStatus } from "../types/ticket.type";
 
 export async function listTicketsController(req: Request, res: Response) {
   try {
@@ -14,7 +14,7 @@ export async function listTicketsController(req: Request, res: Response) {
     const { status, search, priority, category, fromDate, toDate, page, pageSize, sortDir } = req.query;
 
     const params: ListTicketsParams = {};
-    if (typeof status === "string") params.status = status as TicketStatus;
+    if (typeof status === "string") params.status = status as NonNullable<ListTicketsParams["status"]>;
     if (typeof search === "string") params.search = search;
     if (typeof priority === "string") params.priority = priority;
     if (typeof category === "string") params.category = category;

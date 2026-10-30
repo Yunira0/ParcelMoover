@@ -15,7 +15,8 @@ export interface CreateTicketInput {
 }
 
 export interface ListTicketsParams {
-  status?: TicketStatus;
+  /** "unresolved" = pending + open; dashboard-only (see staffListTicketsQuerySchema). */
+  status?: TicketStatus | "unresolved";
   search?: string;
   priority?: string;
   category?: string;

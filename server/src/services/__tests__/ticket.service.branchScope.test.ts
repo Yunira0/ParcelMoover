@@ -85,6 +85,16 @@ describe("listTickets — branch-scoped admin", () => {
     expect(meta.statusCounts).toEqual({ all: 5, pending: 5, open: 0, closed: 0 });
   });
 
+  it("lists pending and open tickets together for the unresolved filter", async () => {
+    mockedScope.mockResolvedValue(undefined);
+
+    await listTickets(BRANCH_ADMIN, { category: "pickup", status: "unresolved" });
+
+    expect(mocked.support_tickets.findMany.mock.calls[0]![0].where.status).toEqual({
+      in: ["pending", "open", "in_progress"],
+    });
+  });
+
   it("omits category counts when no category is requested", async () => {
     mockedScope.mockResolvedValue(undefined);
 
