@@ -26,11 +26,16 @@ class ReleaseEnvCheckTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('VAT_REGISTERS_ENABLED', result.stdout)
 
-    def test_missing_company_details_block_release(self):
-        result = self.run_check('VAT_REGISTERS_ENABLED=true\nCOMPANY_NAME=\nCOMPANY_PAN=12345\n')
+    def test_missing_company_details_only_warn(self):
+        result = self.run_check('VAT_REGISTERS_ENABLED=true\nCOMPANY_NAME=\n')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('COMPANY_NAME is not set', result.stdout)
+        self.assertIn('COMPANY_PAN is not set', result.stdout)
+
+    def test_malformed_company_pan_blocks_release(self):
+        result = self.run_check(GOOD.replace('COMPANY_PAN=609000123', 'COMPANY_PAN=12345'))
         self.assertEqual(result.returncode, 1)
-        self.assertIn('COMPANY_NAME', result.stdout)
-        self.assertIn('COMPANY_PAN', result.stdout)
+        self.assertIn('9-digit', result.stdout)
 
     def test_last_assignment_wins(self):
         result = self.run_check(GOOD + 'VAT_REGISTERS_ENABLED=false\n')

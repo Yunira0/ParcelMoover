@@ -124,9 +124,9 @@ release keeps serving) if a setting the release needs is missing:
 
 | Setting | Why |
 | --- | --- |
-| `VAT_REGISTERS_ENABLED=true` | Finance > Report shows the VAT registers; the API is 404 without it. |
-| `COMPANY_NAME` | Taxpayer name on every VAT register (IRD Rule 23(1)(h) form). |
-| `COMPANY_PAN` (9 digits) | Taxpayer PAN on every VAT register. |
+| `VAT_REGISTERS_ENABLED=true` | Required. Finance > Report shows the VAT registers; the API is 404 without it. |
+| `COMPANY_NAME` | Warning only: taxpayer name on every VAT register (IRD Rule 23(1)(h) form); blank prints a dotted line. |
+| `COMPANY_PAN` | Warning only when blank; blocks the deploy if set but not 9 digits. Taxpayer PAN on every VAT register. |
 | `NCM_PAN`, `UPAYA_PAN` | Warning only: carrier PAN on the Purchase Register. |
 
 Add the values to `.env.production` on the host, then re-run the workflow.

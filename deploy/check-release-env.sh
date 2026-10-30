@@ -8,9 +8,10 @@
 # Required:
 #   VAT_REGISTERS_ENABLED=true  The client shows Finance > Report > VAT registers;
 #                               the API answers 404 without this.
-#   COMPANY_NAME, COMPANY_PAN   Taxpayer line on every VAT register (IRD form).
-#                               COMPANY_PAN is the 9-digit PAN.
 # Advisory (warns only):
+#   COMPANY_NAME, COMPANY_PAN   Taxpayer line on every VAT register (IRD form);
+#                               left blank, the register prints a dotted line.
+#                               A COMPANY_PAN that is set must be 9 digits.
 #   NCM_PAN, UPAYA_PAN          Supplier PAN of each 3PL on the Purchase Register.
 set -Euo pipefail
 
@@ -31,9 +32,14 @@ warn() { echo "::warning title=Release env check::$1"; }
 [[ "$(value VAT_REGISTERS_ENABLED)" == true ]] \
   || fail "Set VAT_REGISTERS_ENABLED=true in $ENV_FILE; the VAT register screens are released."
 [[ -n "$(value COMPANY_NAME)" ]] \
-  || fail "Set COMPANY_NAME in $ENV_FILE (taxpayer name on the VAT registers)."
-[[ "$(value COMPANY_PAN)" =~ ^[0-9]{9}$ ]] \
-  || fail "Set COMPANY_PAN in $ENV_FILE to the 9-digit PAN (taxpayer PAN on the VAT registers)."
+  || warn "COMPANY_NAME is not set; the VAT registers print a blank taxpayer name."
+pan=$(value COMPANY_PAN)
+if [[ -z "$pan" ]]; then
+  warn "COMPANY_PAN is not set; the VAT registers print a blank taxpayer PAN."
+elif [[ ! "$pan" =~ ^[0-9]{9}$ ]]; then
+  # A wrong PAN on a tax register is worse than a blank one.
+  fail "COMPANY_PAN in $ENV_FILE must be the 9-digit PAN."
+fi
 
 for carrier in NCM UPAYA; do
   [[ -n "$(value "${carrier}_PAN")" ]] \
